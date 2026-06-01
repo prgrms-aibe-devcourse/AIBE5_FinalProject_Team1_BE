@@ -28,7 +28,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run tests
-        run: ./gradlew build -x test
+        run: ./gradlew test
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       - name: Upload test reports (always)
         if: always()
