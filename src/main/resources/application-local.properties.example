@@ -1,0 +1,25 @@
+# Database
+DB_URL=jdbc:oracle:thin:@host:port:sid
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
+
+# JPA
+spring.jpa.show-sql=true
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Kafka
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+# OAuth2
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# JWT
+JWT_SECRET=your-secret-key-at-least-32-characters-long-for-hs256
+
+# Logging
+logging.level.com.team1.codedock=DEBUG
+logging.level.org.hibernate.SQL=DEBUG
