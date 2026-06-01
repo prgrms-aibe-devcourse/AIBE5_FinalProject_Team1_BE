@@ -1,7 +1,7 @@
 ---
 name: Feature
 about: 기능 개발
-title: "[Feat}"
+title: "[Feat]"
 labels: enhancement
 assignees: ''
 type: Feature
