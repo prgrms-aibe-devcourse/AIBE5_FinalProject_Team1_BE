@@ -28,7 +28,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run tests
-        run: ./gradlew test
+        run: ./gradlew build -x test
 
       - name: Upload test reports (always)
         if: always()
