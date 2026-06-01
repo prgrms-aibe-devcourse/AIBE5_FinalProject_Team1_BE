@@ -1,0 +1,2 @@
+-- Flyway baseline migration
+-- Schema will be defined in subsequent migration files
