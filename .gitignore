@@ -22,5 +22,11 @@ logs/
 
 # 환경변수
 .env
-application-local.yml
-application-secret.yml
+.env.local
+.env.*.local
+application-local.properties
+application-secret.properties
+
+# 인증서 / 키스토어
+*.p12
+*.jks
