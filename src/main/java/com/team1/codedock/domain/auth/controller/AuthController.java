@@ -1,56 +1,44 @@
 package com.team1.codedock.domain.auth.controller;
 
-import com.team1.codedock.domain.auth.dto.LogoutRequest;
-import com.team1.codedock.domain.auth.dto.RefreshRequest;
-import com.team1.codedock.domain.auth.dto.TokenResponse;
-import com.team1.codedock.domain.auth.dto.UserInfoResponse;
+import com.team1.codedock.domain.auth.dto.*;
 import com.team1.codedock.domain.auth.service.AuthService;
-import com.team1.codedock.domain.user.entity.User;
-import com.team1.codedock.domain.user.repository.UserRepository;
-import com.team1.codedock.global.exception.BusinessException;
-import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.domain.user.dto.UserResponse;
 import com.team1.codedock.global.response.ApiResponse;
-import com.team1.codedock.global.security.CustomUserDetails;
+import com.team1.codedock.global.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
-    private final UserRepository userRepository;
 
-    /** 현재 로그인 유저 정보 조회 */
-    @GetMapping("/me")
-    public ResponseEntity<ApiResponse<UserInfoResponse>> me(
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        User user = userRepository.findById(userDetails.getUserId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        return ResponseEntity.ok(ApiResponse.ok(UserInfoResponse.from(user)));
+    @PostMapping("/signup")
+    public ApiResponse<SignupResponse> signup(@RequestBody @Valid SignupRequest request) {
+        return ApiResponse.ok(authService.signup(request));
     }
 
-    /** Access Token 재발급 */
+    @PostMapping("/login")
+    public ApiResponse<LoginResponse> login(@RequestBody @Valid LoginRequest request) {
+        return ApiResponse.ok(authService.login(request));
+    }
+
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<TokenResponse>> refresh(
-            @Valid @RequestBody RefreshRequest request) {
-        TokenResponse tokens = authService.refresh(request.refreshToken());
-        return ResponseEntity.ok(ApiResponse.ok(tokens));
+    public ApiResponse<TokenResponse> refresh(@RequestBody @Valid RefreshRequest request) {
+        return ApiResponse.ok(authService.refresh(request.refreshToken()));
     }
 
-    /**
-     * 로그아웃 — refresh token으로 처리.
-     * access token 만료 여부와 무관하게 로그아웃 가능.
-     * SecurityConfig에서 permitAll 처리 필요.
-     */
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(
-            @Valid @RequestBody LogoutRequest request) {
+    public ApiResponse<Void> logout(@RequestBody @Valid LogoutRequest request) {
         authService.logout(request.refreshToken());
-        return ResponseEntity.ok(ApiResponse.ok());
+        return ApiResponse.ok();
+    }
+
+    @GetMapping("/me")
+    public ApiResponse<UserResponse> me() {
+        return ApiResponse.ok(authService.me(SecurityUtils.getCurrentUserId()));
     }
 }

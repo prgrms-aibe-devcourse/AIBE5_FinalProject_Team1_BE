@@ -23,4 +23,11 @@ public class UserSkill extends BaseCreatedEntity {
 
     @Column(name = "skill_name", nullable = false, length = 100)
     private String skillName;
+
+    public static UserSkill create(User user, String skillName) {
+        UserSkill skill = new UserSkill();
+        skill.user = user;
+        skill.skillName = skillName;
+        return skill;
+    }
 }
