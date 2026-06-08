@@ -57,8 +57,9 @@ public class WorkspaceMember extends BaseEntity {
         this.authority = authority;
     }
 
-    public void deactivate() {
+    public void deactivate(String reason) {
         this.isActive = false;
         this.leftAt = LocalDateTime.now();
+        this.leftReason = reason;
     }
 }

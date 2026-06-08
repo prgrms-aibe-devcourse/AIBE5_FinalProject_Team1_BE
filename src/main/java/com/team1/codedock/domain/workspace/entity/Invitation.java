@@ -72,4 +72,10 @@ public class Invitation extends BaseCreatedEntity {
     public void expire() {
         this.status = "expired";
     }
+
+    public void revoke(WorkspaceMember revokedBy) {
+        this.status = "revoked";
+        this.revokedAt = LocalDateTime.now();
+        this.revokedBy = revokedBy;
+    }
 }
