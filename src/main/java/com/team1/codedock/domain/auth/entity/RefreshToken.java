@@ -35,4 +35,18 @@ public class RefreshToken extends BaseCreatedEntity {
 
     @Column(name = "revoked_at")
     private LocalDateTime revokedAt;
+
+    public static RefreshToken create(User user, String token, LocalDateTime expiresAt) {
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.user = user;
+        refreshToken.token = token;
+        refreshToken.expiresAt = expiresAt;
+        refreshToken.revoked = false;
+        return refreshToken;
+    }
+
+    public void revoke() {
+        this.revoked = true;
+        this.revokedAt = LocalDateTime.now();
+    }
 }

@@ -50,4 +50,26 @@ public class Invitation extends BaseCreatedEntity {
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
+
+    public static Invitation create(Workspace workspace, WorkspaceMember inviterMember,
+                                    String invitedEmail, String invitedAuthority,
+                                    String token, LocalDateTime expiresAt) {
+        Invitation invitation = new Invitation();
+        invitation.workspace = workspace;
+        invitation.inviterMember = inviterMember;
+        invitation.invitedEmail = invitedEmail;
+        invitation.invitedAuthority = invitedAuthority;
+        invitation.token = token;
+        invitation.expiresAt = expiresAt;
+        invitation.status = "pending";
+        return invitation;
+    }
+
+    public void accept() {
+        this.status = "accepted";
+    }
+
+    public void expire() {
+        this.status = "expired";
+    }
 }

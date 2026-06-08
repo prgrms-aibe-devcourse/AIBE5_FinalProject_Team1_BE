@@ -39,4 +39,19 @@ public class Workspace extends BaseEntity {
     @Lob
     @Column(name = "logo_url")
     private String logoUrl;
+
+    public static Workspace create(User owner, String name, String slug, String description) {
+        Workspace workspace = new Workspace();
+        workspace.createdBy = owner;
+        workspace.owner = owner;
+        workspace.name = name;
+        workspace.slug = slug;
+        workspace.description = description;
+        return workspace;
+    }
+
+    public void update(String name, String description) {
+        if (name != null) this.name = name;
+        if (description != null) this.description = description;
+    }
 }
