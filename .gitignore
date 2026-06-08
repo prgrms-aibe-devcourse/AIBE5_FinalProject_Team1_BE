@@ -20,6 +20,9 @@ logs/
 # Mac
 .DS_Store
 
+# Claude
+.claude/
+
 # 환경변수
 .env
 .env.local
