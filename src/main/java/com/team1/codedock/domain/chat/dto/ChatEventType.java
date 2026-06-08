@@ -1,0 +1,11 @@
+package com.team1.codedock.domain.chat.dto;
+
+public enum ChatEventType {
+    MESSAGE_CREATED,
+    MESSAGE_UPDATED,
+    MESSAGE_DELETED,
+    THREAD_REPLY_CREATED,
+    REACTION_UPDATED,
+    TYPING,
+    NOTIFICATION_CREATED
+}
