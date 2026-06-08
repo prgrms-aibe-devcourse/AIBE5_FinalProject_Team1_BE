@@ -3,6 +3,7 @@ package com.team1.codedock.global.config;
 import com.team1.codedock.domain.auth.handler.OAuth2FailureHandler;
 import com.team1.codedock.domain.auth.handler.OAuth2SuccessHandler;
 import com.team1.codedock.domain.auth.service.CustomOAuth2UserService;
+import com.team1.codedock.global.security.CookieOAuth2AuthorizationRequestRepository;
 import com.team1.codedock.global.security.CustomUserDetailsService;
 import com.team1.codedock.global.security.JwtAuthFilter;
 import com.team1.codedock.global.security.JwtProvider;
@@ -31,6 +32,7 @@ public class SecurityConfig {
     private final CustomOAuth2UserService oAuth2UserService;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
     private final OAuth2FailureHandler oAuth2FailureHandler;
+    private final CookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository;
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
 
@@ -57,6 +59,10 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
+                        .authorizationEndpoint(auth -> auth
+                                .authorizationRequestRepository(cookieAuthorizationRequestRepository))
+                        .redirectionEndpoint(redirect -> redirect
+                                .baseUri("/login/oauth2/code/*"))
                         .userInfoEndpoint(userInfo ->
                                 userInfo.userService(oAuth2UserService))
                         .successHandler(oAuth2SuccessHandler)
