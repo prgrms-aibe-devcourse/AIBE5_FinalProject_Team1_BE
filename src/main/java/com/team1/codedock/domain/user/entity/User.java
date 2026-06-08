@@ -80,4 +80,34 @@ public class User extends BaseEntity {
 
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
+
+    // GitHub OAuth로 처음 가입할 때 사용
+    public static User createFromGithub(String githubId, String githubUsername,
+                                        String email, String avatarUrl,
+                                        String githubAccessToken) {
+        User user = new User();
+        user.githubId = githubId;
+        user.githubUsername = githubUsername;
+        user.githubEmail = email;
+        user.email = (email != null && !email.isBlank())
+                ? email
+                : githubUsername + "@users.noreply.github.com";
+        user.username = githubUsername;
+        user.displayName = githubUsername;
+        user.avatarUrl = avatarUrl;
+        user.githubConnected = true;
+        user.githubConnectedAt = LocalDateTime.now();
+        user.githubAccessToken = githubAccessToken;
+        user.emailVerified = (email != null && !email.isBlank());
+        user.emailVerifiedAt = user.emailVerified ? LocalDateTime.now() : null;
+        user.isActive = true;
+        user.lastLoginAt = LocalDateTime.now();
+        return user;
+    }
+
+    public void updateOnGithubLogin(String githubAccessToken, String avatarUrl) {
+        this.githubAccessToken = githubAccessToken;
+        if (avatarUrl != null) this.avatarUrl = avatarUrl;
+        this.lastLoginAt = LocalDateTime.now();
+    }
 }
