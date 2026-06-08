@@ -14,6 +14,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Thread extends BaseEntity {
 
+    public static final String TYPE_USER_MESSAGE = "user_message";
+
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_threads")
     @SequenceGenerator(name = "seq_threads", sequenceName = "seq_threads", allocationSize = 1)
@@ -48,4 +50,17 @@ public class Thread extends BaseEntity {
     @Lob
     @Column
     private String content;
+
+    public static Thread createChannelMessage(Channel channel, WorkspaceMember createdBy, String content) {
+        Thread thread = new Thread();
+        thread.channel = channel;
+        thread.createdBy = createdBy;
+        thread.replyTo = null;
+        thread.threadType = TYPE_USER_MESSAGE;
+        thread.threadableType = null;
+        thread.threadableId = null;
+        thread.title = null;
+        thread.content = content;
+        return thread;
+    }
 }
