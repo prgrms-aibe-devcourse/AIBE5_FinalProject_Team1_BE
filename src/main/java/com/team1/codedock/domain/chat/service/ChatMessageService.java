@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
@@ -12,11 +13,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class ChatMessageService {
 
     private final ThreadRepository threadRepository;
+    private final ChannelRepository channelRepository;
     private final EntityManager entityManager;
 
     @Transactional
@@ -36,9 +40,27 @@ public class ChatMessageService {
         return ChannelMessageResponse.from(savedThread);
     }
 
+    @Transactional(readOnly = true)
+    public List<ChannelMessageResponse> getChannelMessages(Long channelId) {
+        validateChannelExists(channelId);
+
+        return threadRepository.findAllByChannel_IdAndThreadTypeOrderByCreatedAtAscIdAsc(
+                        channelId,
+                        com.team1.codedock.domain.chat.entity.Thread.TYPE_USER_MESSAGE
+                ).stream()
+                .map(ChannelMessageResponse::from)
+                .toList();
+    }
+
     private void validateContent(String content) {
         if (content == null || content.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Message content must not be blank.");
+        }
+    }
+
+    private void validateChannelExists(Long channelId) {
+        if (!channelRepository.existsById(channelId)) {
+            throw new BusinessException(ErrorCode.CHANNEL_NOT_FOUND);
         }
     }
 
