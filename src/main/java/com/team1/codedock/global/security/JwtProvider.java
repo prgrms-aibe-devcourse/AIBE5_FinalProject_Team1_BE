@@ -51,14 +51,36 @@ public class JwtProvider {
         return Long.parseLong(parseClaims(token).getSubject());
     }
 
-    public boolean validate(String token) {
+    /**
+     * API 인증용 — access 타입 토큰만 통과.
+     * refresh 토큰을 Authorization 헤더에 넣어도 거부됨.
+     */
+    public boolean validateAccessToken(String token) {
         try {
-            parseClaims(token);
-            return true;
+            Claims claims = parseClaims(token);
+            return "access".equals(claims.get("type", String.class));
         } catch (JwtException | IllegalArgumentException e) {
-            log.debug("Invalid JWT: {}", e.getMessage());
+            log.debug("Invalid access token: {}", e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * 재발급 전용 — refresh 타입 토큰만 통과.
+     */
+    public boolean validateRefreshToken(String token) {
+        try {
+            Claims claims = parseClaims(token);
+            return "refresh".equals(claims.get("type", String.class));
+        } catch (JwtException | IllegalArgumentException e) {
+            log.debug("Invalid refresh token: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** @deprecated validateAccessToken() 사용 권장 */
+    public boolean validate(String token) {
+        return validateAccessToken(token);
     }
 
     public long getRefreshTokenExpiry() {

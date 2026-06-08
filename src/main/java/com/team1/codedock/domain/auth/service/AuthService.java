@@ -22,6 +22,12 @@ public class AuthService {
 
     @Transactional
     public TokenResponse refresh(String rawRefreshToken) {
+        // 1) JWT 서명·타입 검증 (refresh 타입인지 확인)
+        if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+
+        // 2) DB에 저장된 토큰인지, 만료·revoke 여부 확인
         RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
 
@@ -56,10 +62,20 @@ public class AuthService {
         return new TokenResponse(accessToken, refreshToken);
     }
 
+    /**
+     * refresh token으로 로그아웃.
+     * access token이 만료된 상태에서도 로그아웃 가능.
+     */
     @Transactional
-    public void logout(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        refreshTokenRepository.revokeAllByUser(user);
+    public void logout(String rawRefreshToken) {
+        if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+
+        RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
+
+        // 해당 유저의 모든 refresh token revoke
+        refreshTokenRepository.revokeAllByUser(saved.getUser());
     }
 }

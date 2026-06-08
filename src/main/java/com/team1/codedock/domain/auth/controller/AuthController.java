@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.auth.controller;
 
+import com.team1.codedock.domain.auth.dto.LogoutRequest;
 import com.team1.codedock.domain.auth.dto.RefreshRequest;
 import com.team1.codedock.domain.auth.dto.TokenResponse;
 import com.team1.codedock.domain.auth.dto.UserInfoResponse;
@@ -41,11 +42,15 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok(tokens));
     }
 
-    /** 로그아웃 — refresh token 전부 revoke */
+    /**
+     * 로그아웃 — refresh token으로 처리.
+     * access token 만료 여부와 무관하게 로그아웃 가능.
+     * SecurityConfig에서 permitAll 처리 필요.
+     */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        authService.logout(userDetails.getUserId());
+            @Valid @RequestBody LogoutRequest request) {
+        authService.logout(request.refreshToken());
         return ResponseEntity.ok(ApiResponse.ok());
     }
 }
