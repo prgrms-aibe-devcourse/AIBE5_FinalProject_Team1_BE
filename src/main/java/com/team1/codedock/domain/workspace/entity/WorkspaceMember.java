@@ -43,4 +43,22 @@ public class WorkspaceMember extends BaseEntity {
 
     @Column(name = "left_reason", length = 255)
     private String leftReason;
+
+    public static WorkspaceMember create(Workspace workspace, User user, String authority) {
+        WorkspaceMember member = new WorkspaceMember();
+        member.workspace = workspace;
+        member.user = user;
+        member.authority = authority;
+        member.isActive = true;
+        return member;
+    }
+
+    public void changeAuthority(String authority) {
+        this.authority = authority;
+    }
+
+    public void deactivate() {
+        this.isActive = false;
+        this.leftAt = LocalDateTime.now();
+    }
 }

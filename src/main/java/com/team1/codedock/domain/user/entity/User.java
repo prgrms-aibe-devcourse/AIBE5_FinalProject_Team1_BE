@@ -80,4 +80,19 @@ public class User extends BaseEntity {
 
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
+
+    public static User create(String email, String passwordHash, String username) {
+        User user = new User();
+        user.email = email;
+        user.passwordHash = passwordHash;
+        user.username = username;
+        user.isActive = true;
+        user.emailVerified = false;
+        user.githubConnected = false;
+        return user;
+    }
+
+    public void updateLastLogin() {
+        this.lastLoginAt = LocalDateTime.now();
+    }
 }
