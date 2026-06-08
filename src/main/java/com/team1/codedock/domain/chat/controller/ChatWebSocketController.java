@@ -4,6 +4,8 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.dto.TypingEventRequest;
+import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,19 @@ public class ChatWebSocketController {
         messagingTemplate.convertAndSend(
                 "/topic/channels/" + channelId + "/events",
                 ChatEventResponse.of(ChatEventType.MESSAGE_CREATED, response)
+        );
+    }
+
+    @MessageMapping("/channels/{channelId}/typing") //프론트 send 주소
+    public void sendTypingEvent(
+            @DestinationVariable Long channelId,
+            @Valid TypingEventRequest request
+    ) {
+        TypingEventResponse response = TypingEventResponse.of(channelId, request);
+
+        messagingTemplate.convertAndSend(
+                "/topic/channels/" + channelId + "/typing",
+                ChatEventResponse.of(ChatEventType.TYPING, response)
         );
     }
 }
