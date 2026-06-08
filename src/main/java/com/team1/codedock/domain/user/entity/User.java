@@ -126,4 +126,12 @@ public class User extends BaseEntity {
         if (avatarUrl != null) this.avatarUrl = avatarUrl;
         this.lastLoginAt = LocalDateTime.now();
     }
+
+    public void updateProfile(String displayName, String nickname, String developerType, String bio, String avatarUrl) {
+        this.displayName = displayName;
+        this.nickname = nickname;
+        this.developerType = developerType;
+        this.bio = bio;
+        this.avatarUrl = avatarUrl;
+    }
 }

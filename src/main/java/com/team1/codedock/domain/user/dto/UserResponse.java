@@ -11,6 +11,10 @@ public class UserResponse {
     private Long id;
     private String email;
     private String username;
+    private String displayName;
+    private String nickname;
+    private String developerType;
+    private String bio;
     private String avatarUrl;
 
     public static UserResponse from(User user) {
@@ -18,6 +22,10 @@ public class UserResponse {
                 .id(user.getId())
                 .email(user.getEmail())
                 .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .nickname(user.getNickname())
+                .developerType(user.getDeveloperType())
+                .bio(user.getBio())
                 .avatarUrl(user.getAvatarUrl())
                 .build();
     }

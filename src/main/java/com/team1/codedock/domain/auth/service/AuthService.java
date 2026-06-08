@@ -1,14 +1,16 @@
 package com.team1.codedock.domain.auth.service;
 
-import com.team1.codedock.domain.auth.dto.TokenResponse;
+import com.team1.codedock.domain.auth.dto.*;
 import com.team1.codedock.domain.auth.entity.RefreshToken;
 import com.team1.codedock.domain.auth.repository.RefreshTokenRepository;
+import com.team1.codedock.domain.user.dto.UserResponse;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.JwtProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,44 +18,71 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final JwtProvider jwtProvider;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtProvider jwtProvider;
+
+    @Transactional
+    public SignupResponse signup(SignupRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        String hash = passwordEncoder.encode(request.getPassword());
+        User user = userRepository.save(User.create(request.getEmail(), hash, request.getUsername()));
+        return SignupResponse.from(user);
+    }
+
+    @Transactional
+    public LoginResponse login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+        user.updateLastLogin();
+        refreshTokenRepository.deleteByUser(user);
+        return buildLoginResponse(user);
+    }
 
     @Transactional
     public TokenResponse refresh(String rawRefreshToken) {
-        // 1) JWT 서명·타입 검증 (refresh 타입인지 확인)
         if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
             throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
-
-        // 2) DB에 저장된 토큰인지, 만료·revoke 여부 확인
         RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
-
         if (!saved.isValid()) {
             throw new BusinessException(ErrorCode.EXPIRED_TOKEN);
         }
-
         User user = saved.getUser();
         saved.revoke();
-
-        String newAccessToken  = jwtProvider.generateAccessToken(user.getId());
-        String newRefreshToken = jwtProvider.generateRefreshToken(user.getId());
+        String newAccess  = jwtProvider.generateAccessToken(user.getId());
+        String newRefresh = jwtProvider.generateRefreshToken(user.getId());
         refreshTokenRepository.save(
-                RefreshToken.create(user, newRefreshToken, jwtProvider.getRefreshTokenExpiry())
+                RefreshToken.create(user, newRefresh, jwtProvider.getRefreshTokenExpiry())
         );
+        return new TokenResponse(newAccess, newRefresh);
+    }
 
-        return new TokenResponse(newAccessToken, newRefreshToken);
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+        RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
+        refreshTokenRepository.revokeAllByUser(saved.getUser());
     }
 
     @Transactional
     public TokenResponse issueTokens(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-
         refreshTokenRepository.revokeAllByUser(user);
-
         String accessToken  = jwtProvider.generateAccessToken(userId);
         String refreshToken = jwtProvider.generateRefreshToken(userId);
         refreshTokenRepository.save(
@@ -62,20 +91,23 @@ public class AuthService {
         return new TokenResponse(accessToken, refreshToken);
     }
 
-    /**
-     * refresh token으로 로그아웃.
-     * access token이 만료된 상태에서도 로그아웃 가능.
-     */
-    @Transactional
-    public void logout(String rawRefreshToken) {
-        if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
-            throw new BusinessException(ErrorCode.INVALID_TOKEN);
-        }
+    @Transactional(readOnly = true)
+    public UserResponse me(Long currentUserId) {
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        return UserResponse.from(user);
+    }
 
-        RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
-
-        // 해당 유저의 모든 refresh token revoke
-        refreshTokenRepository.revokeAllByUser(saved.getUser());
+    private LoginResponse buildLoginResponse(User user) {
+        String accessToken = jwtProvider.generateAccessToken(user.getId());
+        String rawRefresh  = jwtProvider.generateRefreshToken(user.getId());
+        refreshTokenRepository.save(
+                RefreshToken.create(user, rawRefresh, jwtProvider.getRefreshTokenExpiry())
+        );
+        return LoginResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(rawRefresh)
+                .user(LoginUserInfo.from(user))
+                .build();
     }
 }
