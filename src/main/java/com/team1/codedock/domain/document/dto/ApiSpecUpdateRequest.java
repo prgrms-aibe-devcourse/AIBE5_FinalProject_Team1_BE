@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record ApiSpecUpdateRequest(
-        // null 허용(미전송 시 기존 값 유지), 전송 시 blank 불가
+        // 수정 시 필수 포함, blank 불가
         @NotBlank @Size(max = 255) String title,
         @NotBlank @Size(max = 10) String method,
         @NotBlank @Size(max = 255) String endpoint,
