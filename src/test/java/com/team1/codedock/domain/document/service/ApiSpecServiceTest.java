@@ -5,13 +5,14 @@ import com.team1.codedock.domain.document.dto.ApiSpecResponse;
 import com.team1.codedock.domain.document.dto.ApiSpecUpdateRequest;
 import com.team1.codedock.domain.document.entity.ApiSpec;
 import com.team1.codedock.domain.document.repository.ApiSpecRepository;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
-import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,7 +44,10 @@ class ApiSpecServiceTest {
     private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
-    private EntityManager entityManager;
+    private GithubIssueRepository githubIssueRepository;
+
+    @Mock
+    private GithubPullRequestRepository githubPullRequestRepository;
 
     @InjectMocks
     private ApiSpecService apiSpecService;
@@ -79,7 +83,7 @@ class ApiSpecServiceTest {
         WorkspaceMember member = mock(WorkspaceMember.class);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
         when(apiSpecRepository.save(any(ApiSpec.class))).thenReturn(sampleSpec());
 
         ApiSpecResponse response = apiSpecService.createApiSpec(1L, minimalCreateRequest());
@@ -106,7 +110,7 @@ class ApiSpecServiceTest {
     void createApiSpec_멤버_없으면_예외() {
         Workspace workspace = mock(Workspace.class);
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> apiSpecService.createApiSpec(1L, minimalCreateRequest()))
                 .isInstanceOf(BusinessException.class)
@@ -130,19 +134,19 @@ class ApiSpecServiceTest {
         );
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
-        when(workspaceMemberRepository.findById(2L)).thenReturn(Optional.of(assignee));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(2L, 1L)).thenReturn(Optional.of(assignee));
         when(apiSpecRepository.save(any(ApiSpec.class))).thenReturn(sampleSpec());
 
         apiSpecService.createApiSpec(1L, request);
 
-        verify(workspaceMemberRepository).findById(2L);
+        verify(workspaceMemberRepository).findByIdAndWorkspace_Id(2L, 1L);
         verify(apiSpecRepository).save(any(ApiSpec.class));
     }
 
     @Test
-    @DisplayName("relatedPrId가 있으면 EntityManager로 PR을 조회한다")
-    void createApiSpec_relatedPrId_있으면_entityManager_조회() {
+    @DisplayName("relatedPrId가 있으면 PR을 워크스페이스 조건으로 조회한다")
+    void createApiSpec_relatedPrId_있으면_workspace_조건_조회() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
 
@@ -154,17 +158,19 @@ class ApiSpecServiceTest {
         );
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L))
+                .thenReturn(Optional.of(mock(com.team1.codedock.domain.pr.entity.GithubPullRequest.class)));
         when(apiSpecRepository.save(any(ApiSpec.class))).thenReturn(sampleSpec());
 
         apiSpecService.createApiSpec(1L, request);
 
-        verify(entityManager).find(com.team1.codedock.domain.pr.entity.GithubPullRequest.class, 10L);
+        verify(githubPullRequestRepository).findByIdAndRepository_Workspace_Id(10L, 1L);
     }
 
     @Test
-    @DisplayName("relatedIssueId가 있으면 EntityManager로 Issue를 조회한다")
-    void createApiSpec_relatedIssueId_있으면_entityManager_조회() {
+    @DisplayName("relatedIssueId가 있으면 Issue를 워크스페이스 조건으로 조회한다")
+    void createApiSpec_relatedIssueId_있으면_workspace_조건_조회() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
 
@@ -176,12 +182,14 @@ class ApiSpecServiceTest {
         );
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubIssueRepository.findByIdAndRepository_Workspace_Id(20L, 1L))
+                .thenReturn(Optional.of(mock(com.team1.codedock.domain.issue.entity.GithubIssue.class)));
         when(apiSpecRepository.save(any(ApiSpec.class))).thenReturn(sampleSpec());
 
         apiSpecService.createApiSpec(1L, request);
 
-        verify(entityManager).find(com.team1.codedock.domain.issue.entity.GithubIssue.class, 20L);
+        verify(githubIssueRepository).findByIdAndRepository_Workspace_Id(20L, 1L);
     }
 
     @Test
@@ -198,8 +206,8 @@ class ApiSpecServiceTest {
         );
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
-        when(workspaceMemberRepository.findById(99L)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(99L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> apiSpecService.createApiSpec(1L, request))
                 .isInstanceOf(BusinessException.class)
@@ -359,7 +367,7 @@ class ApiSpecServiceTest {
         ApiSpec spec = sampleSpec();
         WorkspaceMember assignee = mock(WorkspaceMember.class);
         when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
-        when(workspaceMemberRepository.findById(2L)).thenReturn(Optional.of(assignee));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(2L, 1L)).thenReturn(Optional.of(assignee));
 
         ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
                 "수정된 제목", "POST", "/api/users",
@@ -370,14 +378,16 @@ class ApiSpecServiceTest {
 
         apiSpecService.updateApiSpec(1L, 1L, request);
 
-        verify(workspaceMemberRepository).findById(2L);
+        verify(workspaceMemberRepository).findByIdAndWorkspace_Id(2L, 1L);
     }
 
     @Test
-    @DisplayName("수정 시 relatedPrId가 있으면 EntityManager로 PR을 조회한다")
-    void updateApiSpec_relatedPrId_있으면_entityManager_조회() {
+    @DisplayName("수정 시 relatedPrId가 있으면 PR을 워크스페이스 조건으로 조회한다")
+    void updateApiSpec_relatedPrId_있으면_workspace_조건_조회() {
         ApiSpec spec = sampleSpec();
         when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L))
+                .thenReturn(Optional.of(mock(com.team1.codedock.domain.pr.entity.GithubPullRequest.class)));
 
         ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
                 "수정된 제목", "POST", "/api/users",
@@ -388,14 +398,16 @@ class ApiSpecServiceTest {
 
         apiSpecService.updateApiSpec(1L, 1L, request);
 
-        verify(entityManager).find(com.team1.codedock.domain.pr.entity.GithubPullRequest.class, 10L);
+        verify(githubPullRequestRepository).findByIdAndRepository_Workspace_Id(10L, 1L);
     }
 
     @Test
-    @DisplayName("수정 시 relatedIssueId가 있으면 EntityManager로 Issue를 조회한다")
-    void updateApiSpec_relatedIssueId_있으면_entityManager_조회() {
+    @DisplayName("수정 시 relatedIssueId가 있으면 Issue를 워크스페이스 조건으로 조회한다")
+    void updateApiSpec_relatedIssueId_있으면_workspace_조건_조회() {
         ApiSpec spec = sampleSpec();
         when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+        when(githubIssueRepository.findByIdAndRepository_Workspace_Id(20L, 1L))
+                .thenReturn(Optional.of(mock(com.team1.codedock.domain.issue.entity.GithubIssue.class)));
 
         ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
                 "수정된 제목", "POST", "/api/users",
@@ -406,7 +418,7 @@ class ApiSpecServiceTest {
 
         apiSpecService.updateApiSpec(1L, 1L, request);
 
-        verify(entityManager).find(com.team1.codedock.domain.issue.entity.GithubIssue.class, 20L);
+        verify(githubIssueRepository).findByIdAndRepository_Workspace_Id(20L, 1L);
     }
 
     @Test
@@ -415,7 +427,7 @@ class ApiSpecServiceTest {
         ApiSpec spec = sampleSpec();
         when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L))
                 .thenReturn(Optional.of(spec));
-        when(workspaceMemberRepository.findById(99L)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(99L, 1L)).thenReturn(Optional.empty());
 
         ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
                 "수정된 제목", "POST", "/api/users",

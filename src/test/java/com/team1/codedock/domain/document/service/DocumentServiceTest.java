@@ -6,13 +6,13 @@ import com.team1.codedock.domain.document.dto.DocumentUpdateRequest;
 import com.team1.codedock.domain.document.entity.Document;
 import com.team1.codedock.domain.document.repository.DocumentRepository;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
-import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +44,7 @@ class DocumentServiceTest {
     private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
-    private EntityManager entityManager;
+    private GithubPullRequestRepository githubPullRequestRepository;
 
     @InjectMocks
     private DocumentService documentService;
@@ -59,7 +59,7 @@ class DocumentServiceTest {
         DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "manual", "workspace", null);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
 
         Document document = Document.create(workspace, member, "제목", "내용", "manual", "workspace", null);
         when(documentRepository.save(any(Document.class))).thenReturn(document);
@@ -68,12 +68,12 @@ class DocumentServiceTest {
 
         assertThat(response.title()).isEqualTo("제목");
         assertThat(response.generatedBy()).isEqualTo("Manual");
-        verify(entityManager, never()).find(any(), any());
+        verify(githubPullRequestRepository, never()).findByIdAndRepository_Workspace_Id(any(), any());
         verify(documentRepository).save(any(Document.class));
     }
 
     @Test
-    @DisplayName("relatedPrId 있으면 EntityManager로 PR을 조회한다")
+    @DisplayName("relatedPrId 있으면 PR을 워크스페이스 조건으로 조회한다")
     void createDocument_성공_relatedPr_있음() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
@@ -81,15 +81,15 @@ class DocumentServiceTest {
         DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "pr-summary", "workspace", 10L);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(1L)).thenReturn(Optional.of(member));
-        when(entityManager.find(GithubPullRequest.class, 10L)).thenReturn(pr);
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L)).thenReturn(Optional.of(pr));
 
         Document document = Document.create(workspace, member, "제목", "내용", "pr-summary", "workspace", pr);
         when(documentRepository.save(any(Document.class))).thenReturn(document);
 
         documentService.createDocument(1L, request);
 
-        verify(entityManager).find(GithubPullRequest.class, 10L);
+        verify(githubPullRequestRepository).findByIdAndRepository_Workspace_Id(10L, 1L);
     }
 
     @Test
@@ -112,7 +112,7 @@ class DocumentServiceTest {
         DocumentCreateRequest request = new DocumentCreateRequest(99L, "제목", "내용", "manual", "workspace", null);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
-        when(workspaceMemberRepository.findById(99L)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(99L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> documentService.createDocument(1L, request))
                 .isInstanceOf(BusinessException.class)

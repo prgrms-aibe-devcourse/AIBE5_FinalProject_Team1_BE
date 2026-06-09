@@ -40,7 +40,9 @@ public enum ErrorCode {
 
     // GitHub
     GITHUB_REPO_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "GitHub 레포지토리를 찾을 수 없습니다."),
-    GITHUB_WEBHOOK_INVALID(HttpStatus.BAD_REQUEST, "G002", "유효하지 않은 Webhook 요청입니다.");
+    GITHUB_WEBHOOK_INVALID(HttpStatus.BAD_REQUEST, "G002", "유효하지 않은 Webhook 요청입니다."),
+    GITHUB_PR_NOT_FOUND(HttpStatus.NOT_FOUND, "G003", "GitHub PR을 찾을 수 없습니다."),
+    GITHUB_ISSUE_NOT_FOUND(HttpStatus.NOT_FOUND, "G004", "GitHub 이슈를 찾을 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
