@@ -2,6 +2,7 @@ package com.team1.codedock.domain.chat.controller;
 
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.dto.ReactionSummaryResponse;
 import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
 import com.team1.codedock.domain.chat.entity.Reaction;
@@ -15,6 +16,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -70,5 +73,26 @@ class ReactionControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(ChatEventType.REACTION_UPDATED);
         assertThat(event.payload()).isEqualTo(response);
+    }
+
+    @Test
+    @DisplayName("채널 리액션 집계 목록을 조회한다")
+    void getReactionSummaries() {
+        Long channelId = 1L;
+        ReactionSummaryResponse summary = new ReactionSummaryResponse(
+                Reaction.TARGET_TYPE_THREAD,
+                100L,
+                "like",
+                3L
+        );
+
+        when(reactionService.getReactionSummaries(channelId)).thenReturn(List.of(summary));
+
+        ApiResponse<List<ReactionSummaryResponse>> apiResponse =
+                reactionController.getReactionSummaries(channelId);
+
+        assertThat(apiResponse.isSuccess()).isTrue();
+        assertThat(apiResponse.getData()).containsExactly(summary);
+        verify(reactionService).getReactionSummaries(channelId);
     }
 }

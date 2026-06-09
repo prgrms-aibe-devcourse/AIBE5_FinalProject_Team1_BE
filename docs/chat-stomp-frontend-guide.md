@@ -44,11 +44,11 @@ client.activate();
 | Channel message | `/app/channels/{channelId}/messages` | `/topic/channels/{channelId}/events` |
 | Typing | `/app/channels/{channelId}/typing` | `/topic/channels/{channelId}/typing` |
 | Reaction | `POST /api/channels/{channelId}/reactions/toggle` | `/topic/channels/{channelId}/events` |
+| Reaction summary | `GET /api/channels/{channelId}/reactions` | - |
 | Thread reply | `/app/threads/{threadId}/replies` | `/topic/threads/{threadId}/events` |
 | Personal notification | - | `/user/queue/notifications` |
 
 > `Thread reply`, `Personal notification`은 추후 구현 범위입니다.
-> `Reaction`은 리액션 토글 PR 머지 후 사용할 규격입니다.
 
 ## 3. Event Envelope
 
@@ -302,6 +302,58 @@ Response:
 | --- | --- |
 | `true` | 이번 요청으로 리액션이 추가됨 |
 | `false` | 이번 요청으로 리액션이 취소됨 |
+
+### Summary
+
+채널에 처음 들어왔을 때 기존 메시지와 답글에 달린 리액션 개수를 표시하기 위한 조회 API입니다.
+
+Endpoint:
+
+```http
+GET /api/channels/{channelId}/reactions
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "targetType": "thread",
+      "targetId": 100,
+      "emoji": "👍",
+      "count": 3
+    },
+    {
+      "targetType": "thread_reply",
+      "targetId": 200,
+      "emoji": "😂",
+      "count": 2
+    }
+  ]
+}
+```
+
+TypeScript payload:
+
+```ts
+type ReactionSummaryPayload = {
+  targetType: "thread" | "thread_reply";
+  targetId: number;
+  emoji: string;
+  count: number;
+};
+```
+
+프론트 초기 렌더링 흐름:
+
+```text
+1. 채널 메시지 목록 조회
+2. GET /api/channels/{channelId}/reactions 호출
+3. targetType + targetId 기준으로 메시지/답글에 리액션 개수 매핑
+4. 이후 변경분은 REACTION_UPDATED WebSocket 이벤트로 반영
+```
 
 ### Receive
 

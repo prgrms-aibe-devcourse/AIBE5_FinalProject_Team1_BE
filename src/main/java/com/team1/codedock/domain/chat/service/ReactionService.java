@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.chat.service;
 
+import com.team1.codedock.domain.chat.dto.ReactionSummaryResponse;
 import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
 import com.team1.codedock.domain.chat.entity.Reaction;
@@ -15,6 +16,9 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +53,15 @@ public class ReactionService {
                 reacted,
                 count
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReactionSummaryResponse> getReactionSummaries(Long channelId) {
+        // 프론트 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 두 집계를 합친다.
+        List<ReactionSummaryResponse> summaries = new ArrayList<>();
+        summaries.addAll(reactionRepository.findThreadReactionSummariesByChannelId(channelId));
+        summaries.addAll(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId));
+        return summaries;
     }
 
     private boolean toggle(ReactionToggleRequest request, WorkspaceMember workspaceMember) {
