@@ -55,4 +55,35 @@ public class Document extends BaseEntity {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    public static Document create(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String content,
+            String category,
+            String visibility,
+            GithubPullRequest relatedPr
+    ) {
+        Document document = new Document();
+        document.workspace = workspace;
+        document.createdBy = createdBy;
+        document.title = title;
+        document.content = content;
+        document.category = category;
+        document.generatedBy = "Manual";
+        document.visibility = visibility != null ? visibility : "workspace";
+        document.relatedPr = relatedPr;
+        return document;
+    }
+
+    public void update(String title, String content, String visibility) {
+        if (title != null) this.title = title;
+        if (content != null) this.content = content;
+        if (visibility != null) this.visibility = visibility;
+    }
+
+    public void softDelete() {
+        this.deletedAt = LocalDateTime.now();
+    }
 }
