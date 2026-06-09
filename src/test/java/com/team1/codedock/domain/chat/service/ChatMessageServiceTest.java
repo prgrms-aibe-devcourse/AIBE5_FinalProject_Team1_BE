@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
@@ -45,6 +46,78 @@ class ChatMessageServiceTest {
 
     @InjectMocks
     private ChatMessageService chatMessageService;
+
+    @Test
+    @DisplayName("활성 워크스페이스 멤버이면 채널 메시지를 저장한다")
+    void createChannelMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.channelId()).isEqualTo(channelId);
+        assertThat(response.senderMemberId()).isEqualTo(senderMemberId);
+        assertThat(response.senderName()).isEqualTo("tester");
+        assertThat(response.content()).isEqualTo("hello");
+        verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("작성자가 비활성 멤버이면 채널 메시지를 저장하지 않는다")
+    void createChannelMessageWithInactiveSender() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, false, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
+
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("작성자가 채널의 워크스페이스 멤버가 아니면 채널 메시지를 저장하지 않는다")
+    void createChannelMessageWithDifferentWorkspaceSender() {
+        Long channelId = 1L;
+        Long senderMemberId = 10L;
+        Channel channel = channel(channelId, workspace(2L));
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace(3L), true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
+
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
 
     @Test
     @DisplayName("채널 멤버이면 최신 메시지를 limit만큼 조회하고 생성 순서로 반환한다")
@@ -226,6 +299,13 @@ class ChatMessageServiceTest {
         WorkspaceMember member = newInstance(WorkspaceMember.class);
         ReflectionTestUtils.setField(member, "id", id);
         ReflectionTestUtils.setField(member, "user", user);
+        return member;
+    }
+
+    private static WorkspaceMember workspaceMember(Long id, Workspace workspace, boolean isActive, User user) {
+        WorkspaceMember member = workspaceMember(id, user);
+        ReflectionTestUtils.setField(member, "workspace", workspace);
+        ReflectionTestUtils.setField(member, "isActive", isActive);
         return member;
     }
 

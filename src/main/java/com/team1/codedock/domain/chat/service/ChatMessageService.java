@@ -34,6 +34,7 @@ public class ChatMessageService {
         validateContent(request.content());
         Channel channel = findChannel(channelId);
         WorkspaceMember sender = findWorkspaceMember(request.senderMemberId());
+        validateSenderCanWriteChannelMessage(channel, sender);
 
         com.team1.codedock.domain.chat.entity.Thread thread =
                 com.team1.codedock.domain.chat.entity.Thread.createChannelMessage(
@@ -114,6 +115,18 @@ public class ChatMessageService {
         );
 
         if (!isWorkspaceMember) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private void validateSenderCanWriteChannelMessage(Channel channel, WorkspaceMember sender) {
+        if (!sender.isActive()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        Long channelWorkspaceId = channel.getWorkspace().getId();
+        Long senderWorkspaceId = sender.getWorkspace().getId();
+        if (!channelWorkspaceId.equals(senderWorkspaceId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
     }
