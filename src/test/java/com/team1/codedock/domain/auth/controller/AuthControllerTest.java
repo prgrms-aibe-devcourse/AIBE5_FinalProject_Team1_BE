@@ -31,6 +31,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AuthControllerTest {
@@ -180,6 +181,8 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(new LogoutRequest("some-token"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+
+        verify(authService).logout("some-token");
     }
 
     // ── GET /api/v1/auth/me ───────────────────────────────────────────────────

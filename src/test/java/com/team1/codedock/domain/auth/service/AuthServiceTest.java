@@ -102,6 +102,7 @@ class AuthServiceTest {
         assertThat(response.getAccessToken()).isEqualTo("access-token");
         assertThat(response.getRefreshToken()).isEqualTo("refresh-token");
         assertThat(response.getUser().getEmail()).isEqualTo("test@test.com");
+        verify(refreshTokenRepository).deleteByUser(user);
     }
 
     @Test
