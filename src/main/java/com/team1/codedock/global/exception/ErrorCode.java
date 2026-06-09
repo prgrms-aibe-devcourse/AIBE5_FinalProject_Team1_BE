@@ -35,6 +35,9 @@ public enum ErrorCode {
     // Document
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "D001", "문서를 찾을 수 없습니다."),
 
+    // ApiSpec
+    API_SPEC_NOT_FOUND(HttpStatus.NOT_FOUND, "AS001", "API 명세를 찾을 수 없습니다."),
+
     // GitHub
     GITHUB_REPO_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "GitHub 레포지토리를 찾을 수 없습니다."),
     GITHUB_WEBHOOK_INVALID(HttpStatus.BAD_REQUEST, "G002", "유효하지 않은 Webhook 요청입니다.");

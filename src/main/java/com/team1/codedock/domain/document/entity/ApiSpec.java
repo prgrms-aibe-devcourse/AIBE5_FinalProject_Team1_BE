@@ -101,4 +101,98 @@ public class ApiSpec extends BaseEntity {
     @Lob
     @Column
     private String note;
+
+    public static ApiSpec create(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String method,
+            String endpoint,
+            String groupName,
+            String entityName,
+            String summary,
+            String description,
+            String status,
+            WorkspaceMember assignee,
+            String pathParams,
+            String headers,
+            String queryParams,
+            String requestBody,
+            String responseBody,
+            Integer responseStatus,
+            String version,
+            String sourceType,
+            GithubIssue relatedIssue,
+            GithubPullRequest relatedPr,
+            String note
+    ) {
+        ApiSpec spec = new ApiSpec();
+        spec.workspace = workspace;
+        spec.createdBy = createdBy;
+        spec.title = title;
+        spec.method = method;
+        spec.endpoint = endpoint;
+        spec.groupName = groupName;
+        spec.entity = entityName;
+        spec.summary = summary;
+        spec.description = description;
+        spec.status = status != null ? status : "design";
+        spec.assignee = assignee;
+        spec.pathParams = pathParams;
+        spec.headers = headers;
+        spec.queryParams = queryParams;
+        spec.requestBody = requestBody;
+        spec.responseBody = responseBody;
+        spec.responseStatus = responseStatus;
+        spec.version = version;
+        spec.sourceType = sourceType != null ? sourceType : "manual";
+        spec.relatedIssue = relatedIssue;
+        spec.relatedPr = relatedPr;
+        spec.note = note;
+        return spec;
+    }
+
+    public void update(
+            String title,
+            String method,
+            String endpoint,
+            String groupName,
+            String entityName,
+            String summary,
+            String description,
+            String status,
+            WorkspaceMember assignee,
+            String pathParams,
+            String headers,
+            String queryParams,
+            String requestBody,
+            String responseBody,
+            Integer responseStatus,
+            String version,
+            String sourceType,
+            GithubIssue relatedIssue,
+            GithubPullRequest relatedPr,
+            String note
+    ) {
+        if (title != null) this.title = title;
+        if (method != null) this.method = method;
+        if (endpoint != null) this.endpoint = endpoint;
+        if (groupName != null) this.groupName = groupName;
+        if (entityName != null) this.entity = entityName;
+        if (summary != null) this.summary = summary;
+        if (description != null) this.description = description;
+        if (status != null) this.status = status;
+        if (assignee != null) this.assignee = assignee;
+        if (pathParams != null) this.pathParams = pathParams;
+        if (headers != null) this.headers = headers;
+        if (queryParams != null) this.queryParams = queryParams;
+        if (requestBody != null) this.requestBody = requestBody;
+        if (responseBody != null) this.responseBody = responseBody;
+        if (responseStatus != null) this.responseStatus = responseStatus;
+        if (version != null) this.version = version;
+        if (sourceType != null) this.sourceType = sourceType;
+        if (relatedIssue != null) this.relatedIssue = relatedIssue;
+        if (relatedPr != null) this.relatedPr = relatedPr;
+        if (note != null) this.note = note;
+    }
 }
