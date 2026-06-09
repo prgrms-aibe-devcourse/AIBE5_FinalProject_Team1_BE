@@ -13,6 +13,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Reaction extends BaseCreatedEntity {
 
+    public static final String TARGET_TYPE_THREAD = "thread";
+    public static final String TARGET_TYPE_THREAD_REPLY = "thread_reply";
+
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_reactions")
     @SequenceGenerator(name = "seq_reactions", sequenceName = "seq_reactions", allocationSize = 1)
@@ -31,4 +34,18 @@ public class Reaction extends BaseCreatedEntity {
 
     @Column(nullable = false, length = 50)
     private String emoji;
+
+    public static Reaction create(
+            WorkspaceMember workspaceMember,
+            String targetType,
+            Long targetId,
+            String emoji
+    ) {
+        Reaction reaction = new Reaction();
+        reaction.workspaceMember = workspaceMember;
+        reaction.targetType = targetType;
+        reaction.targetId = targetId;
+        reaction.emoji = emoji;
+        return reaction;
+    }
 }
