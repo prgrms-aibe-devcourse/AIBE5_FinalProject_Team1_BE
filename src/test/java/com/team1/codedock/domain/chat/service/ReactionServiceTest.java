@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.chat.dto.ReactionSummaryResponse;
 import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
 import com.team1.codedock.domain.chat.entity.Reaction;
@@ -21,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -205,6 +207,33 @@ class ReactionServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
 
         verifyNoInteractions(workspaceMemberRepository, reactionRepository, entityManager);
+    }
+
+    @Test
+    @DisplayName("채널 기준으로 메시지와 답글 리액션 집계를 함께 조회한다")
+    void getReactionSummaries() {
+        Long channelId = 1L;
+        ReactionSummaryResponse threadSummary = new ReactionSummaryResponse(
+                Reaction.TARGET_TYPE_THREAD,
+                100L,
+                "like",
+                3L
+        );
+        ReactionSummaryResponse replySummary = new ReactionSummaryResponse(
+                Reaction.TARGET_TYPE_THREAD_REPLY,
+                200L,
+                "smile",
+                2L
+        );
+
+        when(reactionRepository.findThreadReactionSummariesByChannelId(channelId))
+                .thenReturn(List.of(threadSummary));
+        when(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId))
+                .thenReturn(List.of(replySummary));
+
+        List<ReactionSummaryResponse> summaries = reactionService.getReactionSummaries(channelId);
+
+        assertThat(summaries).containsExactly(threadSummary, replySummary);
     }
 
     private void stubThreadTarget(Long channelId, Long targetId) {
