@@ -29,7 +29,7 @@ public class AuthService {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
         if (userRepository.existsByUsername(request.getUsername())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
         }
         String hash = passwordEncoder.encode(request.getPassword());
         User user = userRepository.save(User.create(request.getEmail(), hash, request.getUsername()));
