@@ -30,6 +30,7 @@ public enum ErrorCode {
 
     // Channel
     CHANNEL_NOT_FOUND(HttpStatus.NOT_FOUND, "CH001", "채널을 찾을 수 없습니다."),
+    THREAD_NOT_FOUND(HttpStatus.NOT_FOUND, "CH002", "스레드를 찾을 수 없습니다."),
 
     // Document
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "D001", "문서를 찾을 수 없습니다."),
