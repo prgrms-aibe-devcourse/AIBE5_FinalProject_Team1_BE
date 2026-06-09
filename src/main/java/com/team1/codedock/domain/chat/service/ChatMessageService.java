@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.service;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
+import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -36,11 +37,24 @@ public class ChatMessageService {
         WorkspaceMember sender = findWorkspaceMember(request.senderMemberId());
         validateSenderCanWriteChannelMessage(channel, sender);
 
+        return saveChannelMessage(channel, sender, request.content());
+    }
+
+    @Transactional
+    public ChannelMessageResponse createChannelMessage(Long channelId, Long userId, ChannelMessageRestCreateRequest request) {
+        validateContent(request.content());
+        Channel channel = findChannel(channelId);
+        WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
+
+        return saveChannelMessage(channel, sender, request.content());
+    }
+
+    private ChannelMessageResponse saveChannelMessage(Channel channel, WorkspaceMember sender, String content) {
         com.team1.codedock.domain.chat.entity.Thread thread =
                 com.team1.codedock.domain.chat.entity.Thread.createChannelMessage(
                         channel,
                         sender,
-                        request.content()
+                        content
                 );
 
         com.team1.codedock.domain.chat.entity.Thread savedThread = threadRepository.save(thread);
@@ -104,19 +118,17 @@ public class ChatMessageService {
     }
 
     private void validateWorkspaceMember(Channel channel, Long userId) {
+        findActiveWorkspaceMember(channel, userId);
+    }
+
+    private WorkspaceMember findActiveWorkspaceMember(Channel channel, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
         Long workspaceId = channel.getWorkspace().getId();
-        boolean isWorkspaceMember = workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
-                workspaceId,
-                userId
-        );
-
-        if (!isWorkspaceMember) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
+        return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 
     private void validateSenderCanWriteChannelMessage(Channel channel, WorkspaceMember sender) {

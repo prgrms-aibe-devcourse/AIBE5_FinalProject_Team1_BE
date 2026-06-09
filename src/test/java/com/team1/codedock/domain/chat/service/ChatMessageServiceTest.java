@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.service;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
+import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.user.entity.User;
@@ -25,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.lang.reflect.Constructor;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -120,6 +122,76 @@ class ChatMessageServiceTest {
     }
 
     @Test
+    @DisplayName("REST 저장 요청 사용자가 활성 워크스페이스 멤버이면 채널 메시지를 저장한다")
+    void createChannelMessageByRest() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.channelId()).isEqualTo(channelId);
+        assertThat(response.senderMemberId()).isEqualTo(senderMemberId);
+        assertThat(response.senderName()).isEqualTo("tester");
+        assertThat(response.content()).isEqualTo("hello");
+        verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("REST 저장 요청 사용자 식별값이 없으면 UNAUTHORIZED 예외가 발생한다")
+    void createChannelMessageByRestWithoutUserId() {
+        Long channelId = 1L;
+        Channel channel = channel(channelId, workspace(2L));
+        ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("REST 저장 요청 사용자가 채널 워크스페이스 멤버가 아니면 FORBIDDEN 예외가 발생한다")
+    void createChannelMessageByRestWithForbiddenUser() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+        ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, userId, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
     @DisplayName("채널 멤버이면 최신 메시지를 limit만큼 조회하고 생성 순서로 반환한다")
     void getChannelMessages() {
         Long channelId = 1L;
@@ -131,8 +203,8 @@ class ChatMessageServiceTest {
         Thread newer = thread(101L, channel, sender, "두 번째 메시지", LocalDateTime.of(2026, 6, 8, 10, 1));
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
-                .thenReturn(true);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
         when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
                 org.mockito.ArgumentMatchers.eq(channelId),
                 org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
@@ -170,8 +242,8 @@ class ChatMessageServiceTest {
         Channel channel = channel(channelId, workspace(workspaceId));
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
-                .thenReturn(true);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember(10L, user("tester", "tester"))));
         when(threadRepository.findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(
                 org.mockito.ArgumentMatchers.eq(channelId),
                 org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
@@ -205,7 +277,7 @@ class ChatMessageServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.CHANNEL_NOT_FOUND);
 
-        verify(workspaceMemberRepository, never()).existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.anyLong()
         );
@@ -225,8 +297,8 @@ class ChatMessageServiceTest {
         Channel channel = channel(channelId, workspace(workspaceId));
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
-                .thenReturn(false);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> chatMessageService.getChannelMessages(channelId, userId, null, 30))
                 .isInstanceOf(BusinessException.class)
@@ -254,7 +326,7 @@ class ChatMessageServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
-        verify(workspaceMemberRepository, never()).existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.anyLong()
         );
