@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 public class Thread extends BaseEntity {
 
     public static final String TYPE_USER_MESSAGE = "user_message";
+    public static final String DELETED_MESSAGE_CONTENT = "삭제된 메시지입니다";
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_threads")
@@ -50,6 +51,14 @@ public class Thread extends BaseEntity {
     @Lob
     @Column
     private String content;
+
+    public void updateContent(String content) {
+        this.content = content;
+    }
+
+    public void markAsDeleted() {
+        this.content = DELETED_MESSAGE_CONTENT;
+    }
 
     public static Thread createChannelMessage(Channel channel, WorkspaceMember createdBy, String content) {
         Thread thread = new Thread();

@@ -4,6 +4,8 @@ import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
+import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
+import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -49,15 +51,41 @@ public class ChatMessageService {
         return saveChannelMessage(channel, sender, request.content());
     }
 
+    @Transactional
+    public ChannelMessageResponse updateChannelMessage(
+            Long channelId,
+            Long messageId,
+            Long userId,
+            ChannelMessageUpdateRequest request
+    ) {
+        validateContent(request.content());
+        Channel channel = findChannel(channelId);
+        WorkspaceMember member = findActiveWorkspaceMember(channel, userId);
+        Thread message = findEditableChannelMessage(channel, messageId, member);
+
+        message.updateContent(request.content());
+        return ChannelMessageResponse.from(message);
+    }
+
+    @Transactional
+    public ChannelMessageResponse deleteChannelMessage(Long channelId, Long messageId, Long userId) {
+        Channel channel = findChannel(channelId);
+        WorkspaceMember member = findActiveWorkspaceMember(channel, userId);
+        Thread message = findEditableChannelMessage(channel, messageId, member);
+
+        message.markAsDeleted();
+        return ChannelMessageResponse.from(message);
+    }
+
     private ChannelMessageResponse saveChannelMessage(Channel channel, WorkspaceMember sender, String content) {
-        com.team1.codedock.domain.chat.entity.Thread thread =
-                com.team1.codedock.domain.chat.entity.Thread.createChannelMessage(
+        Thread thread =
+                Thread.createChannelMessage(
                         channel,
                         sender,
                         content
                 );
 
-        com.team1.codedock.domain.chat.entity.Thread savedThread = threadRepository.save(thread);
+        Thread savedThread = threadRepository.save(thread);
         return ChannelMessageResponse.from(savedThread);
     }
 
@@ -67,12 +95,12 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         validateWorkspaceMember(channel, userId);
 
-        List<com.team1.codedock.domain.chat.entity.Thread> messages = findPagedChannelMessages(
+        List<Thread> messages = findPagedChannelMessages(
                         channelId,
                         cursor,
                         normalizedLimit
         );
-        List<com.team1.codedock.domain.chat.entity.Thread> orderedMessages = new ArrayList<>(messages);
+        List<Thread> orderedMessages = new ArrayList<>(messages);
         Collections.reverse(orderedMessages);
 
         return orderedMessages.stream()
@@ -93,13 +121,13 @@ public class ChatMessageService {
         return Math.min(limit, MAX_MESSAGE_LIMIT);
     }
 
-    private List<com.team1.codedock.domain.chat.entity.Thread> findPagedChannelMessages(
+    private List<Thread> findPagedChannelMessages(
             Long channelId,
             Long cursor,
             int limit
     ) {
         PageRequest pageRequest = PageRequest.of(0, limit);
-        String threadType = com.team1.codedock.domain.chat.entity.Thread.TYPE_USER_MESSAGE;
+        String threadType = Thread.TYPE_USER_MESSAGE;
 
         if (cursor == null) {
             return threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
@@ -139,6 +167,34 @@ public class ChatMessageService {
         Long channelWorkspaceId = channel.getWorkspace().getId();
         Long senderWorkspaceId = sender.getWorkspace().getId();
         if (!channelWorkspaceId.equals(senderWorkspaceId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private Thread findEditableChannelMessage(Channel channel, Long messageId, WorkspaceMember member) {
+        Thread message = threadRepository.findById(messageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Message not found."));
+
+        validateMessageBelongsToChannel(channel, message);
+        validateUserMessage(message);
+        validateMessageAuthor(message, member);
+        return message;
+    }
+
+    private void validateMessageBelongsToChannel(Channel channel, Thread message) {
+        if (!channel.getId().equals(message.getChannel().getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Message does not belong to the requested channel.");
+        }
+    }
+
+    private void validateUserMessage(Thread message) {
+        if (!Thread.TYPE_USER_MESSAGE.equals(message.getThreadType())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Only user messages can be updated or deleted.");
+        }
+    }
+
+    private void validateMessageAuthor(Thread message, WorkspaceMember member) {
+        if (message.getCreatedBy() == null || !member.getId().equals(message.getCreatedBy().getId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
     }
