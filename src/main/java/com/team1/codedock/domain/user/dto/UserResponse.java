@@ -4,6 +4,8 @@ import com.team1.codedock.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Builder
 public class UserResponse {
@@ -16,6 +18,10 @@ public class UserResponse {
     private String developerType;
     private String bio;
     private String avatarUrl;
+    private boolean githubConnected;
+    private String githubUsername;
+    private String githubEmail;
+    private LocalDateTime githubConnectedAt;
 
     public static UserResponse from(User user) {
         return UserResponse.builder()
@@ -27,6 +33,10 @@ public class UserResponse {
                 .developerType(user.getDeveloperType())
                 .bio(user.getBio())
                 .avatarUrl(user.getAvatarUrl())
+                .githubConnected(user.isGithubConnected())
+                .githubUsername(user.getGithubUsername())
+                .githubEmail(user.getGithubEmail())
+                .githubConnectedAt(user.getGithubConnectedAt())
                 .build();
     }
 }
