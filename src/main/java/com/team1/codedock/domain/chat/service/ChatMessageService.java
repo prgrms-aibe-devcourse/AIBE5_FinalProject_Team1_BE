@@ -1,26 +1,32 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
-import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class ChatMessageService {
 
+    private static final int DEFAULT_MESSAGE_LIMIT = 30;
+    private static final int MAX_MESSAGE_LIMIT = 100;
+
     private final ThreadRepository threadRepository;
-    private final ChannelRepository channelRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
 
     @Transactional
@@ -41,13 +47,20 @@ public class ChatMessageService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChannelMessageResponse> getChannelMessages(Long channelId) {
-        validateChannelExists(channelId);
+    public List<ChannelMessageResponse> getChannelMessages(Long channelId, Long userId, Long cursor, int limit) {
+        int normalizedLimit = normalizeLimit(limit);
+        Channel channel = findChannel(channelId);
+        validateWorkspaceMember(channel, userId);
 
-        return threadRepository.findAllByChannel_IdAndThreadTypeOrderByCreatedAtAscIdAsc(
+        List<com.team1.codedock.domain.chat.entity.Thread> messages = findPagedChannelMessages(
                         channelId,
-                        com.team1.codedock.domain.chat.entity.Thread.TYPE_USER_MESSAGE
-                ).stream()
+                        cursor,
+                        normalizedLimit
+        );
+        List<com.team1.codedock.domain.chat.entity.Thread> orderedMessages = new ArrayList<>(messages);
+        Collections.reverse(orderedMessages);
+
+        return orderedMessages.stream()
                 .map(ChannelMessageResponse::from)
                 .toList();
     }
@@ -58,9 +71,50 @@ public class ChatMessageService {
         }
     }
 
-    private void validateChannelExists(Long channelId) {
-        if (!channelRepository.existsById(channelId)) {
-            throw new BusinessException(ErrorCode.CHANNEL_NOT_FOUND);
+    private int normalizeLimit(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_MESSAGE_LIMIT;
+        }
+        return Math.min(limit, MAX_MESSAGE_LIMIT);
+    }
+
+    private List<com.team1.codedock.domain.chat.entity.Thread> findPagedChannelMessages(
+            Long channelId,
+            Long cursor,
+            int limit
+    ) {
+        PageRequest pageRequest = PageRequest.of(0, limit);
+        String threadType = com.team1.codedock.domain.chat.entity.Thread.TYPE_USER_MESSAGE;
+
+        if (cursor == null) {
+            return threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                    channelId,
+                    threadType,
+                    pageRequest
+            );
+        }
+
+        return threadRepository.findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(
+                channelId,
+                threadType,
+                cursor,
+                pageRequest
+        );
+    }
+
+    private void validateWorkspaceMember(Channel channel, Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+
+        Long workspaceId = channel.getWorkspace().getId();
+        boolean isWorkspaceMember = workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
+                workspaceId,
+                userId
+        );
+
+        if (!isWorkspaceMember) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
         }
     }
 

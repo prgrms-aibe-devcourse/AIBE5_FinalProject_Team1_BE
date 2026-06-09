@@ -1,21 +1,24 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
-import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
@@ -35,7 +38,7 @@ class ChatMessageServiceTest {
     private ThreadRepository threadRepository;
 
     @Mock
-    private ChannelRepository channelRepository;
+    private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
     private EntityManager entityManager;
@@ -44,21 +47,26 @@ class ChatMessageServiceTest {
     private ChatMessageService chatMessageService;
 
     @Test
-    @DisplayName("채널 메시지 목록을 생성 순서대로 조회한다")
+    @DisplayName("채널 멤버이면 최신 메시지를 limit만큼 조회하고 생성 순서로 반환한다")
     void getChannelMessages() {
         Long channelId = 1L;
-        Channel channel = channel(channelId);
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Channel channel = channel(channelId, workspace(workspaceId));
         WorkspaceMember sender = workspaceMember(10L, user("tester", "테스터"));
-        Thread first = thread(100L, channel, sender, "첫 번째 메시지", LocalDateTime.of(2026, 6, 8, 10, 0));
-        Thread second = thread(101L, channel, sender, "두 번째 메시지", LocalDateTime.of(2026, 6, 8, 10, 1));
+        Thread older = thread(100L, channel, sender, "첫 번째 메시지", LocalDateTime.of(2026, 6, 8, 10, 0));
+        Thread newer = thread(101L, channel, sender, "두 번째 메시지", LocalDateTime.of(2026, 6, 8, 10, 1));
 
-        when(channelRepository.existsById(channelId)).thenReturn(true);
-        when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByCreatedAtAscIdAsc(
-                channelId,
-                Thread.TYPE_USER_MESSAGE
-        )).thenReturn(List.of(first, second));
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(true);
+        when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).thenReturn(List.of(newer, older));
 
-        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId);
+        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId, userId, null, 30);
 
         assertThat(responses).hasSize(2);
         assertThat(responses.get(0).id()).isEqualTo(100L);
@@ -70,26 +78,117 @@ class ChatMessageServiceTest {
         assertThat(responses.get(1).id()).isEqualTo(101L);
         assertThat(responses.get(1).content()).isEqualTo("두 번째 메시지");
 
-        verify(threadRepository).findAllByChannel_IdAndThreadTypeOrderByCreatedAtAscIdAsc(
-                channelId,
-                Thread.TYPE_USER_MESSAGE
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(threadRepository).findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                pageableCaptor.capture()
         );
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(30);
+    }
+
+    @Test
+    @DisplayName("cursor가 있으면 cursor보다 이전 메시지를 조회한다")
+    void getChannelMessagesWithCursor() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long cursor = 200L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(true);
+        when(threadRepository.findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.eq(cursor),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).thenReturn(List.of());
+
+        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId, userId, cursor, 20);
+
+        assertThat(responses).isEmpty();
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(threadRepository).findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.eq(cursor),
+                pageableCaptor.capture()
+        );
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(20);
     }
 
     @Test
     @DisplayName("존재하지 않는 채널이면 CHANNEL_NOT_FOUND 예외가 발생한다")
     void getChannelMessagesWithMissingChannel() {
         Long channelId = 999L;
-        when(channelRepository.existsById(channelId)).thenReturn(false);
+        Long userId = 3L;
+        when(entityManager.find(Channel.class, channelId)).thenReturn(null);
 
-        assertThatThrownBy(() -> chatMessageService.getChannelMessages(channelId))
+        assertThatThrownBy(() -> chatMessageService.getChannelMessages(channelId, userId, null, 30))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.CHANNEL_NOT_FOUND);
 
-        verify(threadRepository, never()).findAllByChannel_IdAndThreadTypeOrderByCreatedAtAscIdAsc(
+        verify(workspaceMemberRepository, never()).existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
                 org.mockito.ArgumentMatchers.anyLong(),
-                org.mockito.ArgumentMatchers.anyString()
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(threadRepository, never()).findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        );
+    }
+
+    @Test
+    @DisplayName("워크스페이스 멤버가 아니면 FORBIDDEN 예외가 발생한다")
+    void getChannelMessagesWithForbiddenUser() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> chatMessageService.getChannelMessages(channelId, userId, null, 30))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadRepository, never()).findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        );
+    }
+
+    @Test
+    @DisplayName("사용자 식별값이 없으면 UNAUTHORIZED 예외가 발생한다")
+    void getChannelMessagesWithoutUserId() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+
+        assertThatThrownBy(() -> chatMessageService.getChannelMessages(channelId, null, null, 30))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(workspaceMemberRepository, never()).existsByWorkspace_IdAndUser_IdAndIsActiveTrue(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(threadRepository, never()).findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
         );
     }
 
@@ -110,10 +209,17 @@ class ChatMessageServiceTest {
         return thread;
     }
 
-    private static Channel channel(Long id) {
+    private static Channel channel(Long id, Workspace workspace) {
         Channel channel = newInstance(Channel.class);
         ReflectionTestUtils.setField(channel, "id", id);
+        ReflectionTestUtils.setField(channel, "workspace", workspace);
         return channel;
+    }
+
+    private static Workspace workspace(Long id) {
+        Workspace workspace = newInstance(Workspace.class);
+        ReflectionTestUtils.setField(workspace, "id", id);
+        return workspace;
     }
 
     private static WorkspaceMember workspaceMember(Long id, User user) {
