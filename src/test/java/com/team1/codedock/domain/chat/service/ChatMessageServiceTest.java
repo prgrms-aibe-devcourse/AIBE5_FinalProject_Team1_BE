@@ -4,6 +4,7 @@ import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
+import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.user.entity.User;
@@ -335,6 +336,188 @@ class ChatMessageServiceTest {
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.any(Pageable.class)
         );
+    }
+
+    @Test
+    @DisplayName("Message author can update channel message")
+    void updateChannelMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long memberId = 10L;
+        Long messageId = 100L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(memberId, workspace, true, user("tester", "tester"));
+        Thread message = thread(messageId, channel, member, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest("after");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(messageId)).thenReturn(Optional.of(message));
+
+        ChannelMessageResponse response = chatMessageService.updateChannelMessage(channelId, messageId, userId, request);
+
+        assertThat(response.id()).isEqualTo(messageId);
+        assertThat(response.content()).isEqualTo("after");
+        assertThat(message.getContent()).isEqualTo("after");
+    }
+
+    @Test
+    @DisplayName("Non-author cannot update channel message")
+    void updateChannelMessageWithDifferentAuthor() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember requester = workspaceMember(10L, workspace, true, user("requester", "requester"));
+        WorkspaceMember author = workspaceMember(20L, workspace, true, user("author", "author"));
+        Thread message = thread(100L, channel, author, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(requester));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatMessageService.updateChannelMessage(
+                channelId,
+                100L,
+                userId,
+                new ChannelMessageUpdateRequest("after")
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Cannot update message from another channel")
+    void updateChannelMessageWithDifferentChannel() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel requestedChannel = channel(channelId, workspace);
+        Channel actualChannel = channel(99L, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        Thread message = thread(100L, actualChannel, member, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(requestedChannel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatMessageService.updateChannelMessage(
+                channelId,
+                100L,
+                userId,
+                new ChannelMessageUpdateRequest("after")
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("Cannot update non-user message")
+    void updateChannelMessageWithNonUserMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        Thread message = thread(100L, channel, member, "system message", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(message, "threadType", "system");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatMessageService.updateChannelMessage(
+                channelId,
+                100L,
+                userId,
+                new ChannelMessageUpdateRequest("after")
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("Message author can soft delete channel message")
+    void deleteChannelMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long memberId = 10L;
+        Long messageId = 100L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(memberId, workspace, true, user("tester", "tester"));
+        Thread message = thread(messageId, channel, member, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(messageId)).thenReturn(Optional.of(message));
+
+        ChannelMessageResponse response = chatMessageService.deleteChannelMessage(channelId, messageId, userId);
+
+        assertThat(response.id()).isEqualTo(messageId);
+        assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(message.getContent()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        verify(threadRepository, never()).delete(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("Non-author cannot delete channel message")
+    void deleteChannelMessageWithDifferentAuthor() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember requester = workspaceMember(10L, workspace, true, user("requester", "requester"));
+        WorkspaceMember author = workspaceMember(20L, workspace, true, user("author", "author"));
+        Thread message = thread(100L, channel, author, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(requester));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatMessageService.deleteChannelMessage(channelId, 100L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Cannot delete non-user message")
+    void deleteChannelMessageWithNonUserMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        Thread message = thread(100L, channel, member, "system message", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(message, "threadType", "system");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> chatMessageService.deleteChannelMessage(channelId, 100L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
     }
 
     private static Thread thread(

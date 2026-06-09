@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
+import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -116,5 +119,77 @@ class ChatMessageControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Channel message update API passes request body and X-User-Id to service")
+    void updateChannelMessage() throws Exception {
+        Long channelId = 1L;
+        Long messageId = 101L;
+        Long userId = 10L;
+        ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest("updated");
+        ChannelMessageResponse response = new ChannelMessageResponse(
+                messageId,
+                channelId,
+                20L,
+                "tester",
+                "updated",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(chatMessageService.updateChannelMessage(eq(channelId), eq(messageId), eq(userId), eq(request)))
+                .thenReturn(response);
+
+        mockMvc.perform(patch("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
+                        .header("X-User-Id", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(messageId))
+                .andExpect(jsonPath("$.data.content").value("updated"));
+
+        verify(chatMessageService).updateChannelMessage(channelId, messageId, userId, request);
+    }
+
+    @Test
+    @DisplayName("Channel message update API rejects blank content")
+    void updateChannelMessageWithInvalidContent() throws Exception {
+        ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest(" ");
+
+        mockMvc.perform(patch("/api/channels/{channelId}/messages/{messageId}", 1L, 101L)
+                        .header("X-User-Id", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Channel message delete API passes X-User-Id to service")
+    void deleteChannelMessage() throws Exception {
+        Long channelId = 1L;
+        Long messageId = 101L;
+        Long userId = 10L;
+        ChannelMessageResponse response = new ChannelMessageResponse(
+                messageId,
+                channelId,
+                20L,
+                "tester",
+                "삭제된 메시지입니다",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(chatMessageService.deleteChannelMessage(channelId, messageId, userId)).thenReturn(response);
+
+        mockMvc.perform(delete("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
+                        .header("X-User-Id", userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(messageId))
+                .andExpect(jsonPath("$.data.content").value("삭제된 메시지입니다"));
+
+        verify(chatMessageService).deleteChannelMessage(channelId, messageId, userId);
     }
 }
