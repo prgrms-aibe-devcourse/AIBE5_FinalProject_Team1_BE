@@ -179,7 +179,7 @@ class DocumentServiceTest {
         WorkspaceMember member = mock(WorkspaceMember.class);
         Document doc = Document.create(workspace, member, "제목", "내용", "manual", "workspace", null);
 
-        when(documentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(doc));
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 1L)).thenReturn(Optional.of(doc));
 
         DocumentResponse response = documentService.getDocument(1L, 1L);
 
@@ -189,9 +189,19 @@ class DocumentServiceTest {
     @Test
     @DisplayName("존재하지 않는 문서 조회 시 예외가 발생한다")
     void getDocument_없으면_예외() {
-        when(documentRepository.findByIdAndDeletedAtIsNull(99L)).thenReturn(Optional.empty());
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(99L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> documentService.getDocument(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("다른 워크스페이스의 문서를 조회하면 예외가 발생한다")
+    void getDocument_다른_워크스페이스면_예외() {
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.getDocument(999L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
     }
@@ -205,7 +215,7 @@ class DocumentServiceTest {
         WorkspaceMember member = mock(WorkspaceMember.class);
         Document doc = Document.create(workspace, member, "원래 제목", "원래 내용", "manual", "workspace", null);
 
-        when(documentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(doc));
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 1L)).thenReturn(Optional.of(doc));
 
         DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
         DocumentResponse response = documentService.updateDocument(1L, 1L, request);
@@ -218,11 +228,23 @@ class DocumentServiceTest {
     @Test
     @DisplayName("존재하지 않는 문서 수정 시 예외가 발생한다")
     void updateDocument_없으면_예외() {
-        when(documentRepository.findByIdAndDeletedAtIsNull(99L)).thenReturn(Optional.empty());
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(99L, 1L)).thenReturn(Optional.empty());
 
         DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
 
         assertThatThrownBy(() -> documentService.updateDocument(1L, 99L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("다른 워크스페이스의 문서를 수정하면 예외가 발생한다")
+    void updateDocument_다른_워크스페이스면_예외() {
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 999L)).thenReturn(Optional.empty());
+
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+
+        assertThatThrownBy(() -> documentService.updateDocument(999L, 1L, request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
     }
@@ -236,7 +258,7 @@ class DocumentServiceTest {
         WorkspaceMember member = mock(WorkspaceMember.class);
         Document doc = Document.create(workspace, member, "제목", "내용", "manual", "workspace", null);
 
-        when(documentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(doc));
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 1L)).thenReturn(Optional.of(doc));
 
         documentService.deleteDocument(1L, 1L);
 
@@ -246,9 +268,19 @@ class DocumentServiceTest {
     @Test
     @DisplayName("존재하지 않는 문서 삭제 시 예외가 발생한다")
     void deleteDocument_없으면_예외() {
-        when(documentRepository.findByIdAndDeletedAtIsNull(99L)).thenReturn(Optional.empty());
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(99L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> documentService.deleteDocument(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("다른 워크스페이스의 문서를 삭제하면 예외가 발생한다")
+    void deleteDocument_다른_워크스페이스면_예외() {
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.deleteDocument(999L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.DOCUMENT_NOT_FOUND.getMessage());
     }

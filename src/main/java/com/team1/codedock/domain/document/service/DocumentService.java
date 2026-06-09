@@ -66,14 +66,14 @@ public class DocumentService {
     }
 
     public DocumentResponse getDocument(Long workspaceId, Long documentId) {
-        Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
+        Document document = documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
         return DocumentResponse.from(document);
     }
 
     @Transactional
     public DocumentResponse updateDocument(Long workspaceId, Long documentId, DocumentUpdateRequest request) {
-        Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
+        Document document = documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         document.update(request.title(), request.content(), request.visibility());
@@ -82,7 +82,7 @@ public class DocumentService {
 
     @Transactional
     public void deleteDocument(Long workspaceId, Long documentId) {
-        Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
+        Document document = documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
 
         document.softDelete();

@@ -12,5 +12,5 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     List<Document> findAllByWorkspace_IdAndCategoryAndDeletedAtIsNullOrderByCreatedAtDesc(Long workspaceId, String category);
 
-    Optional<Document> findByIdAndDeletedAtIsNull(Long id);
+    Optional<Document> findByIdAndWorkspace_IdAndDeletedAtIsNull(Long id, Long workspaceId);
 }
