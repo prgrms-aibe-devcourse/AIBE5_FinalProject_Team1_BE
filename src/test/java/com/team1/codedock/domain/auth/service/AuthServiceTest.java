@@ -152,6 +152,7 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("new-access-token");
         assertThat(response.refreshToken()).isEqualTo("new-refresh-token");
         assertThat(saved.isRevoked()).isTrue();
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
     @Test
