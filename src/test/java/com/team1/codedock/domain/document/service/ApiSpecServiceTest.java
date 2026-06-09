@@ -193,6 +193,54 @@ class ApiSpecServiceTest {
     }
 
     @Test
+    @DisplayName("다른 워크스페이스의 PR을 연결하면 예외가 발생한다")
+    void createApiSpec_다른_워크스페이스_PR_예외() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+
+        ApiSpecCreateRequest request = new ApiSpecCreateRequest(
+                1L, "회원 조회", "GET", "/api/users/{id}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, null, 10L, null
+        );
+
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> apiSpecService.createApiSpec(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_PR_NOT_FOUND.getMessage());
+
+        verify(apiSpecRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("다른 워크스페이스의 Issue를 연결하면 예외가 발생한다")
+    void createApiSpec_다른_워크스페이스_Issue_예외() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+
+        ApiSpecCreateRequest request = new ApiSpecCreateRequest(
+                1L, "회원 조회", "GET", "/api/users/{id}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, 20L, null, null
+        );
+
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubIssueRepository.findByIdAndRepository_Workspace_Id(20L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> apiSpecService.createApiSpec(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_ISSUE_NOT_FOUND.getMessage());
+
+        verify(apiSpecRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("assigneeId가 존재하지 않는 멤버이면 예외가 발생한다")
     void createApiSpec_assigneeId_없는_멤버_예외() {
         Workspace workspace = mock(Workspace.class);
@@ -419,6 +467,44 @@ class ApiSpecServiceTest {
         apiSpecService.updateApiSpec(1L, 1L, request);
 
         verify(githubIssueRepository).findByIdAndRepository_Workspace_Id(20L, 1L);
+    }
+
+    @Test
+    @DisplayName("수정 시 다른 워크스페이스의 PR을 연결하면 예외가 발생한다")
+    void updateApiSpec_다른_워크스페이스_PR_예외() {
+        ApiSpec spec = sampleSpec();
+        when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L)).thenReturn(Optional.empty());
+
+        ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
+                "수정된 제목", "POST", "/api/users",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, null, 10L, null
+        );
+
+        assertThatThrownBy(() -> apiSpecService.updateApiSpec(1L, 1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_PR_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("수정 시 다른 워크스페이스의 Issue를 연결하면 예외가 발생한다")
+    void updateApiSpec_다른_워크스페이스_Issue_예외() {
+        ApiSpec spec = sampleSpec();
+        when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+        when(githubIssueRepository.findByIdAndRepository_Workspace_Id(20L, 1L)).thenReturn(Optional.empty());
+
+        ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
+                "수정된 제목", "POST", "/api/users",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, 20L, null, null
+        );
+
+        assertThatThrownBy(() -> apiSpecService.updateApiSpec(1L, 1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_ISSUE_NOT_FOUND.getMessage());
     }
 
     @Test

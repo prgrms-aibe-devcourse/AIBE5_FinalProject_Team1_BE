@@ -106,6 +106,24 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("다른 워크스페이스의 PR을 연결하면 예외가 발생한다")
+    void createDocument_다른_워크스페이스_PR_예외() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "pr-summary", "workspace", 10L);
+
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.createDocument(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_PR_NOT_FOUND.getMessage());
+
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("존재하지 않는 멤버로 문서 생성 시 예외가 발생한다")
     void createDocument_멤버_없으면_예외() {
         Workspace workspace = mock(Workspace.class);
