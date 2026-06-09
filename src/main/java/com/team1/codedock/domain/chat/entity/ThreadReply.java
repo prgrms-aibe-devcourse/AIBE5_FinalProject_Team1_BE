@@ -29,4 +29,12 @@ public class ThreadReply extends BaseEntity {
     @Lob
     @Column(nullable = false)
     private String content;
+
+    public static ThreadReply create(Thread thread, WorkspaceMember workspaceMember, String content) {
+        ThreadReply reply = new ThreadReply();
+        reply.thread = thread;
+        reply.workspaceMember = workspaceMember;
+        reply.content = content;
+        return reply;
+    }
 }

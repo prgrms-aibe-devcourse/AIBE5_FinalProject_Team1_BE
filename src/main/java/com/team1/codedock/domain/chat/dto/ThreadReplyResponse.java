@@ -1,0 +1,41 @@
+package com.team1.codedock.domain.chat.dto;
+
+import com.team1.codedock.domain.chat.entity.ThreadReply;
+import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+
+import java.time.LocalDateTime;
+
+public record ThreadReplyResponse(
+        Long id,
+        Long threadId,
+        Long senderMemberId,
+        String senderName,
+        String content,
+        LocalDateTime createdAt
+) {
+
+    public static ThreadReplyResponse from(ThreadReply reply) {
+        WorkspaceMember sender = reply.getWorkspaceMember();
+        User user = sender.getUser();
+
+        return new ThreadReplyResponse(
+                reply.getId(),
+                reply.getThread().getId(),
+                sender.getId(),
+                resolveSenderName(user),
+                reply.getContent(),
+                reply.getCreatedAt()
+        );
+    }
+
+    private static String resolveSenderName(User user) {
+        if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
+            return user.getDisplayName();
+        }
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            return user.getNickname();
+        }
+        return user.getUsername();
+    }
+}
