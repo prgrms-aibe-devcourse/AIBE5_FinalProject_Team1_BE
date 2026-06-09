@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
@@ -106,6 +107,11 @@ class UserServiceTest {
 
         assertThat(result).containsExactlyInAnyOrder("Java", "Spring");
         assertThat(result).hasSize(2);
+
+        ArgumentCaptor<List<UserSkill>> captor = ArgumentCaptor.forClass(List.class);
+        verify(userSkillRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSize(2);
+        verify(userSkillRepository).deleteAllByUser(user);
     }
 
     // ── getSkills ─────────────────────────────────────────────────────────────
