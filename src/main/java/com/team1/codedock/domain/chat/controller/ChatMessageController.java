@@ -3,10 +3,13 @@ package com.team1.codedock.domain.chat.controller;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
+import com.team1.codedock.domain.chat.dto.ChatEventResponse;
+import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,6 +29,7 @@ import java.util.List;
 public class ChatMessageController {
 
     private final ChatMessageService chatMessageService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     public ApiResponse<List<ChannelMessageResponse>> getChannelMessages(
@@ -53,7 +57,9 @@ public class ChatMessageController {
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @Valid @RequestBody ChannelMessageUpdateRequest request
     ) {
-        return ApiResponse.ok(chatMessageService.updateChannelMessage(channelId, messageId, userId, request));
+        ChannelMessageResponse response = chatMessageService.updateChannelMessage(channelId, messageId, userId, request);
+        broadcastChannelEvent(channelId, ChatEventType.MESSAGE_UPDATED, response);
+        return ApiResponse.ok(response);
     }
 
     @DeleteMapping("/{messageId}")
@@ -62,6 +68,15 @@ public class ChatMessageController {
             @PathVariable Long messageId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId
     ) {
-        return ApiResponse.ok(chatMessageService.deleteChannelMessage(channelId, messageId, userId));
+        ChannelMessageResponse response = chatMessageService.deleteChannelMessage(channelId, messageId, userId);
+        broadcastChannelEvent(channelId, ChatEventType.MESSAGE_DELETED, response);
+        return ApiResponse.ok(response);
+    }
+
+    private void broadcastChannelEvent(Long channelId, ChatEventType eventType, ChannelMessageResponse response) {
+        messagingTemplate.convertAndSend(
+                "/topic/channels/" + channelId + "/events",
+                ChatEventResponse.of(eventType, response)
+        );
     }
 }

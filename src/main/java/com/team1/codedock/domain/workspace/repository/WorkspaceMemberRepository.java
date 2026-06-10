@@ -30,4 +30,6 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     Optional<WorkspaceMember> findByIdAndWorkspace_Id(Long id, Long workspaceId);
 
     int countByWorkspaceAndIsActiveTrue(Workspace workspace);
+
+    void deleteAllByWorkspace(Workspace workspace);
 }

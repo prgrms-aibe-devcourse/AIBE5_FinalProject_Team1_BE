@@ -4,7 +4,11 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
+import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
+import com.team1.codedock.domain.chat.dto.ThreadReplyWebSocketCreateRequest;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
+import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +21,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,13 +32,16 @@ class ChatWebSocketControllerTest {
     private ChatMessageService chatMessageService;
 
     @Mock
+    private ThreadReplyService threadReplyService;
+
+    @Mock
     private SimpMessagingTemplate messagingTemplate;
 
     @InjectMocks
     private ChatWebSocketController chatWebSocketController;
 
     @Test
-    @DisplayName("채널 메시지를 수신하면 메시지를 저장하고 MESSAGE_CREATED 이벤트를 브로드캐스트한다")
+    @DisplayName("Channel message WebSocket send broadcasts MESSAGE_CREATED event")
     void createChannelMessage() {
         Long channelId = 1L;
         ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(10L, "hello");
@@ -51,17 +59,53 @@ class ChatWebSocketControllerTest {
         chatWebSocketController.createChannelMessage(channelId, request);
 
         verify(chatMessageService).createChannelMessage(channelId, request);
-
-        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(messagingTemplate).convertAndSend(
-                org.mockito.ArgumentMatchers.eq("/topic/channels/" + channelId + "/events"),
-                payloadCaptor.capture()
+        assertBroadcastEvent(
+                "/topic/channels/" + channelId + "/events",
+                ChatEventType.MESSAGE_CREATED,
+                response
         );
+    }
+
+    @Test
+    @DisplayName("Thread reply WebSocket send broadcasts THREAD_REPLY_CREATED event")
+    void createThreadReply() {
+        Long threadId = 1L;
+        Long userId = 10L;
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest(userId, "reply");
+        ThreadReplyCreateRequest serviceRequest = new ThreadReplyCreateRequest("reply");
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                100L,
+                threadId,
+                20L,
+                "tester",
+                "reply",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(threadReplyService.createReply(eq(threadId), eq(userId), eq(serviceRequest))).thenReturn(response);
+
+        chatWebSocketController.createThreadReply(threadId, request);
+
+        verify(threadReplyService).createReply(threadId, userId, serviceRequest);
+        assertBroadcastEvent(
+                "/topic/threads/" + threadId + "/events",
+                ChatEventType.THREAD_REPLY_CREATED,
+                response
+        );
+    }
+
+    private void assertBroadcastEvent(
+            String destination,
+            ChatEventType expectedType,
+            Object expectedPayload
+    ) {
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(eq(destination), payloadCaptor.capture());
 
         assertThat(payloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
 
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
-        assertThat(event.type()).isEqualTo(ChatEventType.MESSAGE_CREATED);
-        assertThat(event.payload()).isEqualTo(response);
+        assertThat(event.type()).isEqualTo(expectedType);
+        assertThat(event.payload()).isEqualTo(expectedPayload);
     }
 }

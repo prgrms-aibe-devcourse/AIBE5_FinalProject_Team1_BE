@@ -11,6 +11,8 @@ import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,9 @@ public class WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final InvitationRepository invitationRepository;
+
+    @PersistenceContext
+    private EntityManager em;
 
     @Value("${app.base-url}")
     private String baseUrl;
@@ -133,6 +138,48 @@ public class WorkspaceService {
     public void removeMember(Long workspaceId, Long memberId, Long currentUserId) {
         WorkspaceMember target = validateAndGetTarget(workspaceId, memberId, currentUserId);
         target.deactivate("removed_by_admin");
+    }
+
+    public void deleteWorkspace(Long workspaceId, Long currentUserId) {
+        WorkspaceMember membership = getMembership(workspaceId, currentUserId);
+        if (!membership.getAuthority().equals("owner")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        // PR 하위 (PR → GithubRepository/Channel 참조)
+        em.createQuery("DELETE FROM PullRequestReviewComment c WHERE c.pullRequest.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM PullRequestReviewRequest r WHERE r.pullRequest.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM PullRequestReview r WHERE r.pullRequest.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM PullRequestChecklistItem i WHERE i.pullRequest.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM GithubPullRequest p WHERE p.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+
+        // Issue 하위
+        em.createQuery("DELETE FROM IssueAssignee a WHERE a.githubIssue.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM GithubIssue i WHERE i.githubRepository.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+
+        // 채널 하위
+        em.createQuery("DELETE FROM Bookmark b WHERE b.workspaceMember.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM ChannelReadStatus s WHERE s.channel.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM ThreadReply r WHERE r.thread.channel.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Mention m WHERE m.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Reaction r WHERE r.workspaceMember.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Thread t WHERE t.channel.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+
+        // 워크스페이스 직접 참조 테이블
+        em.createQuery("DELETE FROM ActivityLog a WHERE a.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Channel c WHERE c.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM GithubRepository g WHERE g.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM ErdTable t WHERE t.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM ErdDocument d WHERE d.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Document d WHERE d.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM ApiSpec a WHERE a.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+
+        // WorkspaceMember 하위
+        em.createQuery("DELETE FROM WorkspaceMemberPreferences p WHERE p.workspaceMember.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM Invitation i WHERE i.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+        em.createQuery("DELETE FROM WorkspaceMember m WHERE m.workspace.id = :wid").setParameter("wid", workspaceId).executeUpdate();
+
+        workspaceRepository.deleteById(workspaceId);
     }
 
     private WorkspaceMember getMembership(Long workspaceId, Long currentUserId) {
