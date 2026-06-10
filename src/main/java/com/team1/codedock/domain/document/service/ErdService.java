@@ -9,6 +9,7 @@ import com.team1.codedock.domain.document.repository.ErdDocumentRepository;
 import com.team1.codedock.domain.document.repository.ErdTableRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
 import com.team1.codedock.domain.github.service.GithubApiClient;
+import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -21,7 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -47,8 +47,7 @@ public class ErdService {
                 .findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
-        com.team1.codedock.domain.github.entity.GithubRepository githubRepo =
-                githubRepositoryRepository.findFirstByWorkspace_Id(workspaceId)
+        GithubRepository githubRepo = githubRepositoryRepository.findFirstByWorkspace_Id(workspaceId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
         List<String> entitySources = githubApiClient.fetchEntitySources(
