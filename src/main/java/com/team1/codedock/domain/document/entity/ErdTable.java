@@ -38,4 +38,20 @@ public class ErdTable extends BaseEntity {
     @Lob
     @Column
     private String description;
+
+    public static ErdTable create(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String tableName,
+            String schemaDefinition,
+            String description
+    ) {
+        ErdTable table = new ErdTable();
+        table.workspace = workspace;
+        table.createdBy = createdBy;
+        table.tableName = tableName;
+        table.schemaDefinition = schemaDefinition;
+        table.description = description;
+        return table;
+    }
 }

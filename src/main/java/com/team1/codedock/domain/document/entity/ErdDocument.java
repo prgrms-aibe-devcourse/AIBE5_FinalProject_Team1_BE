@@ -42,4 +42,26 @@ public class ErdDocument extends BaseEntity {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    public static ErdDocument create(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String description,
+            String mermaidCode
+    ) {
+        ErdDocument doc = new ErdDocument();
+        doc.workspace = workspace;
+        doc.createdBy = createdBy;
+        doc.title = title;
+        doc.description = description;
+        doc.mermaidCode = mermaidCode;
+        return doc;
+    }
+
+    public void update(String title, String description, String mermaidCode) {
+        if (title != null) this.title = title;
+        if (description != null) this.description = description;
+        if (mermaidCode != null) this.mermaidCode = mermaidCode;
+    }
 }
