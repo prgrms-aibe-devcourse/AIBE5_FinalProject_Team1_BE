@@ -8,6 +8,8 @@ import java.util.List;
 
 public interface ThreadRepository extends JpaRepository<Thread, Long> {
 
+    boolean existsByChannel_Id(Long channelId);
+
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
             Long channelId,
             String threadType,
