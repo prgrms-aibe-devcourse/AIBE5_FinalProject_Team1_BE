@@ -36,7 +36,7 @@ public class WorkspaceService {
     public WorkspaceCreateResponse createWorkspace(WorkspaceCreateRequest req, Long currentUserId) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        if (workspaceRepository.existsBySlug(req.getSlug())) {
+        if (workspaceRepository.countBySlug(req.getSlug()) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
         Workspace workspace = workspaceRepository.save(
@@ -116,7 +116,7 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         Workspace workspace = invitation.getWorkspace();
-        if (workspaceMemberRepository.existsByWorkspaceAndUser(workspace, user)) {
+        if (workspaceMemberRepository.countByWorkspaceAndUser(workspace, user) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
         workspaceMemberRepository.save(

@@ -14,7 +14,8 @@ class UserTest {
 
         assertThat(user.getEmail()).isEqualTo("test@test.com");
         assertThat(user.getPasswordHash()).isEqualTo("hashed-password");
-        assertThat(user.getUsername()).isEqualTo("testuser");
+        assertThat(user.getUsername()).isEqualTo("test@test.com");
+        assertThat(user.getDisplayName()).isEqualTo("testuser");
         assertThat(user.isActive()).isTrue();
     }
 

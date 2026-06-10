@@ -4,6 +4,8 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +18,12 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     List<WorkspaceMember> findAllByUser(User user);
 
-    boolean existsByWorkspaceAndUser(Workspace workspace, User user);
+    // Oracle 11g는 FETCH FIRST 구문 미지원 → COUNT로 대체
+    @Query("SELECT COUNT(m) FROM WorkspaceMember m WHERE m.workspace = :workspace AND m.user = :user")
+    long countByWorkspaceAndUser(@Param("workspace") Workspace workspace, @Param("user") User user);
 
-    boolean existsByWorkspace_IdAndUser_IdAndIsActiveTrue(Long workspaceId, Long userId);
+    @Query("SELECT COUNT(m) FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId AND m.user.id = :userId AND m.isActive = true")
+    long countByWorkspace_IdAndUser_IdAndIsActiveTrue(@Param("workspaceId") Long workspaceId, @Param("userId") Long userId);
 
     Optional<WorkspaceMember> findByWorkspace_IdAndUser_IdAndIsActiveTrue(Long workspaceId, Long userId);
 

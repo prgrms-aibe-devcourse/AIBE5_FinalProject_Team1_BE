@@ -42,18 +42,16 @@ class AuthServiceTest {
     @Test
     @DisplayName("정상 회원가입: 저장된 유저 정보를 담은 SignupResponse를 반환한다")
     void signup_success() {
-        SignupRequest req = signupRequest("test@test.com", "testuser", "password1");
-        User savedUser = user(1L, "test@test.com", "testuser");
+        SignupRequest req = signupRequest("test@test.com", "테스트", "password1");
+        User savedUser = user(1L, "test@test.com", "테스트");
 
         when(userRepository.existsByEmail("test@test.com")).thenReturn(false);
-        when(userRepository.existsByUsername("testuser")).thenReturn(false);
         when(passwordEncoder.encode("password1")).thenReturn("hashed");
         when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
         SignupResponse response = authService.signup(req);
 
         assertThat(response.getEmail()).isEqualTo("test@test.com");
-        assertThat(response.getUsername()).isEqualTo("testuser");
         assertThat(response.getUserId()).isEqualTo(1L);
     }
 
@@ -67,19 +65,6 @@ class AuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
-    }
-
-    @Test
-    @DisplayName("중복 사용자명 회원가입: USERNAME_ALREADY_EXISTS 예외가 발생한다")
-    void signup_duplicateUsername() {
-        SignupRequest req = signupRequest("new@test.com", "taken", "password1");
-        when(userRepository.existsByEmail("new@test.com")).thenReturn(false);
-        when(userRepository.existsByUsername("taken")).thenReturn(true);
-
-        assertThatThrownBy(() -> authService.signup(req))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.USERNAME_ALREADY_EXISTS);
     }
 
     // ── login ─────────────────────────────────────────────────────────────────
@@ -242,7 +227,7 @@ class AuthServiceTest {
 
         assertThat(response.getId()).isEqualTo(1L);
         assertThat(response.getEmail()).isEqualTo("test@test.com");
-        assertThat(response.getUsername()).isEqualTo("testuser");
+        assertThat(response.getDisplayName()).isEqualTo("testuser");
     }
 
     @Test
@@ -258,10 +243,10 @@ class AuthServiceTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private static SignupRequest signupRequest(String email, String username, String password) {
+    private static SignupRequest signupRequest(String email, String displayName, String password) {
         SignupRequest req = new SignupRequest();
         req.setEmail(email);
-        req.setUsername(username);
+        req.setDisplayName(displayName);
         req.setPassword(password);
         return req;
     }
@@ -273,8 +258,8 @@ class AuthServiceTest {
         return req;
     }
 
-    private static User user(Long id, String email, String username) {
-        User user = User.create(email, "hashed-password", username);
+    private static User user(Long id, String email, String displayName) {
+        User user = User.create(email, "hashed-password", displayName);
         ReflectionTestUtils.setField(user, "id", id);
         return user;
     }

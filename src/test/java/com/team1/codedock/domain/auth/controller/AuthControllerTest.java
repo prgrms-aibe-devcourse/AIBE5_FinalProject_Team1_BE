@@ -66,7 +66,7 @@ class AuthControllerTest {
     void signup_success() throws Exception {
         SignupRequest req = new SignupRequest();
         req.setEmail("test@test.com");
-        req.setUsername("testuser");
+        req.setDisplayName("testuser");
         req.setPassword("password1");
 
         SignupResponse response = SignupResponse.builder()
@@ -87,7 +87,7 @@ class AuthControllerTest {
     void signup_blankEmail_400() throws Exception {
         SignupRequest req = new SignupRequest();
         req.setEmail("");
-        req.setUsername("testuser");
+        req.setDisplayName("testuser");
         req.setPassword("password1");
 
         mockMvc.perform(post("/api/v1/auth/signup")
@@ -103,7 +103,7 @@ class AuthControllerTest {
     void signup_invalidEmailFormat_400() throws Exception {
         SignupRequest req = new SignupRequest();
         req.setEmail("not-an-email");
-        req.setUsername("testuser");
+        req.setDisplayName("testuser");
         req.setPassword("password1");
 
         mockMvc.perform(post("/api/v1/auth/signup")
