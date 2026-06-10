@@ -77,6 +77,24 @@ public class Document extends BaseEntity {
         return document;
     }
 
+    public static Document createFromAi(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String content,
+            String category
+    ) {
+        Document document = new Document();
+        document.workspace = workspace;
+        document.createdBy = createdBy;
+        document.title = title;
+        document.content = content;
+        document.category = category;
+        document.generatedBy = "AI";
+        document.visibility = "workspace";
+        return document;
+    }
+
     public void update(String title, String content, String visibility) {
         if (title != null) this.title = title;
         if (content != null) this.content = content;
