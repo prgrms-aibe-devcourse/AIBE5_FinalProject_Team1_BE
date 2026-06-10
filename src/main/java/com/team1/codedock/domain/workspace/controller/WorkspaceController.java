@@ -61,6 +61,12 @@ public class WorkspaceController {
         return ApiResponse.ok();
     }
 
+    @DeleteMapping("/{workspaceId}")
+    public ApiResponse<Void> deleteWorkspace(@PathVariable Long workspaceId) {
+        workspaceService.deleteWorkspace(workspaceId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
+
     @DeleteMapping("/{workspaceId}/members/{memberId}")
     public ApiResponse<Void> removeMember(
             @PathVariable Long workspaceId,
