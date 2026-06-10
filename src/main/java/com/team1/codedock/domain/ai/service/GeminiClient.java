@@ -91,9 +91,53 @@ public class GeminiClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Part(String text) {}
 
+    public DocumentGenerationResult generateDocument(List<String> entitySources) {
+        String prompt = buildDocumentPrompt(entitySources);
+
+        Map<String, Object> request = Map.of(
+                "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of("responseMimeType", "application/json")
+        );
+
+        GeminiResponse response = restClient.post()
+                .uri(GEMINI_API_URL, model, apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(GeminiResponse.class);
+
+        String jsonText = response.candidates().get(0).content().parts().get(0).text();
+
+        try {
+            return objectMapper.readValue(jsonText, DocumentGenerationResult.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Gemini 응답 파싱 실패: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildDocumentPrompt(List<String> entitySources) {
+        String sourcesText = String.join("\n\n---\n\n", entitySources);
+        return """
+                다음 Java Spring Boot @Entity 클래스들을 분석하여 도메인 모델 설명 문서 초안을 작성해주세요.
+
+                [엔티티 소스코드]
+                %s
+
+                다음 JSON 형식으로 응답해주세요:
+                {
+                  "title": "문서 제목",
+                  "content": "마크다운 형식의 문서 내용",
+                  "category": "manual"
+                }
+                """.formatted(sourcesText);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ErdGenerationResult(String mermaidCode, List<ErdTableInfo> tables) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ErdTableInfo(String tableName, String schemaDefinition, String description) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record DocumentGenerationResult(String title, String content, String category) {}
 }
