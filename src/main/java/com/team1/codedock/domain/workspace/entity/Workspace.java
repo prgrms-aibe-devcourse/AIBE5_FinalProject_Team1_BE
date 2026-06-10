@@ -32,12 +32,10 @@ public class Workspace extends BaseEntity {
     @Column(nullable = false, unique = true, length = 120)
     private String slug;
 
-    @Lob
-    @Column
+    @Column(columnDefinition = "CLOB")
     private String description;
 
-    @Lob
-    @Column(name = "logo_url")
+    @Column(name = "logo_url", columnDefinition = "CLOB")
     private String logoUrl;
 
     public static Workspace create(User owner, String name, String slug, String description) {
