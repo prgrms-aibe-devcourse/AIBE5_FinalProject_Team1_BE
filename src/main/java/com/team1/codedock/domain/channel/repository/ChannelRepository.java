@@ -8,4 +8,8 @@ import java.util.List;
 public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
     List<Channel> findAllByWorkspace_IdOrderByIdAsc(Long workspaceId);
+
+    boolean existsByWorkspace_IdAndNameIgnoreCase(Long workspaceId, String name);
+
+    boolean existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(Long workspaceId, String name, Long id);
 }
