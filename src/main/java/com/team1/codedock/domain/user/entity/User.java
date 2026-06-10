@@ -46,8 +46,7 @@ public class User extends BaseEntity {
     @Column(length = 160)
     private String bio;
 
-    @Lob
-    @Column(name = "avatar_url")
+    @Column(name = "avatar_url", columnDefinition = "CLOB")
     private String avatarUrl;
 
     @Column(name = "github_id", unique = true, length = 100)
@@ -65,8 +64,7 @@ public class User extends BaseEntity {
     @Column(name = "github_connected_at")
     private LocalDateTime githubConnectedAt;
 
-    @Lob
-    @Column(name = "github_access_token")
+    @Column(name = "github_access_token", columnDefinition = "CLOB")
     private String githubAccessToken;
 
     @Column(name = "github_token_expires_at")
@@ -126,6 +124,10 @@ public class User extends BaseEntity {
         this.githubAccessToken = githubAccessToken;
         if (avatarUrl != null) this.avatarUrl = avatarUrl;
         this.lastLoginAt = LocalDateTime.now();
+        if (!this.githubConnected) {
+            this.githubConnected = true;
+            this.githubConnectedAt = LocalDateTime.now();
+        }
     }
 
     public void updateProfile(String displayName, String nickname, String developerType, String bio, String avatarUrl) {
