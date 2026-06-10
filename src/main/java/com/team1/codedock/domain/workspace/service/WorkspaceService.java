@@ -135,6 +135,17 @@ public class WorkspaceService {
         target.deactivate("removed_by_admin");
     }
 
+    public void deleteWorkspace(Long workspaceId, Long currentUserId) {
+        WorkspaceMember membership = getMembership(workspaceId, currentUserId);
+        if (!"owner".equals(membership.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        Workspace workspace = membership.getWorkspace();
+        invitationRepository.deleteAllByWorkspace(workspace);
+        workspaceMemberRepository.deleteAllByWorkspace(workspace);
+        workspaceRepository.delete(workspace);
+    }
+
     private WorkspaceMember getMembership(Long workspaceId, Long currentUserId) {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
