@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface GithubPullRequestRepository extends JpaRepository<GithubPullRequest, Long> {
 
     Optional<GithubPullRequest> findByIdAndRepository_Workspace_Id(Long id, Long workspaceId);
+
+    boolean existsByChannel_Id(Long channelId);
 }

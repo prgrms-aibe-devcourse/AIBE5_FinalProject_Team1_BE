@@ -5,6 +5,10 @@ import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.repository.ChannelReadStatusRepository;
+import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -20,6 +24,10 @@ public class ChannelCommandService {
 
     private final ChannelRepository channelRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final ThreadRepository threadRepository;
+    private final ChannelReadStatusRepository channelReadStatusRepository;
+    private final GithubPullRequestRepository githubPullRequestRepository;
+    private final GithubIssueRepository githubIssueRepository;
 
     public ChannelListResponse createChannel(Long workspaceId, ChannelCreateRequest request) {
         Workspace workspace = findWorkspace(workspaceId);
@@ -42,9 +50,8 @@ public class ChannelCommandService {
 
     public void deleteChannel(Long workspaceId, Long channelId) {
         Channel channel = findWorkspaceChannel(workspaceId, channelId);
-        if (!channel.isDeletable()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel cannot be deleted.");
-        }
+        validateDeletableChannel(channel);
+        validateNoChannelReferences(channelId);
         channelRepository.delete(channel);
     }
 
@@ -81,6 +88,27 @@ public class ChannelCommandService {
     private void validateEditableChannel(Channel channel) {
         if (!channel.isDeletable()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel cannot be modified.");
+        }
+    }
+
+    private void validateDeletableChannel(Channel channel) {
+        if (!channel.isDeletable()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel cannot be deleted.");
+        }
+    }
+
+    private void validateNoChannelReferences(Long channelId) {
+        if (threadRepository.existsByChannel_Id(channelId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with messages cannot be deleted.");
+        }
+        if (channelReadStatusRepository.existsByChannel_Id(channelId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with read status cannot be deleted.");
+        }
+        if (githubPullRequestRepository.existsByChannel_Id(channelId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with pull requests cannot be deleted.");
+        }
+        if (githubIssueRepository.existsByChannel_Id(channelId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with issues cannot be deleted.");
         }
     }
 }

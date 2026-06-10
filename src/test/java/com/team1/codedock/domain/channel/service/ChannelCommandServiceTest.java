@@ -5,6 +5,10 @@ import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.repository.ChannelReadStatusRepository;
+import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -35,6 +39,18 @@ class ChannelCommandServiceTest {
 
     @Mock
     private WorkspaceRepository workspaceRepository;
+
+    @Mock
+    private ThreadRepository threadRepository;
+
+    @Mock
+    private ChannelReadStatusRepository channelReadStatusRepository;
+
+    @Mock
+    private GithubPullRequestRepository githubPullRequestRepository;
+
+    @Mock
+    private GithubIssueRepository githubIssueRepository;
 
     @InjectMocks
     private ChannelCommandService channelCommandService;
@@ -127,6 +143,10 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
+        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
 
         channelCommandService.deleteChannel(10L, 2L);
 
@@ -145,6 +165,76 @@ class ChannelCommandServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(channelRepository, never()).delete(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting channel with messages")
+    void deleteChannelWithMessages() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(2L, workspace, "team-chat", true);
+
+        when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
+        when(threadRepository.existsByChannel_Id(2L)).thenReturn(true);
+
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Channel with messages cannot be deleted");
+
+        verify(channelRepository, never()).delete(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting channel with read status")
+    void deleteChannelWithReadStatus() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(2L, workspace, "team-chat", true);
+
+        when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
+        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(true);
+
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Channel with read status cannot be deleted");
+
+        verify(channelRepository, never()).delete(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting channel with pull requests")
+    void deleteChannelWithPullRequests() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(2L, workspace, "team-chat", true);
+
+        when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
+        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(true);
+
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Channel with pull requests cannot be deleted");
+
+        verify(channelRepository, never()).delete(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting channel with issues")
+    void deleteChannelWithIssues() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(2L, workspace, "team-chat", true);
+
+        when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
+        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(true);
+
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Channel with issues cannot be deleted");
 
         verify(channelRepository, never()).delete(any(Channel.class));
     }
