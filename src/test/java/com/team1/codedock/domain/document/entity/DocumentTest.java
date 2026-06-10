@@ -54,6 +54,40 @@ class DocumentTest {
         assertThat(document.getGeneratedBy()).isEqualTo("Manual");
     }
 
+    // ── createFromAi() ────────────────────────────────────────
+
+    @Test
+    @DisplayName("createFromAi()로 문서를 생성하면 모든 필드가 정상적으로 설정된다")
+    void createFromAi_모든_필드_설정() {
+        Document document = Document.createFromAi(workspace, member, "AI 제목", "AI 내용", "manual");
+
+        assertThat(document.getWorkspace()).isEqualTo(workspace);
+        assertThat(document.getCreatedBy()).isEqualTo(member);
+        assertThat(document.getTitle()).isEqualTo("AI 제목");
+        assertThat(document.getContent()).isEqualTo("AI 내용");
+        assertThat(document.getCategory()).isEqualTo("manual");
+        assertThat(document.getGeneratedBy()).isEqualTo("AI");
+        assertThat(document.getVisibility()).isEqualTo("workspace");
+        assertThat(document.getRelatedPr()).isNull();
+        assertThat(document.getDeletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("createFromAi() 시 generatedBy는 항상 'AI'로 고정된다")
+    void createFromAi_generatedBy_AI_고정() {
+        Document document = Document.createFromAi(workspace, member, "제목", "내용", "release");
+
+        assertThat(document.getGeneratedBy()).isEqualTo("AI");
+    }
+
+    @Test
+    @DisplayName("createFromAi() 시 visibility는 항상 'workspace'로 고정된다")
+    void createFromAi_visibility_workspace_고정() {
+        Document document = Document.createFromAi(workspace, member, "제목", "내용", "manual");
+
+        assertThat(document.getVisibility()).isEqualTo("workspace");
+    }
+
     // ── update() ──────────────────────────────────────────────
 
     @Test
