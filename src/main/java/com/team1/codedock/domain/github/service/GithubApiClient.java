@@ -22,7 +22,10 @@ public class GithubApiClient {
 
     public List<String> fetchEntitySources(String owner, String repo, String branch, String token) {
         GithubTreeResponse treeResponse = restClient.get()
-                .uri("/repos/{owner}/{repo}/git/trees/{branch}?recursive=1", owner, repo, branch)
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/git/trees/" + branch)
+                        .queryParam("recursive", "1")
+                        .build())
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
                 .retrieve()
@@ -41,7 +44,10 @@ public class GithubApiClient {
 
     private String fetchFileContent(String owner, String repo, String branch, String path, String token) {
         GithubContentResponse response = restClient.get()
-                .uri("/repos/{owner}/{repo}/contents/{path}?ref={branch}", owner, repo, path, branch)
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/contents/" + path)
+                        .queryParam("ref", branch)
+                        .build())
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
                 .retrieve()
