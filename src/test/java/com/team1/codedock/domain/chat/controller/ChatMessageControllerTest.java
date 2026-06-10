@@ -4,15 +4,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
+import com.team1.codedock.domain.chat.dto.ChatEventResponse;
+import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.filter.CharacterEncodingFilter;
@@ -20,11 +25,12 @@ import org.springframework.web.filter.CharacterEncodingFilter;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,18 +44,21 @@ class ChatMessageControllerTest {
     @Mock
     private ChatMessageService chatMessageService;
 
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(chatMessageService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(chatMessageService, messagingTemplate))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
     }
 
     @Test
-    @DisplayName("채널 메시지 목록 조회 API가 X-User-Id와 페이지 요청값을 서비스로 전달한다")
+    @DisplayName("Channel message list API passes X-User-Id and paging params to service")
     void getChannelMessages() throws Exception {
         Long channelId = 1L;
         Long userId = 10L;
@@ -79,7 +88,7 @@ class ChatMessageControllerTest {
     }
 
     @Test
-    @DisplayName("채널 메시지 REST 저장 API가 요청 본문과 X-User-Id를 서비스로 전달한다")
+    @DisplayName("Channel message create API passes request body and X-User-Id to service")
     void createChannelMessage() throws Exception {
         Long channelId = 1L;
         Long userId = 10L;
@@ -108,7 +117,7 @@ class ChatMessageControllerTest {
     }
 
     @Test
-    @DisplayName("채널 메시지 REST 저장 요청 내용이 비어 있으면 400 응답을 반환한다")
+    @DisplayName("Channel message create API rejects blank content")
     void createChannelMessageWithInvalidContent() throws Exception {
         ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest(" ");
 
@@ -122,7 +131,7 @@ class ChatMessageControllerTest {
     }
 
     @Test
-    @DisplayName("Channel message update API passes request body and X-User-Id to service")
+    @DisplayName("Channel message update API broadcasts MESSAGE_UPDATED after service success")
     void updateChannelMessage() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
@@ -150,6 +159,11 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data.content").value("updated"));
 
         verify(chatMessageService).updateChannelMessage(channelId, messageId, userId, request);
+        assertBroadcastEvent(
+                "/topic/channels/" + channelId + "/events",
+                ChatEventType.MESSAGE_UPDATED,
+                response
+        );
     }
 
     @Test
@@ -167,7 +181,7 @@ class ChatMessageControllerTest {
     }
 
     @Test
-    @DisplayName("Channel message delete API passes X-User-Id to service")
+    @DisplayName("Channel message delete API broadcasts MESSAGE_DELETED after service success")
     void deleteChannelMessage() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
@@ -177,7 +191,7 @@ class ChatMessageControllerTest {
                 channelId,
                 20L,
                 "tester",
-                "삭제된 메시지입니다",
+                Thread.DELETED_MESSAGE_CONTENT,
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
@@ -188,8 +202,28 @@ class ChatMessageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(messageId))
-                .andExpect(jsonPath("$.data.content").value("삭제된 메시지입니다"));
+                .andExpect(jsonPath("$.data.content").value(Thread.DELETED_MESSAGE_CONTENT));
 
         verify(chatMessageService).deleteChannelMessage(channelId, messageId, userId);
+        assertBroadcastEvent(
+                "/topic/channels/" + channelId + "/events",
+                ChatEventType.MESSAGE_DELETED,
+                response
+        );
+    }
+
+    private void assertBroadcastEvent(
+            String destination,
+            ChatEventType expectedType,
+            ChannelMessageResponse expectedPayload
+    ) {
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(eq(destination), payloadCaptor.capture());
+
+        assertThat(payloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
+
+        ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
+        assertThat(event.type()).isEqualTo(expectedType);
+        assertThat(event.payload()).isEqualTo(expectedPayload);
     }
 }
