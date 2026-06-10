@@ -10,9 +10,12 @@ import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +33,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ChannelCommandServiceTest {
@@ -39,6 +43,9 @@ class ChannelCommandServiceTest {
 
     @Mock
     private WorkspaceRepository workspaceRepository;
+
+    @Mock
+    private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
     private ThreadRepository threadRepository;
@@ -55,6 +62,87 @@ class ChannelCommandServiceTest {
     @InjectMocks
     private ChannelCommandService channelCommandService;
 
+    @BeforeEach
+    void setUp() {
+        WorkspaceMember manager = workspaceMember("admin");
+        lenient().when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(any(), any()))
+                .thenReturn(Optional.of(manager));
+    }
+
+    @Test
+    @DisplayName("Rejects creating channel without user")
+    void createChannelWithoutUser() {
+        assertThatThrownBy(() ->
+                channelCommandService.createChannel(10L, null, new ChannelCreateRequest("team-chat", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects creating channel by non workspace member")
+    void createChannelByNonWorkspaceMember() {
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects creating channel by viewer")
+    void createChannelByViewer() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() ->
+                channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("Rejects updating channel by viewer")
+    void updateChannelByViewer() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() ->
+                channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest("renamed", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(channelRepository, never()).findById(2L);
+    }
+
+    @Test
+    @DisplayName("Rejects deleting channel by viewer")
+    void deleteChannelByViewer() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(channelRepository, never()).delete(any(Channel.class));
+    }
+
     @Test
     @DisplayName("Creates a custom channel")
     void createChannel() {
@@ -66,7 +154,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.save(any(Channel.class))).thenReturn(saved);
 
         ChannelListResponse response =
-                channelCommandService.createChannel(10L, new ChannelCreateRequest(" team-chat ", "Team chat"));
+                channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest(" team-chat ", "Team chat"));
 
         assertThat(response.id()).isEqualTo(2L);
         assertThat(response.name()).isEqualTo("team-chat");
@@ -82,7 +170,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.existsByWorkspace_IdAndNameIgnoreCase(10L, "team-chat")).thenReturn(true);
 
         assertThatThrownBy(() ->
-                channelCommandService.createChannel(10L, new ChannelCreateRequest("team-chat", null)))
+                channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel name already exists");
 
@@ -99,7 +187,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(10L, "new-name", 2L)).thenReturn(false);
 
         ChannelListResponse response =
-                channelCommandService.updateChannel(10L, 2L, new ChannelUpdateRequest(" new-name ", "Updated"));
+                channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest(" new-name ", "Updated"));
 
         assertThat(response.id()).isEqualTo(2L);
         assertThat(response.name()).isEqualTo("new-name");
@@ -116,7 +204,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(10L, "general", 2L)).thenReturn(true);
 
         assertThatThrownBy(() ->
-                channelCommandService.updateChannel(10L, 2L, new ChannelUpdateRequest("general", null)))
+                channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest("general", null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel name already exists");
     }
@@ -130,7 +218,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
 
         assertThatThrownBy(() ->
-                channelCommandService.updateChannel(10L, 2L, new ChannelUpdateRequest("renamed", null)))
+                channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest("renamed", null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
@@ -148,7 +236,7 @@ class ChannelCommandServiceTest {
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
 
-        channelCommandService.deleteChannel(10L, 2L);
+        channelCommandService.deleteChannel(10L, 2L, 100L);
 
         verify(channelRepository).delete(channel);
     }
@@ -161,7 +249,7 @@ class ChannelCommandServiceTest {
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
@@ -178,7 +266,7 @@ class ChannelCommandServiceTest {
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(true);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with messages cannot be deleted");
 
@@ -195,7 +283,7 @@ class ChannelCommandServiceTest {
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(true);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with read status cannot be deleted");
 
@@ -213,7 +301,7 @@ class ChannelCommandServiceTest {
         when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(true);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with pull requests cannot be deleted");
 
@@ -232,7 +320,7 @@ class ChannelCommandServiceTest {
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(true);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L))
+        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with issues cannot be deleted");
 
@@ -250,5 +338,11 @@ class ChannelCommandServiceTest {
         ReflectionTestUtils.setField(channel, "id", id);
         ReflectionTestUtils.setField(channel, "isDeletable", isDeletable);
         return channel;
+    }
+
+    private WorkspaceMember workspaceMember(String authority) {
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        lenient().when(member.getAuthority()).thenReturn(authority);
+        return member;
     }
 }

@@ -57,9 +57,10 @@ class ChannelControllerTest {
         ChannelListResponse response = new ChannelListResponse(
                 1L, 10L, null, "general", "general", false, "General channel"
         );
-        when(channelQueryService.getChannels(10L)).thenReturn(List.of(response));
+        when(channelQueryService.getChannels(10L, 100L)).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/workspaces/{workspaceId}/channels", 10L))
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/channels", 10L)
+                        .header("X-User-Id", 100L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(1L))
@@ -73,9 +74,10 @@ class ChannelControllerTest {
         ChannelListResponse response = new ChannelListResponse(
                 2L, 10L, null, "team-chat", "custom", true, "Team chat"
         );
-        when(channelCommandService.createChannel(eq(10L), eq(request))).thenReturn(response);
+        when(channelCommandService.createChannel(eq(10L), eq(100L), eq(request))).thenReturn(response);
 
         mockMvc.perform(post("/api/workspaces/{workspaceId}/channels", 10L)
+                        .header("X-User-Id", 100L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -83,7 +85,7 @@ class ChannelControllerTest {
                 .andExpect(jsonPath("$.data.id").value(2L))
                 .andExpect(jsonPath("$.data.name").value("team-chat"));
 
-        verify(channelCommandService).createChannel(10L, request);
+        verify(channelCommandService).createChannel(10L, 100L, request);
     }
 
     @Test
@@ -106,9 +108,10 @@ class ChannelControllerTest {
         ChannelListResponse response = new ChannelListResponse(
                 2L, 10L, null, "renamed", "custom", true, "Updated"
         );
-        when(channelCommandService.updateChannel(eq(10L), eq(2L), eq(request))).thenReturn(response);
+        when(channelCommandService.updateChannel(eq(10L), eq(2L), eq(100L), eq(request))).thenReturn(response);
 
         mockMvc.perform(patch("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L)
+                        .header("X-User-Id", 100L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -116,15 +119,16 @@ class ChannelControllerTest {
                 .andExpect(jsonPath("$.data.id").value(2L))
                 .andExpect(jsonPath("$.data.name").value("renamed"));
 
-        verify(channelCommandService).updateChannel(10L, 2L, request);
+        verify(channelCommandService).updateChannel(10L, 2L, 100L, request);
     }
 
     @Test
     @DisplayName("Channel delete API passes path variables to service")
     void deleteChannel() throws Exception {
-        mockMvc.perform(delete("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L))
+        mockMvc.perform(delete("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L)
+                        .header("X-User-Id", 100L))
                 .andExpect(status().isNoContent());
 
-        verify(channelCommandService).deleteChannel(10L, 2L);
+        verify(channelCommandService).deleteChannel(10L, 2L, 100L);
     }
 }
