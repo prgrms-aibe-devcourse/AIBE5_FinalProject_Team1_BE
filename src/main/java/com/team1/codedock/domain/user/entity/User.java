@@ -82,11 +82,12 @@ public class User extends BaseEntity {
     private LocalDateTime lastLoginAt;
 
     // 이메일/비밀번호 회원가입
-    public static User create(String email, String passwordHash, String username) {
+    public static User create(String email, String passwordHash, String displayName) {
         User user = new User();
         user.email = email;
         user.passwordHash = passwordHash;
-        user.username = username;
+        user.username = email;
+        user.displayName = displayName;
         user.isActive = true;
         user.emailVerified = false;
         user.githubConnected = false;
