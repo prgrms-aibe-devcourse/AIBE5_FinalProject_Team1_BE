@@ -345,8 +345,9 @@ class AiSummaryServiceTest {
     @Test
     @DisplayName("AI 요약을 찾을 수 없으면 예외가 발생한다")
     void getSummary_요약_없으면_예외() {
+        GithubPullRequest pr = mockPr();
         when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(1L, 1L))
-                .thenReturn(Optional.of(mockPr()));
+                .thenReturn(Optional.of(pr));
         when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> aiSummaryService.getSummary(1L, 1L))
