@@ -37,6 +37,8 @@ public enum ErrorCode {
 
     // ApiSpec
     API_SPEC_NOT_FOUND(HttpStatus.NOT_FOUND, "AS001", "API 명세를 찾을 수 없습니다."),
+    SWAGGER_URL_NOT_REGISTERED(HttpStatus.NOT_FOUND, "AS002", "등록된 Swagger URL이 없습니다."),
+    SWAGGER_FETCH_ERROR(HttpStatus.BAD_GATEWAY, "AS003", "Swagger URL에서 데이터를 가져오는 데 실패했습니다."),
 
     // GitHub
     GITHUB_REPO_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "GitHub 레포지토리를 찾을 수 없습니다."),

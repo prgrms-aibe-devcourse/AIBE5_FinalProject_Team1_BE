@@ -212,6 +212,10 @@ public class ApiSpec extends BaseEntity {
         return spec;
     }
 
+    public void complete() {
+        this.status = "completed";
+    }
+
     public void update(
             String title,
             String method,
