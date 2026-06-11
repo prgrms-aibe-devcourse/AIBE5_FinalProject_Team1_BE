@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.filter.CharacterEncodingFilter;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -55,7 +56,16 @@ class ChannelControllerTest {
     @DisplayName("Channel list API returns workspace channels")
     void getChannels() throws Exception {
         ChannelListResponse response = new ChannelListResponse(
-                1L, 10L, null, "general", "general", false, "General channel"
+                1L,
+                10L,
+                null,
+                "general",
+                "general",
+                false,
+                "General channel",
+                "hello",
+                LocalDateTime.of(2026, 6, 11, 10, 0),
+                3L
         );
         when(channelQueryService.getChannels(10L, 100L)).thenReturn(List.of(response));
 
@@ -64,7 +74,9 @@ class ChannelControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(1L))
-                .andExpect(jsonPath("$.data[0].name").value("general"));
+                .andExpect(jsonPath("$.data[0].name").value("general"))
+                .andExpect(jsonPath("$.data[0].lastMessage").value("hello"))
+                .andExpect(jsonPath("$.data[0].messageCount").value(3L));
     }
 
     @Test
@@ -72,7 +84,16 @@ class ChannelControllerTest {
     void createChannel() throws Exception {
         ChannelCreateRequest request = new ChannelCreateRequest("team-chat", "Team chat");
         ChannelListResponse response = new ChannelListResponse(
-                2L, 10L, null, "team-chat", "custom", true, "Team chat"
+                2L,
+                10L,
+                null,
+                "team-chat",
+                "custom",
+                true,
+                "Team chat",
+                null,
+                null,
+                0L
         );
         when(channelCommandService.createChannel(eq(10L), eq(100L), eq(request))).thenReturn(response);
 
@@ -106,7 +127,16 @@ class ChannelControllerTest {
     void updateChannel() throws Exception {
         ChannelUpdateRequest request = new ChannelUpdateRequest("renamed", "Updated");
         ChannelListResponse response = new ChannelListResponse(
-                2L, 10L, null, "renamed", "custom", true, "Updated"
+                2L,
+                10L,
+                null,
+                "renamed",
+                "custom",
+                true,
+                "Updated",
+                null,
+                null,
+                0L
         );
         when(channelCommandService.updateChannel(eq(10L), eq(2L), eq(100L), eq(request))).thenReturn(response);
 
