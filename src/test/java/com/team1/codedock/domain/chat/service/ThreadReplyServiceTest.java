@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.service;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
+import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
@@ -179,6 +180,195 @@ class ThreadReplyServiceTest {
                 .isEqualTo(ErrorCode.INVALID_INPUT);
 
         verify(entityManager, never()).find(org.mockito.ArgumentMatchers.eq(Thread.class), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Reply author can update own reply")
+    void updateReply() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, thread, member, "old reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        ThreadReplyResponse response =
+                threadReplyService.updateReply(threadId, 100L, userId, new ThreadReplyUpdateRequest("updated reply"));
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.content()).isEqualTo("updated reply");
+    }
+
+    @Test
+    @DisplayName("Reply author can delete own reply with soft delete content")
+    void deleteReply() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, thread, member, "reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        ThreadReplyResponse response = threadReplyService.deleteReply(threadId, 100L, userId);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.content()).isEqualTo(ThreadReply.DELETED_REPLY_CONTENT);
+        verify(threadReplyRepository, never()).delete(org.mockito.ArgumentMatchers.any(ThreadReply.class));
+    }
+
+    @Test
+    @DisplayName("Rejects updating reply that belongs to another thread")
+    void updateReplyWithDifferentThread() {
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread requestedThread = thread(1L, channel(10L, workspace(workspaceId)));
+        Thread anotherThread = thread(2L, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, anotherThread, member, "reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, 1L)).thenReturn(requestedThread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        assertThatThrownBy(() ->
+                threadReplyService.updateReply(1L, 100L, userId, new ThreadReplyUpdateRequest("updated")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("Rejects updating another member's reply")
+    void updateReplyByAnotherMember() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember requester = workspaceMember(20L, user("requester", "Requester"));
+        WorkspaceMember author = workspaceMember(21L, user("author", "Author"));
+        ThreadReply reply = reply(100L, thread, author, "reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(requester));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        assertThatThrownBy(() ->
+                threadReplyService.updateReply(threadId, 100L, userId, new ThreadReplyUpdateRequest("updated")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Rejects updating reply with blank content")
+    void updateReplyWithBlankContent() {
+        assertThatThrownBy(() -> threadReplyService.updateReply(1L, 100L, 3L, new ThreadReplyUpdateRequest(" ")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(entityManager, never()).find(org.mockito.ArgumentMatchers.eq(Thread.class), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Rejects updating deleted reply")
+    void updateDeletedReply() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, thread, member, ThreadReply.DELETED_REPLY_CONTENT, LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        assertThatThrownBy(() ->
+                threadReplyService.updateReply(threadId, 100L, userId, new ThreadReplyUpdateRequest("restore")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("Rejects deleting reply that belongs to another thread")
+    void deleteReplyWithDifferentThread() {
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread requestedThread = thread(1L, channel(10L, workspace(workspaceId)));
+        Thread anotherThread = thread(2L, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, anotherThread, member, "reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, 1L)).thenReturn(requestedThread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        assertThatThrownBy(() -> threadReplyService.deleteReply(1L, 100L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(threadReplyRepository, never()).delete(org.mockito.ArgumentMatchers.any(ThreadReply.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting another member's reply")
+    void deleteReplyByAnotherMember() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember requester = workspaceMember(20L, user("requester", "Requester"));
+        WorkspaceMember author = workspaceMember(21L, user("author", "Author"));
+        ThreadReply reply = reply(100L, thread, author, "reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(requester));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        assertThatThrownBy(() -> threadReplyService.deleteReply(threadId, 100L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadReplyRepository, never()).delete(org.mockito.ArgumentMatchers.any(ThreadReply.class));
+    }
+
+    @Test
+    @DisplayName("Rejects deleting missing reply")
+    void deleteMissingReply() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> threadReplyService.deleteReply(threadId, 100L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
     }
 
     private static ThreadReply reply(
