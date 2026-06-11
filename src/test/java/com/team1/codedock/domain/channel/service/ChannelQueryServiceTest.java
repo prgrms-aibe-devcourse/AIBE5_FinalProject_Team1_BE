@@ -54,12 +54,16 @@ class ChannelQueryServiceTest {
         ReflectionTestUtils.setField(latestMessage, "id", 11L);
         ReflectionTestUtils.setField(latestMessage, "createdAt", LocalDateTime.of(2026, 6, 11, 10, 0));
         ChannelMessageCountProjection messageCount = messageCount(1L, 3L);
+        ChannelMessageCountProjection unreadCount = messageCount(1L, 2L);
+        WorkspaceMember member = workspaceMember(200L);
 
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
-                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+                .thenReturn(Optional.of(member));
         when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
         when(threadRepository.countByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE))
                 .thenReturn(List.of(messageCount));
+        when(threadRepository.countUnreadByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE, 200L))
+                .thenReturn(List.of(unreadCount));
         when(threadRepository.findLatestByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE))
                 .thenReturn(List.of(latestMessage));
 
@@ -71,6 +75,7 @@ class ChannelQueryServiceTest {
         assertThat(response.get(0).lastMessage()).isEqualTo("latest");
         assertThat(response.get(0).lastMessageAt()).isEqualTo(LocalDateTime.of(2026, 6, 11, 10, 0));
         assertThat(response.get(0).messageCount()).isEqualTo(3L);
+        assertThat(response.get(0).unreadCount()).isEqualTo(2L);
     }
 
     @Test
@@ -79,11 +84,14 @@ class ChannelQueryServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = Channel.createCustom(workspace, "empty", null);
         ReflectionTestUtils.setField(channel, "id", 2L);
+        WorkspaceMember member = workspaceMember(200L);
 
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
-                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+                .thenReturn(Optional.of(member));
         when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
         when(threadRepository.countByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE))
+                .thenReturn(List.of());
+        when(threadRepository.countUnreadByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE, 200L))
                 .thenReturn(List.of());
         when(threadRepository.findLatestByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE))
                 .thenReturn(List.of());
@@ -94,6 +102,7 @@ class ChannelQueryServiceTest {
         assertThat(response.get(0).lastMessage()).isNull();
         assertThat(response.get(0).lastMessageAt()).isNull();
         assertThat(response.get(0).messageCount()).isZero();
+        assertThat(response.get(0).unreadCount()).isZero();
     }
 
     @Test
@@ -132,5 +141,11 @@ class ChannelQueryServiceTest {
         when(projection.getChannelId()).thenReturn(channelId);
         when(projection.getMessageCount()).thenReturn(messageCount);
         return projection;
+    }
+
+    private WorkspaceMember workspaceMember(Long id) {
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        when(member.getId()).thenReturn(id);
+        return member;
     }
 }
