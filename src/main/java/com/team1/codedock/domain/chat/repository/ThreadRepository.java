@@ -7,10 +7,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ThreadRepository extends JpaRepository<Thread, Long> {
 
     boolean existsByChannel_Id(Long channelId);
+
+    // 채널을 읽음 처리할 때 기준점으로 삼을 최신 사용자 메시지를 찾는다.
+    Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
 
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
             Long channelId,
