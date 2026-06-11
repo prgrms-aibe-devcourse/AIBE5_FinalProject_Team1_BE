@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -44,10 +45,18 @@ public class ApiSpecAiService {
         String swaggerJson = fetchSwaggerJson(workspace.getSwaggerUrl());
         GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(swaggerJson);
 
+        if (result == null || result.checklist() == null || result.checklist().isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> validMethods = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
+
         List<ApiSpec> specs = result.checklist().stream()
+                .filter(item -> item.title() != null && item.method() != null && item.endpoint() != null)
+                .filter(item -> validMethods.contains(item.method().toUpperCase()))
                 .map(item -> ApiSpec.createFromAi(
                         workspace, member,
-                        item.title(), item.method(), item.endpoint(),
+                        item.title(), item.method().toUpperCase(), item.endpoint(),
                         item.groupName(), item.summary(), item.description()
                 ))
                 .toList();

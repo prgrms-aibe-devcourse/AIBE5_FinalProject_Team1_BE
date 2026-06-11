@@ -5,6 +5,7 @@ import com.team1.codedock.domain.document.dto.SwaggerUrlRequest;
 import com.team1.codedock.domain.document.service.ApiSpecSwaggerService;
 import com.team1.codedock.global.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,7 +23,7 @@ public class ApiSpecSwaggerController {
     @PostMapping("/swagger-url")
     public ApiResponse<SwaggerSyncResponse> registerSwaggerUrl(
             @PathVariable Long workspaceId,
-            @RequestBody SwaggerUrlRequest request) {
+            @Valid @RequestBody SwaggerUrlRequest request) {
         return ApiResponse.ok(apiSpecSwaggerService.registerAndSync(workspaceId, request.swaggerUrl()));
     }
 
