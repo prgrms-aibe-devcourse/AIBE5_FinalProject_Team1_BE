@@ -3,6 +3,8 @@ package com.team1.codedock.domain.chat.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
+import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
+import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +24,9 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -115,5 +119,78 @@ class ThreadReplyControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Reply update API passes request body and X-User-Id to service")
+    void updateReply() throws Exception {
+        Long threadId = 1L;
+        Long replyId = 100L;
+        Long userId = 10L;
+        ThreadReplyUpdateRequest request = new ThreadReplyUpdateRequest("updated reply");
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                replyId,
+                threadId,
+                20L,
+                "tester",
+                "updated reply",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(threadReplyService.updateReply(eq(threadId), eq(replyId), eq(userId), eq(request))).thenReturn(response);
+
+        mockMvc.perform(patch("/api/threads/{threadId}/replies/{replyId}", threadId, replyId)
+                        .header("X-User-Id", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(replyId))
+                .andExpect(jsonPath("$.data.threadId").value(threadId))
+                .andExpect(jsonPath("$.data.content").value("updated reply"));
+
+        verify(threadReplyService).updateReply(threadId, replyId, userId, request);
+    }
+
+    @Test
+    @DisplayName("Reply update API rejects blank content")
+    void updateReplyWithInvalidContent() throws Exception {
+        ThreadReplyUpdateRequest request = new ThreadReplyUpdateRequest(" ");
+
+        mockMvc.perform(patch("/api/threads/{threadId}/replies/{replyId}", 1L, 100L)
+                        .header("X-User-Id", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Reply delete API passes path variables and X-User-Id to service")
+    void deleteReply() throws Exception {
+        Long threadId = 1L;
+        Long replyId = 100L;
+        Long userId = 10L;
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                replyId,
+                threadId,
+                20L,
+                "tester",
+                ThreadReply.DELETED_REPLY_CONTENT,
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(threadReplyService.deleteReply(threadId, replyId, userId)).thenReturn(response);
+
+        mockMvc.perform(delete("/api/threads/{threadId}/replies/{replyId}", threadId, replyId)
+                        .header("X-User-Id", userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(replyId))
+                .andExpect(jsonPath("$.data.threadId").value(threadId))
+                .andExpect(jsonPath("$.data.content").value(ThreadReply.DELETED_REPLY_CONTENT));
+
+        verify(threadReplyService).deleteReply(threadId, replyId, userId);
     }
 }
