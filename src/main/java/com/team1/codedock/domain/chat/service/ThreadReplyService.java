@@ -2,6 +2,7 @@ package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
+import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
@@ -45,6 +46,33 @@ public class ThreadReplyService {
         return ThreadReplyResponse.from(savedReply);
     }
 
+    @Transactional
+    public ThreadReplyResponse updateReply(
+            Long threadId,
+            Long replyId,
+            Long userId,
+            ThreadReplyUpdateRequest request
+    ) {
+        validateContent(request.content());
+        Thread thread = findThread(threadId);
+        WorkspaceMember member = findActiveWorkspaceMember(thread, userId);
+        ThreadReply reply = findEditableReply(thread, replyId, member);
+        validateReplyNotDeleted(reply);
+
+        reply.updateContent(request.content());
+        return ThreadReplyResponse.from(reply);
+    }
+
+    @Transactional
+    public ThreadReplyResponse deleteReply(Long threadId, Long replyId, Long userId) {
+        Thread thread = findThread(threadId);
+        WorkspaceMember member = findActiveWorkspaceMember(thread, userId);
+        ThreadReply reply = findEditableReply(thread, replyId, member);
+
+        reply.markAsDeleted();
+        return ThreadReplyResponse.from(reply);
+    }
+
     private void validateContent(String content) {
         if (content == null || content.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Reply content must not be blank.");
@@ -71,5 +99,32 @@ public class ThreadReplyService {
         Long workspaceId = thread.getChannel().getWorkspace().getId();
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
+    private ThreadReply findEditableReply(Thread thread, Long replyId, WorkspaceMember member) {
+        ThreadReply reply = threadReplyRepository.findById(replyId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Reply not found."));
+
+        validateReplyBelongsToThread(thread, reply);
+        validateReplyAuthor(reply, member);
+        return reply;
+    }
+
+    private void validateReplyBelongsToThread(Thread thread, ThreadReply reply) {
+        if (!thread.getId().equals(reply.getThread().getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Reply does not belong to the requested thread.");
+        }
+    }
+
+    private void validateReplyAuthor(ThreadReply reply, WorkspaceMember member) {
+        if (!member.getId().equals(reply.getWorkspaceMember().getId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private void validateReplyNotDeleted(ThreadReply reply) {
+        if (reply.isDeleted()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Deleted reply cannot be modified.");
+        }
     }
 }
