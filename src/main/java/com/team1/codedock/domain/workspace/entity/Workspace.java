@@ -38,6 +38,9 @@ public class Workspace extends BaseEntity {
     @Column(name = "logo_url", columnDefinition = "CLOB")
     private String logoUrl;
 
+    @Column(name = "swagger_url", length = 500)
+    private String swaggerUrl;
+
     public static Workspace create(User owner, String name, String slug, String description) {
         Workspace workspace = new Workspace();
         workspace.createdBy = owner;
@@ -51,5 +54,9 @@ public class Workspace extends BaseEntity {
     public void update(String name, String description) {
         if (name != null) this.name = name;
         if (description != null) this.description = description;
+    }
+
+    public void updateSwaggerUrl(String swaggerUrl) {
+        this.swaggerUrl = swaggerUrl;
     }
 }

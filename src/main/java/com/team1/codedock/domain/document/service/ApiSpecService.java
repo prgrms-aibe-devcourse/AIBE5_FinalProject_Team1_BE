@@ -58,6 +58,10 @@ public class ApiSpecService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
         }
 
+        if ("swagger".equals(request.sourceType())) {
+            throw new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE);
+        }
+
         ApiSpec spec = ApiSpec.create(
                 workspace, createdBy,
                 request.title(), request.method(), request.endpoint(),
@@ -95,6 +99,13 @@ public class ApiSpecService {
         ApiSpec spec = apiSpecRepository.findByIdAndWorkspace_Id(apiSpecId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.API_SPEC_NOT_FOUND));
 
+        if ("swagger".equals(spec.getSourceType())) {
+            throw new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE);
+        }
+        if ("swagger".equals(request.sourceType())) {
+            throw new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE);
+        }
+
         WorkspaceMember assignee = null;
         if (request.assigneeId() != null) {
             assignee = workspaceMemberRepository.findByIdAndWorkspace_Id(request.assigneeId(), workspaceId)
@@ -130,6 +141,11 @@ public class ApiSpecService {
     public void deleteApiSpec(Long workspaceId, Long apiSpecId) {
         ApiSpec spec = apiSpecRepository.findByIdAndWorkspace_Id(apiSpecId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.API_SPEC_NOT_FOUND));
+
+        if ("swagger".equals(spec.getSourceType())) {
+            throw new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE);
+        }
+
         apiSpecRepository.delete(spec);
     }
 }

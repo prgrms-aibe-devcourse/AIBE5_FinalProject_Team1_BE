@@ -132,6 +132,53 @@ public class GeminiClient {
                 """.formatted(sourcesText);
     }
 
+    public ApiSpecChecklistResult generateApiSpecChecklist(String swaggerJson) {
+        String prompt = buildApiSpecPrompt(swaggerJson);
+
+        Map<String, Object> request = Map.of(
+                "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of("responseMimeType", "application/json")
+        );
+
+        GeminiResponse response = restClient.post()
+                .uri(GEMINI_API_URL, model, apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(GeminiResponse.class);
+
+        String jsonText = response.candidates().get(0).content().parts().get(0).text();
+
+        try {
+            return objectMapper.readValue(jsonText, ApiSpecChecklistResult.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Gemini 응답 파싱 실패: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildApiSpecPrompt(String swaggerJson) {
+        return """
+                다음 OpenAPI(Swagger) 명세를 분석하여 누락되었거나 보강이 필요한 API 목록을 체크리스트 형식으로 제안해주세요.
+
+                [Swagger 명세]
+                %s
+
+                다음 JSON 형식으로 응답해주세요:
+                {
+                  "checklist": [
+                    {
+                      "title": "API 제목",
+                      "method": "GET",
+                      "endpoint": "/경로",
+                      "groupName": "그룹명",
+                      "summary": "간단한 설명",
+                      "description": "상세 설명"
+                    }
+                  ]
+                }
+                """.formatted(swaggerJson);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ErdGenerationResult(String mermaidCode, List<ErdTableInfo> tables) {}
 
@@ -140,4 +187,12 @@ public class GeminiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DocumentGenerationResult(String title, String content, String category) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ApiSpecChecklistResult(List<ApiSpecChecklistItem> checklist) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ApiSpecChecklistItem(
+            String title, String method, String endpoint,
+            String groupName, String summary, String description) {}
 }

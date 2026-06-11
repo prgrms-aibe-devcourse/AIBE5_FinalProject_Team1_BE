@@ -86,7 +86,7 @@ public class ApiSpec extends BaseEntity {
     @Column(length = 50)
     private String version;
 
-    // 'manual' | 'github' | 'imported'
+    // 'manual' | 'github' | 'imported' | 'swagger' | 'AI'
     @Column(name = "source_type", length = 30)
     private String sourceType;
 
@@ -150,6 +150,70 @@ public class ApiSpec extends BaseEntity {
         spec.relatedPr = relatedPr;
         spec.note = note;
         return spec;
+    }
+
+    public static ApiSpec createFromSwagger(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String method,
+            String endpoint,
+            String groupName,
+            String summary,
+            String description,
+            String pathParams,
+            String headers,
+            String queryParams,
+            String requestBody,
+            String responseBody,
+            Integer responseStatus
+    ) {
+        ApiSpec spec = new ApiSpec();
+        spec.workspace = workspace;
+        spec.createdBy = createdBy;
+        spec.title = title;
+        spec.method = method;
+        spec.endpoint = endpoint;
+        spec.groupName = groupName;
+        spec.summary = summary;
+        spec.description = description;
+        spec.pathParams = pathParams;
+        spec.headers = headers;
+        spec.queryParams = queryParams;
+        spec.requestBody = requestBody;
+        spec.responseBody = responseBody;
+        spec.responseStatus = responseStatus;
+        spec.status = "completed";
+        spec.sourceType = "swagger";
+        return spec;
+    }
+
+    public static ApiSpec createFromAi(
+            Workspace workspace,
+            WorkspaceMember createdBy,
+            String title,
+            String method,
+            String endpoint,
+            String groupName,
+            String summary,
+            String description
+    ) {
+        ApiSpec spec = new ApiSpec();
+        spec.workspace = workspace;
+        spec.createdBy = createdBy;
+        spec.title = title;
+        spec.method = method;
+        spec.endpoint = endpoint;
+        spec.groupName = groupName;
+        spec.summary = summary;
+        spec.description = description;
+        spec.status = "design";
+        spec.sourceType = "AI";
+        return spec;
+    }
+
+    public void complete() {
+        this.status = "completed";
     }
 
     public void update(
