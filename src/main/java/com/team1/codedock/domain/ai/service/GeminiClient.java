@@ -33,6 +33,10 @@ public class GeminiClient {
         this.objectMapper = objectMapper;
     }
 
+    public String getModel() {
+        return model;
+    }
+
     public ErdGenerationResult generateErd(List<String> entitySources) {
         String prompt = buildErdPrompt(entitySources);
 
@@ -179,6 +183,59 @@ public class GeminiClient {
                 """.formatted(swaggerJson);
     }
 
+    public PrAnalysisResult generatePrAnalysis(String combinedDiff) {
+        String prompt = buildPrAnalysisPrompt(combinedDiff);
+
+        Map<String, Object> request = Map.of(
+                "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of("responseMimeType", "application/json")
+        );
+
+        GeminiResponse response = restClient.post()
+                .uri(GEMINI_API_URL, model, apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(GeminiResponse.class);
+
+        String jsonText = response.candidates().get(0).content().parts().get(0).text();
+
+        try {
+            return objectMapper.readValue(jsonText, PrAnalysisResult.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Gemini 응답 파싱 실패: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildPrAnalysisPrompt(String combinedDiff) {
+        return """
+                다음 PR의 파일 diff를 분석하여 요약과 보안 취약점 피드백을 생성해주세요.
+
+                [PR Diff]
+                %s
+
+                다음 JSON 형식으로 응답해주세요:
+                {
+                  "summaryText": "PR 전체 요약 1~2문장",
+                  "cautionItems": ["주의사항1", "주의사항2"],
+                  "positiveItems": ["긍정적인 점1", "긍정적인 점2"],
+                  "riskLevel": "High | Medium | Low",
+                  "fileFeedbacks": [
+                    {
+                      "name": "파일명.java",
+                      "path": "src/.../파일명.java",
+                      "risk": "높음 | 중간 | 낮음",
+                      "vulnerability": "취약점 설명",
+                      "fix": "수정 방향 설명",
+                      "currentCode": ["현재 코드 라인1", "현재 코드 라인2"],
+                      "recommendedCode": ["추천 코드 라인1", "추천 코드 라인2"],
+                      "findings": ["23번째 줄: CSRF 전역 비활성화"]
+                    }
+                  ]
+                }
+                """.formatted(combinedDiff);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ErdGenerationResult(String mermaidCode, List<ErdTableInfo> tables) {}
 
@@ -195,4 +252,23 @@ public class GeminiClient {
     public record ApiSpecChecklistItem(
             String title, String method, String endpoint,
             String groupName, String summary, String description) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record PrAnalysisResult(
+            String summaryText,
+            List<String> cautionItems,
+            List<String> positiveItems,
+            String riskLevel,
+            List<PrFileFeedback> fileFeedbacks) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record PrFileFeedback(
+            String name,
+            String path,
+            String risk,
+            String vulnerability,
+            String fix,
+            List<String> currentCode,
+            List<String> recommendedCode,
+            List<String> findings) {}
 }

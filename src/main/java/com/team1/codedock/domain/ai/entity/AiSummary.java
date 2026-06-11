@@ -41,4 +41,23 @@ public class AiSummary extends BaseEntity {
 
     @Column(name = "model_version", length = 100)
     private String modelVersion;
+
+    public static AiSummary create(GithubPullRequest pr) {
+        AiSummary aiSummary = new AiSummary();
+        aiSummary.githubPullRequest = pr;
+        aiSummary.status = "pending";
+        return aiSummary;
+    }
+
+    public void startProcessing() {
+        this.status = "processing";
+    }
+
+    public void complete(String summary, String riskLevel, String modelVersion) {
+        this.summary = summary;
+        this.riskLevel = riskLevel;
+        this.modelVersion = modelVersion;
+        this.status = "completed";
+    }
+
 }
