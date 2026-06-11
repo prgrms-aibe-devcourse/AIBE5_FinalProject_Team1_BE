@@ -29,6 +29,25 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     Optional<WorkspaceMember> findByIdAndWorkspace_Id(Long id, Long workspaceId);
 
+    // 멘션 토큰과 매칭되는 활성 워크스페이스 멤버 조회함
+    @Query("""
+            SELECT m
+            FROM WorkspaceMember m
+            JOIN FETCH m.user u
+            WHERE m.workspace.id = :workspaceId
+              AND m.isActive = true
+              AND (
+                  LOWER(u.username) IN :mentionNames
+                  OR LOWER(u.githubUsername) IN :mentionNames
+                  OR LOWER(u.nickname) IN :mentionNames
+                  OR LOWER(u.displayName) IN :mentionNames
+              )
+            """)
+    List<WorkspaceMember> findActiveMentionTargets(
+            @Param("workspaceId") Long workspaceId,
+            @Param("mentionNames") List<String> mentionNames
+    );
+
     int countByWorkspaceAndIsActiveTrue(Workspace workspace);
 
     void deleteAllByWorkspace(Workspace workspace);

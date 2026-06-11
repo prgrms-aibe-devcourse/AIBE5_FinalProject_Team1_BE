@@ -40,7 +40,7 @@ public class ChannelQueryService {
                 .map(Channel::getId)
                 .toList();
         Map<Long, Long> messageCounts = getMessageCounts(channelIds);
-        // unread count는 전체 사용자 기준이 아니라 현재 워크스페이스 멤버 기준으로 계산으로 구현
+        // unread count는 전체 사용자가 아니라 현재 워크스페이스 멤버 기준으로 계산함
         Map<Long, Long> unreadCounts = getUnreadCounts(channelIds, member.getId());
         Map<Long, Thread> latestMessages = getLatestMessages(channelIds);
 
@@ -66,7 +66,7 @@ public class ChannelQueryService {
                 ));
     }
 
-    // 읽음 상태가 없으면 전체 메시지 수, 있으면 마지막으로 읽은 메시지 이후의 메시지 수를 가쟈오는 로직으로 구현
+    // 읽음 상태가 없으면 해당 채널의 사용자 메시지 전체를 unread로 봄
     private Map<Long, Long> getUnreadCounts(List<Long> channelIds, Long workspaceMemberId) {
         return threadRepository.countUnreadByChannelIdsAndThreadType(
                         channelIds,

@@ -13,7 +13,7 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
 
     boolean existsByChannel_Id(Long channelId);
 
-    // 채널을 읽음 처리할 때 기준점으로 삼을 최신 사용자 메시지를 찾음
+    // 채널 읽음 처리 기준으로 삼을 최신 사용자 메시지 조회함
     Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
 
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
@@ -41,8 +41,8 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             @Param("threadType") String threadType
     );
 
-    // 채널별 안 읽은 메시지 수를 한 번에 집계
-    // 읽음 상태가 없거나 마지막 읽은 메시지가 없으면 해당 채널의 모든 사용자 메시지를 unread로 확인
+    // 워크스페이스 멤버 기준으로 채널별 안 읽은 메시지 수 집계함
+    // 읽음 상태가 없으면 해당 채널의 모든 사용자 메시지를 unread로 봄
     @Query("""
             select t.channel.id as channelId, count(t) as messageCount
             from Thread t

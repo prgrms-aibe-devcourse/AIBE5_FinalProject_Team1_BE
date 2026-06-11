@@ -17,7 +17,7 @@ public class ChannelReadStatusController {
 
     private final ChannelReadStatusService channelReadStatusService;
 
-    // 프론트가 채널을 열었거나 마지막까지 읽었다고 판단할 때 호출하는 엔드포인트
+    // 현재 임시 사용자 헤더 기준으로 채널 읽음 처리함
     @PutMapping
     public ApiResponse<ChannelReadStatusResponse> markChannelAsRead(
             @PathVariable Long channelId,

@@ -14,7 +14,7 @@ public record BookmarkResponse(
         LocalDateTime messageCreatedAt,
         LocalDateTime bookmarkedAt
 ) {
-    // 북마크 목록에서는 북마크 id와 메시지 요약 정보를 함께 내려줌
+    // 북마크 메타데이터와 메시지 요약 정보를 함께 내려줌
     public static BookmarkResponse from(Bookmark bookmark) {
         ChannelMessageResponse message = ChannelMessageResponse.from(bookmark.getThread());
 

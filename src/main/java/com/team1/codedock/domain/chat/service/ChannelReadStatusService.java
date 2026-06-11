@@ -26,7 +26,7 @@ public class ChannelReadStatusService {
     private final ThreadRepository threadRepository;
     private final ChannelReadStatusRepository channelReadStatusRepository;
 
-    // 채널 진입/읽음 처리 시 호출된다. 현재 채널의 최신 메시지를 마지막 읽은 메시지로 저장한다.
+    // 채널의 최신 사용자 메시지를 멤버의 읽음 기준점으로 저장함
     @Transactional
     public ChannelReadStatusResponse markChannelAsRead(Long channelId, Long userId) {
         Channel channel = findChannel(channelId);
@@ -47,13 +47,13 @@ public class ChannelReadStatusService {
         return ChannelReadStatusResponse.from(status);
     }
 
-    // 존재하지 않는 채널이면 읽음 상태를 만들 수 없으므로 도메인 예외로 막는다.
+    // 존재하지 않는 채널이면 읽음 상태를 만들 수 없으므로 예외 처리함
     private Channel findChannel(Long channelId) {
         return channelRepository.findById(channelId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_NOT_FOUND));
     }
 
-    // JWT 전환 전까지는 X-User-Id로 워크스페이스 멤버 여부를 검증한다.
+    // JWT 연동 전까지 X-User-Id로 워크스페이스 멤버 확인함
     private WorkspaceMember findActiveWorkspaceMember(Channel channel, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
@@ -64,7 +64,7 @@ public class ChannelReadStatusService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 
-    // 메시지가 없는 채널도 읽음 처리할 수 있도록 최신 메시지가 없으면 null을 저장한다.
+    // 메시지가 없는 채널도 읽음 처리할 수 있으므로 최신 메시지가 없으면 null 저장함
     private Thread findLatestChannelMessage(Long channelId) {
         return threadRepository
                 .findFirstByChannel_IdAndThreadTypeOrderByIdDesc(channelId, Thread.TYPE_USER_MESSAGE)

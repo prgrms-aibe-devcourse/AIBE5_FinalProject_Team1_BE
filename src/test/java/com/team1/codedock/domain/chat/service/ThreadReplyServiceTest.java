@@ -44,6 +44,9 @@ class ThreadReplyServiceTest {
     @Mock
     private EntityManager entityManager;
 
+    @Mock
+    private MentionService mentionService;
+
     @InjectMocks
     private ThreadReplyService threadReplyService;
 
@@ -105,6 +108,11 @@ class ThreadReplyServiceTest {
         assertThat(response.senderName()).isEqualTo("테스터");
         assertThat(response.content()).isEqualTo("새 답글");
         verify(threadReplyRepository).save(org.mockito.ArgumentMatchers.any(ThreadReply.class));
+        verify(mentionService).createMentionsForThreadReply(
+                org.mockito.ArgumentMatchers.any(ThreadReply.class),
+                org.mockito.ArgumentMatchers.eq(member),
+                org.mockito.ArgumentMatchers.eq("새 답글")
+        );
     }
 
     @Test

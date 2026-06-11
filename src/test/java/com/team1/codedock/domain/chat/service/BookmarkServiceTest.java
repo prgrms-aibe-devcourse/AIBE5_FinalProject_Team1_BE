@@ -175,6 +175,26 @@ class BookmarkServiceTest {
                 .isEqualTo(ErrorCode.INVALID_INPUT);
     }
 
+    @Test
+    @DisplayName("Rejects bookmark for non user message")
+    void toggleMessageBookmarkForNonUserMessage() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember member = workspaceMember(20L, workspace, user("sender"));
+        Thread message = message(100L, channel, member, "system message");
+        ReflectionTestUtils.setField(message, "threadType", "system");
+
+        when(channelRepository.findById(1L)).thenReturn(Optional.of(channel));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> bookmarkService.toggleMessageBookmark(1L, 100L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
     private Workspace workspace(Long id) {
         Workspace workspace = mock(Workspace.class);
         lenient().when(workspace.getId()).thenReturn(id);

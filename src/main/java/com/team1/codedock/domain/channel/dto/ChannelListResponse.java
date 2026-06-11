@@ -16,7 +16,7 @@ public record ChannelListResponse(
         String lastMessage,
         LocalDateTime lastMessageAt,
         long messageCount,
-        // 현재 멤버가 아직 읽지 않은 채널 메시지 수
+        // 현재 멤버가 아직 읽지 않은 채널 메시지 수임
         long unreadCount
 ) {
     public static ChannelListResponse from(Channel channel) {

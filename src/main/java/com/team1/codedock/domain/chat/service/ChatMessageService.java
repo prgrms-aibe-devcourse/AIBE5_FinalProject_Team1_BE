@@ -31,6 +31,7 @@ public class ChatMessageService {
     private final ThreadRepository threadRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
+    private final MentionService mentionService;
 
     @Transactional
     public ChannelMessageResponse createChannelMessage(Long channelId, ChannelMessageCreateRequest request) {
@@ -86,6 +87,7 @@ public class ChatMessageService {
                 );
 
         Thread savedThread = threadRepository.save(thread);
+        mentionService.createMentionsForThread(savedThread, sender, content);
         return ChannelMessageResponse.from(savedThread);
     }
 

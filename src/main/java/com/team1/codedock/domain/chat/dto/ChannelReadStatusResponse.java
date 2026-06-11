@@ -11,7 +11,7 @@ public record ChannelReadStatusResponse(
         Long lastReadThreadId,
         LocalDateTime lastReadAt
 ) {
-    // API 응답에서는 연관 엔티티 전체가 아니라 프론트가 필요한 식별자와 읽음 시간만 내려줌
+    // 클라이언트에 필요한 읽음 상태 필드만 내려줌
     public static ChannelReadStatusResponse from(ChannelReadStatus status) {
         Thread lastReadThread = status.getLastReadThread();
 

@@ -27,7 +27,7 @@ public class BookmarkService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final BookmarkRepository bookmarkRepository;
 
-    // 메시지 북마크 버튼을 누를 때 호출됨. 이미 있으면 삭제하고, 없으면 생성
+    // 이미 북마크가 있으면 삭제하고, 없으면 생성함
     @Transactional
     public BookmarkToggleResponse toggleMessageBookmark(Long channelId, Long messageId, Long userId) {
         Channel channel = findChannel(channelId);
@@ -48,7 +48,7 @@ public class BookmarkService {
         return BookmarkToggleResponse.of(channelId, messageId, member.getId(), bookmarked);
     }
 
-    // 워크스페이스 사이드바나 모아보기 화면에서 내가 저장한 메시지를 조회함.
+    // 현재 워크스페이스 멤버가 저장한 북마크만 조회함
     @Transactional(readOnly = true)
     public List<BookmarkResponse> getMyBookmarks(Long workspaceId, Long userId) {
         WorkspaceMember member = findActiveWorkspaceMember(workspaceId, userId);
@@ -63,7 +63,7 @@ public class BookmarkService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_NOT_FOUND));
     }
 
-    // JWT 전환 전까지는 X-User-Id로 워크스페이스 멤버 여부를 확인하고 추후에 jwt 완료 후 jwt 인증 붙일 예정
+    // JWT 연동 전까지 X-User-Id로 워크스페이스 멤버 확인함
     private WorkspaceMember findActiveWorkspaceMember(Long workspaceId, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
@@ -88,7 +88,7 @@ public class BookmarkService {
         }
     }
 
-    // 현재 bookmarks 스키마는 일반 채널 메시지(thread) 북마크만 지원하게 로직 구현
+    // 현재 bookmarks 스키마는 일반 채널 메시지(thread) 북마크만 지원함
     private void validateUserMessage(Thread message) {
         if (!Thread.TYPE_USER_MESSAGE.equals(message.getThreadType())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "사용자 메시지만 북마크할 수 있습니다.");

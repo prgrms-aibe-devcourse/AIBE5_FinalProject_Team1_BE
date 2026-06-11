@@ -21,7 +21,7 @@ public class BookmarkController {
 
     private final BookmarkService bookmarkService;
 
-    // 채널 메시지의 북마크 상태를 토글
+    // 채널 메시지 북마크 상태 토글함
     @PostMapping("/channels/{channelId}/messages/{messageId}/bookmark")
     public ApiResponse<BookmarkToggleResponse> toggleMessageBookmark(
             @PathVariable Long channelId,
@@ -31,7 +31,7 @@ public class BookmarkController {
         return ApiResponse.ok(bookmarkService.toggleMessageBookmark(channelId, messageId, userId));
     }
 
-    // 현재 사용자가 워크스페이스에서 저장한 북마크 메시지 목록을 조회함.
+    // 현재 사용자가 워크스페이스에서 저장한 북마크 메시지 목록 조회함
     @GetMapping("/workspaces/{workspaceId}/bookmarks")
     public ApiResponse<List<BookmarkResponse>> getMyBookmarks(
             @PathVariable Long workspaceId,
