@@ -61,6 +61,17 @@ class ApiSpecServiceTest {
         );
     }
 
+    private ApiSpec swaggerSpec() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        return ApiSpec.createFromSwagger(
+                workspace, member,
+                "사용자 조회", "GET", "/api/users/{id}",
+                null, null, null,
+                null, null, null, null, null, null
+        );
+    }
+
     private ApiSpec sampleSpec() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
@@ -561,5 +572,79 @@ class ApiSpecServiceTest {
         assertThatThrownBy(() -> apiSpecService.deleteApiSpec(999L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.API_SPEC_NOT_FOUND.getMessage());
+    }
+
+    // ── swagger 타입 제한 ─────────────────────────────────────
+
+    @Test
+    @DisplayName("sourceType이 swagger인 API 명세 생성 시 예외가 발생한다")
+    void createApiSpec_swagger_타입_생성_예외() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+
+        ApiSpecCreateRequest request = new ApiSpecCreateRequest(
+                1L, "사용자 조회", "GET", "/api/users/{id}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, "swagger", null, null, null
+        );
+
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> apiSpecService.createApiSpec(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE.getMessage());
+
+        verify(apiSpecRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("swagger 타입의 API 명세 수정 시 예외가 발생한다")
+    void updateApiSpec_swagger_타입_수정_예외() {
+        ApiSpec spec = swaggerSpec();
+        when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+
+        ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
+                "수정된 제목", "POST", "/api/users",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, null, null, null
+        );
+
+        assertThatThrownBy(() -> apiSpecService.updateApiSpec(1L, 1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE.getMessage());
+    }
+
+    @Test
+    @DisplayName("sourceType을 swagger로 변경하려 하면 예외가 발생한다")
+    void updateApiSpec_swagger_타입으로_변경_예외() {
+        ApiSpec spec = sampleSpec();
+        when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+
+        ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
+                "수정된 제목", "POST", "/api/users",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, "swagger", null, null, null
+        );
+
+        assertThatThrownBy(() -> apiSpecService.updateApiSpec(1L, 1L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE.getMessage());
+    }
+
+    @Test
+    @DisplayName("swagger 타입의 API 명세 삭제 시 예외가 발생한다")
+    void deleteApiSpec_swagger_타입_삭제_예외() {
+        ApiSpec spec = swaggerSpec();
+        when(apiSpecRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(spec));
+
+        assertThatThrownBy(() -> apiSpecService.deleteApiSpec(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE.getMessage());
+
+        verify(apiSpecRepository, never()).delete(any());
     }
 }

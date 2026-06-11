@@ -178,4 +178,61 @@ class ApiSpecTest {
         assertThat(spec.getEndpoint()).isEqualTo("/api/users");
         assertThat(spec.getGroupName()).isEqualTo("User");
     }
+
+    // ── createFromSwagger() ───────────────────────────────────
+
+    @Test
+    @DisplayName("createFromSwagger()로 생성 시 status가 'completed', sourceType이 'swagger'로 설정된다")
+    void createFromSwagger_status_sourceType_설정() {
+        ApiSpec spec = ApiSpec.createFromSwagger(
+                workspace, member,
+                "사용자 조회", "GET", "/api/users/{id}",
+                "User", "단건 조회", "상세 설명",
+                "{id}", null, null, null, "{id,name}", 200
+        );
+
+        assertThat(spec.getTitle()).isEqualTo("사용자 조회");
+        assertThat(spec.getMethod()).isEqualTo("GET");
+        assertThat(spec.getEndpoint()).isEqualTo("/api/users/{id}");
+        assertThat(spec.getGroupName()).isEqualTo("User");
+        assertThat(spec.getStatus()).isEqualTo("completed");
+        assertThat(spec.getSourceType()).isEqualTo("swagger");
+        assertThat(spec.getResponseStatus()).isEqualTo(200);
+    }
+
+    // ── createFromAi() ────────────────────────────────────────
+
+    @Test
+    @DisplayName("createFromAi()로 생성 시 status가 'design', sourceType이 'AI'로 설정된다")
+    void createFromAi_status_sourceType_설정() {
+        ApiSpec spec = ApiSpec.createFromAi(
+                workspace, member,
+                "누락된 API", "POST", "/api/items",
+                "Item", "아이템 생성", "상세 설명"
+        );
+
+        assertThat(spec.getTitle()).isEqualTo("누락된 API");
+        assertThat(spec.getMethod()).isEqualTo("POST");
+        assertThat(spec.getEndpoint()).isEqualTo("/api/items");
+        assertThat(spec.getGroupName()).isEqualTo("Item");
+        assertThat(spec.getStatus()).isEqualTo("design");
+        assertThat(spec.getSourceType()).isEqualTo("AI");
+    }
+
+    // ── complete() ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("complete() 호출 시 status가 'completed'로 변경된다")
+    void complete_status_completed로_변경() {
+        ApiSpec spec = ApiSpec.createFromAi(
+                workspace, member,
+                "누락된 API", "POST", "/api/items",
+                null, null, null
+        );
+        assertThat(spec.getStatus()).isEqualTo("design");
+
+        spec.complete();
+
+        assertThat(spec.getStatus()).isEqualTo("completed");
+    }
 }

@@ -356,4 +356,58 @@ class ApiSpecControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("AS001"));
     }
+
+    // ── swagger 타입 제한 ─────────────────────────────────────
+
+    @Test
+    @DisplayName("swagger 타입 API 명세 생성 요청 시 403을 반환한다")
+    void createApiSpec_swagger_타입_403() throws Exception {
+        ApiSpecCreateRequest request = new ApiSpecCreateRequest(
+                1L, "사용자 조회", "GET", "/api/users/{id}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, "swagger", null, null, null
+        );
+        when(apiSpecService.createApiSpec(eq(1L), any()))
+                .thenThrow(new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE));
+
+        mockMvc.perform(post("/api/workspaces/1/api-specs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("AS004"));
+    }
+
+    @Test
+    @DisplayName("swagger 타입 API 명세 수정 요청 시 403을 반환한다")
+    void updateApiSpec_swagger_타입_403() throws Exception {
+        ApiSpecUpdateRequest request = new ApiSpecUpdateRequest(
+                "수정된 제목", "POST", "/api/users",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null,
+                null, null, null, null, null
+        );
+        when(apiSpecService.updateApiSpec(eq(1L), eq(1L), any()))
+                .thenThrow(new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/workspaces/1/api-specs/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("AS004"));
+    }
+
+    @Test
+    @DisplayName("swagger 타입 API 명세 삭제 요청 시 403을 반환한다")
+    void deleteApiSpec_swagger_타입_403() throws Exception {
+        doThrow(new BusinessException(ErrorCode.SWAGGER_SPEC_NOT_EDITABLE))
+                .when(apiSpecService).deleteApiSpec(1L, 1L);
+
+        mockMvc.perform(delete("/api/workspaces/1/api-specs/1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("AS004"));
+    }
 }
