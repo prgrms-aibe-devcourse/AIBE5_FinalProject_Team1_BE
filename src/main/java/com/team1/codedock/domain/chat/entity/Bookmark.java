@@ -25,4 +25,12 @@ public class Bookmark extends BaseCreatedEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "thread_id", nullable = false)
     private Thread thread;
+
+    // 현재 bookmarks 테이블은 thread_id만 가지므로 채널 메시지 북마크를 생성
+    public static Bookmark create(WorkspaceMember workspaceMember, Thread thread) {
+        Bookmark bookmark = new Bookmark();
+        bookmark.workspaceMember = workspaceMember;
+        bookmark.thread = thread;
+        return bookmark;
+    }
 }
