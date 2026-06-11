@@ -3,6 +3,8 @@ package com.team1.codedock.domain.chat.repository;
 import com.team1.codedock.domain.chat.entity.Thread;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -21,5 +23,38 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             String threadType,
             Long cursor,
             Pageable pageable
+    );
+
+    @Query("""
+            select t.channel.id as channelId, count(t) as messageCount
+            from Thread t
+            where t.channel.id in :channelIds
+              and t.threadType = :threadType
+            group by t.channel.id
+            """)
+    List<ChannelMessageCountProjection> countByChannelIdsAndThreadType(
+            @Param("channelIds") List<Long> channelIds,
+            @Param("threadType") String threadType
+    );
+
+    @Query("""
+            select t
+            from Thread t
+            where t.channel.id in :channelIds
+              and t.threadType = :threadType
+              and not exists (
+                  select 1
+                  from Thread newer
+                  where newer.channel.id = t.channel.id
+                    and newer.threadType = :threadType
+                    and (
+                        newer.createdAt > t.createdAt
+                        or (newer.createdAt = t.createdAt and newer.id > t.id)
+                    )
+              )
+            """)
+    List<Thread> findLatestByChannelIdsAndThreadType(
+            @Param("channelIds") List<Long> channelIds,
+            @Param("threadType") String threadType
     );
 }

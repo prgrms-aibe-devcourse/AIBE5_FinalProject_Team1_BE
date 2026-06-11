@@ -3,6 +3,8 @@ package com.team1.codedock.domain.channel.dto;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 
+import java.time.LocalDateTime;
+
 public record ChannelListResponse(
         Long id,
         Long workspaceId,
@@ -10,9 +12,21 @@ public record ChannelListResponse(
         String name,
         String channelType,
         boolean isDeletable,
-        String description
+        String description,
+        String lastMessage,
+        LocalDateTime lastMessageAt,
+        long messageCount
 ) {
     public static ChannelListResponse from(Channel channel) {
+        return from(channel, null, null, 0L);
+    }
+
+    public static ChannelListResponse from(
+            Channel channel,
+            String lastMessage,
+            LocalDateTime lastMessageAt,
+            long messageCount
+    ) {
         GithubRepository githubRepository = channel.getGithubRepository();
 
         return new ChannelListResponse(
@@ -22,7 +36,10 @@ public record ChannelListResponse(
                 channel.getName(),
                 channel.getChannelType(),
                 channel.isDeletable(),
-                channel.getDescription()
+                channel.getDescription(),
+                lastMessage,
+                lastMessageAt,
+                messageCount
         );
     }
 }

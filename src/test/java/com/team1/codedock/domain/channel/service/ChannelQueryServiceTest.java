@@ -2,6 +2,9 @@ package com.team1.codedock.domain.channel.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.repository.ChannelMessageCountProjection;
+import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -15,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +38,9 @@ class ChannelQueryServiceTest {
     @Mock
     private WorkspaceMemberRepository workspaceMemberRepository;
 
+    @Mock
+    private ThreadRepository threadRepository;
+
     @InjectMocks
     private ChannelQueryService channelQueryService;
 
@@ -43,16 +50,50 @@ class ChannelQueryServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = Channel.createCustom(workspace, "team-chat", "Team chat");
         ReflectionTestUtils.setField(channel, "id", 1L);
+        Thread latestMessage = Thread.createChannelMessage(channel, mock(WorkspaceMember.class), "latest");
+        ReflectionTestUtils.setField(latestMessage, "id", 11L);
+        ReflectionTestUtils.setField(latestMessage, "createdAt", LocalDateTime.of(2026, 6, 11, 10, 0));
+        ChannelMessageCountProjection messageCount = messageCount(1L, 3L);
 
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
                 .thenReturn(Optional.of(mock(WorkspaceMember.class)));
         when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
+        when(threadRepository.countByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE))
+                .thenReturn(List.of(messageCount));
+        when(threadRepository.findLatestByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE))
+                .thenReturn(List.of(latestMessage));
 
         var response = channelQueryService.getChannels(10L, 100L);
 
         assertThat(response).hasSize(1);
         assertThat(response.get(0).id()).isEqualTo(1L);
         assertThat(response.get(0).name()).isEqualTo("team-chat");
+        assertThat(response.get(0).lastMessage()).isEqualTo("latest");
+        assertThat(response.get(0).lastMessageAt()).isEqualTo(LocalDateTime.of(2026, 6, 11, 10, 0));
+        assertThat(response.get(0).messageCount()).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("Returns null last message and zero count for channel without messages")
+    void getChannelsWithoutMessages() {
+        Workspace workspace = workspace(10L);
+        Channel channel = Channel.createCustom(workspace, "empty", null);
+        ReflectionTestUtils.setField(channel, "id", 2L);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+        when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
+        when(threadRepository.countByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE))
+                .thenReturn(List.of());
+        when(threadRepository.findLatestByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE))
+                .thenReturn(List.of());
+
+        var response = channelQueryService.getChannels(10L, 100L);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).lastMessage()).isNull();
+        assertThat(response.get(0).lastMessageAt()).isNull();
+        assertThat(response.get(0).messageCount()).isZero();
     }
 
     @Test
@@ -84,5 +125,12 @@ class ChannelQueryServiceTest {
         Workspace workspace = mock(Workspace.class);
         when(workspace.getId()).thenReturn(id);
         return workspace;
+    }
+
+    private ChannelMessageCountProjection messageCount(Long channelId, long messageCount) {
+        ChannelMessageCountProjection projection = mock(ChannelMessageCountProjection.class);
+        when(projection.getChannelId()).thenReturn(channelId);
+        when(projection.getMessageCount()).thenReturn(messageCount);
+        return projection;
     }
 }
