@@ -3,6 +3,7 @@ package com.team1.codedock.domain.github.service;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.Base64;
 import java.util.List;
@@ -42,6 +43,27 @@ public class GithubApiClient {
                 .toList();
     }
 
+    public String fetchPrimaryEmail(String token) {
+        List<GithubEmail> emails = restClient.get()
+                .uri("/user/emails")
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubEmail>>() {});
+
+        if (emails == null) return null;
+
+        return emails.stream()
+                .filter(e -> e.primary() && e.verified())
+                .map(GithubEmail::email)
+                .findFirst()
+                .or(() -> emails.stream()
+                        .filter(GithubEmail::verified)
+                        .map(GithubEmail::email)
+                        .findFirst())
+                .orElse(null);
+    }
+
     private String fetchFileContent(String owner, String repo, String branch, String path, String token) {
         GithubContentResponse response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -67,4 +89,7 @@ public class GithubApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record GithubContentResponse(String content, String encoding) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record GithubEmail(String email, boolean primary, boolean verified, String visibility) {}
 }

@@ -68,6 +68,7 @@ class AuthControllerTest {
         req.setEmail("test@test.com");
         req.setDisplayName("testuser");
         req.setPassword("password1");
+        req.setGithubLinkToken("link-token");
 
         SignupResponse response = SignupResponse.builder()
                 .userId(1L).email("test@test.com").username("testuser").build();
@@ -89,6 +90,7 @@ class AuthControllerTest {
         req.setEmail("");
         req.setDisplayName("testuser");
         req.setPassword("password1");
+        req.setGithubLinkToken("link-token");
 
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -105,6 +107,24 @@ class AuthControllerTest {
         req.setEmail("not-an-email");
         req.setDisplayName("testuser");
         req.setPassword("password1");
+        req.setGithubLinkToken("link-token");
+
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+    
+    @Test
+    @DisplayName("POST /signup: githubLinkToken이 blank이면 400을 반환한다")
+    void signup_blankGithubLinkToken_400() throws Exception {
+        SignupRequest req = new SignupRequest();
+        req.setEmail("test@test.com");
+        req.setDisplayName("testuser");
+        req.setPassword("password1");
+        req.setGithubLinkToken("");
 
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)

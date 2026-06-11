@@ -9,6 +9,7 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.JwtProvider;
+import com.team1.codedock.global.security.GithubLinkTokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,14 +23,26 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final GithubLinkTokenProvider githubLinkTokenProvider;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        Long userId;
+        try {
+            userId = githubLinkTokenProvider.validateAndGetUserId(request.getGithubLinkToken());
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (user.getPasswordHash() != null) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
+        userRepository.findByEmail(request.getEmail())
+                .filter(existing -> !existing.getId().equals(userId))
+                .ifPresent(existing -> { throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS); });
         String hash = passwordEncoder.encode(request.getPassword());
-        User user = userRepository.save(User.create(request.getEmail(), hash, request.getDisplayName()));
+        user.completeEmailSignup(request.getEmail(), hash, request.getDisplayName());
         return SignupResponse.from(user);
     }
 
