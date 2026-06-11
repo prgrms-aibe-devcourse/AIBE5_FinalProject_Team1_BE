@@ -33,6 +33,10 @@ public class GeminiClient {
         this.objectMapper = objectMapper;
     }
 
+    public String getModel() {
+        return model;
+    }
+
     public ErdGenerationResult generateErd(List<String> entitySources) {
         String prompt = buildErdPrompt(entitySources);
 

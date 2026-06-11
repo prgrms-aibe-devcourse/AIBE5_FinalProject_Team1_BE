@@ -50,7 +50,11 @@ public enum ErrorCode {
     GITHUB_API_ERROR(HttpStatus.BAD_GATEWAY, "G006", "GitHub API 호출에 실패했습니다."),
 
     // ERD
-    ERD_NOT_FOUND(HttpStatus.NOT_FOUND, "E001", "ERD를 찾을 수 없습니다.");
+    ERD_NOT_FOUND(HttpStatus.NOT_FOUND, "E001", "ERD를 찾을 수 없습니다."),
+
+    // AI
+    AI_SUMMARY_NOT_FOUND(HttpStatus.NOT_FOUND, "AI001", "AI 요약을 찾을 수 없습니다."),
+    AI_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "AI002", "AI 분석에 실패했습니다.");
 
     private final HttpStatus status;
     private final String code;
