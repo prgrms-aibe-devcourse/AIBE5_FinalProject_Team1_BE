@@ -52,10 +52,10 @@ public class AiSummaryService {
 
         try {
             GeminiClient.PrAnalysisResult result = geminiClient.generatePrAnalysis(combinedDiff);
-            String summaryJson = objectMapper.writeValueAsString(result);
-            aiSummary.complete(summaryJson, result.riskLevel(), geminiClient.getModel());
+            GeminiClient.PrAnalysisResult normalized = normalizeResult(result);
+            String summaryJson = objectMapper.writeValueAsString(normalized);
+            aiSummary.complete(summaryJson, normalizeRiskLevel(normalized.riskLevel()), geminiClient.getModel());
         } catch (Exception e) {
-            aiSummary.fail();
             throw new BusinessException(ErrorCode.AI_ANALYSIS_FAILED);
         }
 
@@ -111,6 +111,41 @@ public class AiSummaryService {
         } catch (Exception e) {
             throw new RuntimeException("AI 요약 파싱 실패", e);
         }
+    }
+
+    private GeminiClient.PrAnalysisResult normalizeResult(GeminiClient.PrAnalysisResult result) {
+        List<GeminiClient.PrFileFeedback> normalizedFiles = null;
+        if (result.fileFeedbacks() != null) {
+            normalizedFiles = result.fileFeedbacks().stream()
+                    .map(f -> new GeminiClient.PrFileFeedback(
+                            f.name(), f.path(), normalizeFileRisk(f.risk()),
+                            f.vulnerability(), f.fix(),
+                            f.currentCode(), f.recommendedCode(), f.findings()))
+                    .toList();
+        }
+        return new GeminiClient.PrAnalysisResult(
+                result.summaryText(), result.cautionItems(), result.positiveItems(),
+                result.riskLevel(), normalizedFiles);
+    }
+
+    private String normalizeRiskLevel(String riskLevel) {
+        if (riskLevel == null) return null;
+        return switch (riskLevel.toUpperCase()) {
+            case "HIGH" -> "High";
+            case "MEDIUM" -> "Medium";
+            case "LOW" -> "Low";
+            default -> null;
+        };
+    }
+
+    private String normalizeFileRisk(String risk) {
+        if (risk == null) return null;
+        return switch (risk.toUpperCase()) {
+            case "HIGH", "높음" -> "높음";
+            case "MEDIUM", "중간" -> "중간";
+            case "LOW", "낮음" -> "낮음";
+            default -> null;
+        };
     }
 
     private Long getCurrentUserId() {
