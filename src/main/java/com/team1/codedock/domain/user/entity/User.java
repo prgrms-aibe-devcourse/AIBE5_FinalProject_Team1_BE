@@ -99,10 +99,11 @@ public class User extends BaseEntity {
         User user = new User();
         user.githubId = githubId;
         user.githubUsername = githubUsername;
-        user.githubEmail = email;
-        user.email = (email != null && !email.isBlank())
+        String resolved = (email != null && !email.isBlank())
                 ? email
-                : githubUsername + "@users.noreply.github.com";
+                : githubId + "+" + githubUsername + "@users.noreply.github.com";
+        user.githubEmail = resolved;
+        user.email = resolved;
         user.username = githubUsername;
         user.displayName = githubUsername;
         user.avatarUrl = avatarUrl;
@@ -128,6 +129,35 @@ public class User extends BaseEntity {
             this.githubConnected = true;
             this.githubConnectedAt = LocalDateTime.now();
         }
+    }
+
+    public void updateOnGithubLogin(String githubAccessToken, String avatarUrl, String githubEmail) {
+        updateOnGithubLogin(githubAccessToken, avatarUrl);
+        if (githubEmail != null && !githubEmail.isBlank()) {
+            this.githubEmail = githubEmail;
+        }
+    }
+
+    public void linkGithub(String githubId, String githubUsername, String githubEmail,
+                           String avatarUrl, String githubAccessToken) {
+        this.githubId = githubId;
+        this.githubUsername = githubUsername;
+        if (githubEmail != null && !githubEmail.isBlank()) {
+            this.githubEmail = githubEmail;
+        }
+        if (avatarUrl != null) {
+            this.avatarUrl = avatarUrl;
+        }
+        this.githubAccessToken = githubAccessToken;
+        this.githubConnected = true;
+        this.githubConnectedAt = LocalDateTime.now();
+        this.lastLoginAt = LocalDateTime.now();
+    }
+
+    public void completeEmailSignup(String email, String passwordHash, String displayName) {
+        this.email = email;
+        this.passwordHash = passwordHash;
+        this.displayName = displayName;
     }
 
     public void updateProfile(String displayName, String nickname, String developerType, String bio, String avatarUrl) {

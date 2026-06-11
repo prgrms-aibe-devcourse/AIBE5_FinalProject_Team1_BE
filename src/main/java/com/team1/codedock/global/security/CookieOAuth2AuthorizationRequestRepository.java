@@ -21,6 +21,7 @@ public class CookieOAuth2AuthorizationRequestRepository
 
     private static final String COOKIE_NAME = "oauth2_auth_request";
     private static final int COOKIE_EXPIRE_SECONDS = 180;
+    private static final String MODE_COOKIE_NAME = "oauth2_mode";
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {
@@ -41,6 +42,15 @@ public class CookieOAuth2AuthorizationRequestRepository
         cookie.setHttpOnly(true);
         cookie.setMaxAge(COOKIE_EXPIRE_SECONDS);
         response.addCookie(cookie);
+
+        String mode = request.getParameter("mode");
+        if ("link".equals(mode)) {
+            Cookie modeCookie = new Cookie(MODE_COOKIE_NAME, "link");
+            modeCookie.setPath("/");
+            modeCookie.setHttpOnly(true);
+            modeCookie.setMaxAge(COOKIE_EXPIRE_SECONDS);
+            response.addCookie(modeCookie);
+        }
     }
 
     @Override
@@ -48,6 +58,7 @@ public class CookieOAuth2AuthorizationRequestRepository
                                                                   HttpServletResponse response) {
         OAuth2AuthorizationRequest req = loadAuthorizationRequest(request);
         deleteCookie(request, response, COOKIE_NAME);
+        deleteCookie(request, response, MODE_COOKIE_NAME);
         return req;
     }
 

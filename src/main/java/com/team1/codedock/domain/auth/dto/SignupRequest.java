@@ -28,4 +28,7 @@ public class SignupRequest {
             message = "비밀번호는 영문과 숫자를 함께 입력해주세요"
     )
     private String password;
+
+    @NotBlank
+    private String githubLinkToken;
 }
