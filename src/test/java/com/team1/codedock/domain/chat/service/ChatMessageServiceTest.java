@@ -47,6 +47,9 @@ class ChatMessageServiceTest {
     @Mock
     private EntityManager entityManager;
 
+    @Mock
+    private MentionService mentionService;
+
     @InjectMocks
     private ChatMessageService chatMessageService;
 
@@ -78,6 +81,11 @@ class ChatMessageServiceTest {
         assertThat(response.senderName()).isEqualTo("tester");
         assertThat(response.content()).isEqualTo("hello");
         verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(mentionService).createMentionsForThread(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(sender),
+                org.mockito.ArgumentMatchers.eq("hello")
+        );
     }
 
     @Test
@@ -152,6 +160,11 @@ class ChatMessageServiceTest {
         assertThat(response.senderName()).isEqualTo("tester");
         assertThat(response.content()).isEqualTo("hello");
         verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(mentionService).createMentionsForThread(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(sender),
+                org.mockito.ArgumentMatchers.eq("hello")
+        );
     }
 
     @Test

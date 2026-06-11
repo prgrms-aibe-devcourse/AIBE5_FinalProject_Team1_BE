@@ -65,7 +65,8 @@ class ChannelControllerTest {
                 "General channel",
                 "hello",
                 LocalDateTime.of(2026, 6, 11, 10, 0),
-                3L
+                3L,
+                2L
         );
         when(channelQueryService.getChannels(10L, 100L)).thenReturn(List.of(response));
 
@@ -76,7 +77,8 @@ class ChannelControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(1L))
                 .andExpect(jsonPath("$.data[0].name").value("general"))
                 .andExpect(jsonPath("$.data[0].lastMessage").value("hello"))
-                .andExpect(jsonPath("$.data[0].messageCount").value(3L));
+                .andExpect(jsonPath("$.data[0].messageCount").value(3L))
+                .andExpect(jsonPath("$.data[0].unreadCount").value(2L));
     }
 
     @Test
@@ -93,6 +95,7 @@ class ChannelControllerTest {
                 "Team chat",
                 null,
                 null,
+                0L,
                 0L
         );
         when(channelCommandService.createChannel(eq(10L), eq(100L), eq(request))).thenReturn(response);
@@ -136,6 +139,7 @@ class ChannelControllerTest {
                 "Updated",
                 null,
                 null,
+                0L,
                 0L
         );
         when(channelCommandService.updateChannel(eq(10L), eq(2L), eq(100L), eq(request))).thenReturn(response);

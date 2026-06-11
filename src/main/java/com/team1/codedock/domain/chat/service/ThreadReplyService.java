@@ -24,6 +24,7 @@ public class ThreadReplyService {
     private final ThreadReplyRepository threadReplyRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
+    private final MentionService mentionService;
 
     @Transactional(readOnly = true)
     public List<ThreadReplyResponse> getReplies(Long threadId, Long userId) {
@@ -43,6 +44,7 @@ public class ThreadReplyService {
 
         ThreadReply reply = ThreadReply.create(thread, member, request.content());
         ThreadReply savedReply = threadReplyRepository.save(reply);
+        mentionService.createMentionsForThreadReply(savedReply, member, request.content());
         return ThreadReplyResponse.from(savedReply);
     }
 

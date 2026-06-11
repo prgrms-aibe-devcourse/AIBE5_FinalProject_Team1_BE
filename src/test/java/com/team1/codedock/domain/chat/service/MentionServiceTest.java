@@ -1,0 +1,231 @@
+package com.team1.codedock.domain.chat.service;
+
+import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.chat.dto.MentionResponse;
+import com.team1.codedock.domain.chat.entity.Mention;
+import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.entity.ThreadReply;
+import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.lang.reflect.Constructor;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class MentionServiceTest {
+
+    @Mock
+    private MentionRepository mentionRepository;
+
+    @Mock
+    private WorkspaceMemberRepository workspaceMemberRepository;
+
+    @InjectMocks
+    private MentionService mentionService;
+
+    @Test
+    @DisplayName("Creates mentions for matching workspace members in a channel message")
+    void createMentionsForThread() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
+        WorkspaceMember bob = workspaceMember(22L, workspace, user("bob", "Bob"));
+        Thread thread = thread(100L, channel, sender, "hello @alice @bob @alice @none");
+
+        when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("alice", "bob", "none")))
+                .thenReturn(List.of(alice, bob));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(2);
+        assertThat(savedMentions.get(0).getWorkspace()).isEqualTo(workspace);
+        assertThat(savedMentions.get(0).getThread()).isEqualTo(thread);
+        assertThat(savedMentions.get(0).getThreadReply()).isNull();
+        assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
+        assertThat(savedMentions.get(0).getMentionedByMember()).isEqualTo(sender);
+        assertThat(savedMentions.get(0).isRead()).isFalse();
+        assertThat(savedMentions.get(1).getMentionedMember()).isEqualTo(bob);
+    }
+
+    @Test
+    @DisplayName("Does not query or save when content has no mention token")
+    void createMentionsForThreadWithoutMentionToken() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        Thread thread = thread(100L, channel, sender, "hello team");
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        verify(workspaceMemberRepository, never()).findActiveMentionTargets(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyList()
+        );
+        verify(mentionRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Creates mentions for matching workspace members in a thread reply")
+    void createMentionsForThreadReply() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "message");
+        ThreadReply reply = reply(200L, thread, sender, "reply to @alice");
+
+        when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("alice")))
+                .thenReturn(List.of(alice));
+
+        mentionService.createMentionsForThreadReply(reply, sender, reply.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(1);
+        assertThat(savedMentions.get(0).getThread()).isNull();
+        assertThat(savedMentions.get(0).getThreadReply()).isEqualTo(reply);
+        assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
+    }
+
+    @Test
+    @DisplayName("Returns my mentions in workspace")
+    void getMyMentions() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+        ReflectionTestUtils.setField(mention, "createdAt", LocalDateTime.of(2026, 6, 11, 12, 0));
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(mentioned));
+        when(mentionRepository.findAllByWorkspace_IdAndMentionedMember_IdOrderByCreatedAtDesc(10L, 21L))
+                .thenReturn(List.of(mention));
+
+        List<MentionResponse> response = mentionService.getMyMentions(10L, 30L);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).id()).isEqualTo(300L);
+        assertThat(response.get(0).channelId()).isEqualTo(1L);
+        assertThat(response.get(0).threadId()).isEqualTo(100L);
+        assertThat(response.get(0).threadReplyId()).isNull();
+        assertThat(response.get(0).mentionedByName()).isEqualTo("Sender");
+        assertThat(response.get(0).read()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Marks my mention as read")
+    void markMentionAsRead() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(mentioned));
+        when(mentionRepository.findByIdAndMentionedMember_Id(300L, 21L))
+                .thenReturn(Optional.of(mention));
+
+        MentionResponse response = mentionService.markMentionAsRead(300L, 30L);
+
+        assertThat(response.read()).isTrue();
+        assertThat(mention.isRead()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Rejects mention list without user")
+    void getMyMentionsWithoutUser() {
+        assertThatThrownBy(() -> mentionService.getMyMentions(10L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+    }
+
+    private static List<Mention> toList(Iterable<Mention> mentions) {
+        List<Mention> result = new ArrayList<>();
+        mentions.forEach(result::add);
+        return result;
+    }
+
+    private static ThreadReply reply(Long id, Thread thread, WorkspaceMember member, String content) {
+        ThreadReply reply = ThreadReply.create(thread, member, content);
+        ReflectionTestUtils.setField(reply, "id", id);
+        return reply;
+    }
+
+    private static Thread thread(Long id, Channel channel, WorkspaceMember sender, String content) {
+        Thread thread = Thread.createChannelMessage(channel, sender, content);
+        ReflectionTestUtils.setField(thread, "id", id);
+        return thread;
+    }
+
+    private static Channel channel(Long id, Workspace workspace) {
+        Channel channel = Channel.createCustom(workspace, "team-chat", null);
+        ReflectionTestUtils.setField(channel, "id", id);
+        return channel;
+    }
+
+    private static Workspace workspace(Long id) {
+        Workspace workspace = newInstance(Workspace.class);
+        ReflectionTestUtils.setField(workspace, "id", id);
+        return workspace;
+    }
+
+    private static WorkspaceMember workspaceMember(Long id, Workspace workspace, User user) {
+        WorkspaceMember member = WorkspaceMember.create(workspace, user, "editor");
+        ReflectionTestUtils.setField(member, "id", id);
+        return member;
+    }
+
+    private static User user(String username, String displayName) {
+        User user = newInstance(User.class);
+        ReflectionTestUtils.setField(user, "username", username);
+        ReflectionTestUtils.setField(user, "displayName", displayName);
+        return user;
+    }
+
+    private static <T> T newInstance(Class<T> type) {
+        try {
+            Constructor<T> constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to create test entity: " + type.getSimpleName(), e);
+        }
+    }
+}

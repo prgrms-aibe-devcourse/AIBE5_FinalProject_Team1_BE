@@ -15,17 +15,20 @@ public record ChannelListResponse(
         String description,
         String lastMessage,
         LocalDateTime lastMessageAt,
-        long messageCount
+        long messageCount,
+        // 현재 멤버가 아직 읽지 않은 채널 메시지 수임
+        long unreadCount
 ) {
     public static ChannelListResponse from(Channel channel) {
-        return from(channel, null, null, 0L);
+        return from(channel, null, null, 0L, 0L);
     }
 
     public static ChannelListResponse from(
             Channel channel,
             String lastMessage,
             LocalDateTime lastMessageAt,
-            long messageCount
+            long messageCount,
+            long unreadCount
     ) {
         GithubRepository githubRepository = channel.getGithubRepository();
 
@@ -39,7 +42,8 @@ public record ChannelListResponse(
                 channel.getDescription(),
                 lastMessage,
                 lastMessageAt,
-                messageCount
+                messageCount,
+                unreadCount
         );
     }
 }

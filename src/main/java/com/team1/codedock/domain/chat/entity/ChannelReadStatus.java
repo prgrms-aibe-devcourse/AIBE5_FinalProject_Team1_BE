@@ -2,7 +2,16 @@ package com.team1.codedock.domain.chat.entity;
 
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.SequenceGenerator;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -34,4 +43,25 @@ public class ChannelReadStatus {
 
     @Column(name = "last_read_at", nullable = false)
     private LocalDateTime lastReadAt;
+
+    // 멤버가 채널을 처음 읽었을 때 읽음 상태 row 생성함
+    public static ChannelReadStatus create(
+            Channel channel,
+            WorkspaceMember workspaceMember,
+            Thread lastReadThread,
+            LocalDateTime lastReadAt
+    ) {
+        ChannelReadStatus status = new ChannelReadStatus();
+        status.channel = channel;
+        status.workspaceMember = workspaceMember;
+        status.lastReadThread = lastReadThread;
+        status.lastReadAt = lastReadAt;
+        return status;
+    }
+
+    // 마지막으로 읽은 메시지와 시간을 최신 값으로 갱신함
+    public void updateLastRead(Thread lastReadThread, LocalDateTime lastReadAt) {
+        this.lastReadThread = lastReadThread;
+        this.lastReadAt = lastReadAt;
+    }
 }

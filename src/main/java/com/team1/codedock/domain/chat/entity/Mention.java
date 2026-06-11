@@ -41,4 +41,42 @@ public class Mention extends BaseCreatedEntity {
 
     @Column(name = "is_read", nullable = false)
     private boolean isRead;
+
+    // 채널 메시지를 가리키는 멘션 생성함
+    public static Mention createForThread(
+            Workspace workspace,
+            Thread thread,
+            WorkspaceMember mentionedMember,
+            WorkspaceMember mentionedByMember
+    ) {
+        Mention mention = new Mention();
+        mention.workspace = workspace;
+        mention.thread = thread;
+        mention.threadReply = null;
+        mention.mentionedMember = mentionedMember;
+        mention.mentionedByMember = mentionedByMember;
+        mention.isRead = false;
+        return mention;
+    }
+
+    // 스레드 답글을 가리키는 멘션 생성함
+    public static Mention createForThreadReply(
+            Workspace workspace,
+            ThreadReply threadReply,
+            WorkspaceMember mentionedMember,
+            WorkspaceMember mentionedByMember
+    ) {
+        Mention mention = new Mention();
+        mention.workspace = workspace;
+        mention.thread = null;
+        mention.threadReply = threadReply;
+        mention.mentionedMember = mentionedMember;
+        mention.mentionedByMember = mentionedByMember;
+        mention.isRead = false;
+        return mention;
+    }
+
+    public void markAsRead() {
+        this.isRead = true;
+    }
 }

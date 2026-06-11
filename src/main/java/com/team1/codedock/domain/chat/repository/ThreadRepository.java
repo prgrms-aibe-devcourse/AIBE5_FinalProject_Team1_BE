@@ -7,10 +7,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ThreadRepository extends JpaRepository<Thread, Long> {
 
     boolean existsByChannel_Id(Long channelId);
+
+    // 채널 읽음 처리 기준으로 삼을 최신 사용자 메시지 조회함
+    Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
 
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
             Long channelId,
@@ -35,6 +39,29 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
     List<ChannelMessageCountProjection> countByChannelIdsAndThreadType(
             @Param("channelIds") List<Long> channelIds,
             @Param("threadType") String threadType
+    );
+
+    // 워크스페이스 멤버 기준으로 채널별 안 읽은 메시지 수 집계함
+    // 읽음 상태가 없으면 해당 채널의 모든 사용자 메시지를 unread로 봄
+    @Query("""
+            select t.channel.id as channelId, count(t) as messageCount
+            from Thread t
+            left join ChannelReadStatus crs
+              on crs.channel = t.channel
+             and crs.workspaceMember.id = :workspaceMemberId
+            where t.channel.id in :channelIds
+              and t.threadType = :threadType
+              and (
+                  crs.id is null
+                  or crs.lastReadThread is null
+                  or t.id > crs.lastReadThread.id
+              )
+            group by t.channel.id
+            """)
+    List<ChannelMessageCountProjection> countUnreadByChannelIdsAndThreadType(
+            @Param("channelIds") List<Long> channelIds,
+            @Param("threadType") String threadType,
+            @Param("workspaceMemberId") Long workspaceMemberId
     );
 
     @Query("""
