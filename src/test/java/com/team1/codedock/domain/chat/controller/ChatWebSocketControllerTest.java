@@ -92,6 +92,34 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Channel message WebSocket send rejects non-authentication Principal")
+    void createChannelMessageWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Channel message WebSocket send rejects Principal without CustomUserDetails")
+    void createChannelMessageWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Thread reply WebSocket send broadcasts THREAD_REPLY_CREATED event")
     void createThreadReply() {
         Long threadId = 1L;
