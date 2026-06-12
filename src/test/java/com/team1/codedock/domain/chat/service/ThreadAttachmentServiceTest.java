@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -101,6 +102,39 @@ class ThreadAttachmentServiceTest {
                 userId,
                 List.of(request("video"))
         ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(threadAttachmentRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    @DisplayName("Service rejects null attachment item")
+    void saveAttachmentsWithNullItem() {
+        Thread message = message(100L, channel(1L, workspace(2L)), workspaceMember(10L, workspace(2L), true));
+
+        assertThatThrownBy(() -> threadAttachmentService.saveAttachments(
+                message,
+                java.util.Arrays.asList((ThreadAttachmentRequest) null)
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(threadAttachmentRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    @DisplayName("Service rejects more than ten attachments")
+    void saveAttachmentsWithTooManyItems() {
+        Thread message = message(100L, channel(1L, workspace(2L)), workspaceMember(10L, workspace(2L), true));
+        List<ThreadAttachmentRequest> requests = new ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            requests.add(request("file"));
+        }
+
+        assertThatThrownBy(() -> threadAttachmentService.saveAttachments(message, requests))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);

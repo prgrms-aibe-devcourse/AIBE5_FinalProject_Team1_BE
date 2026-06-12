@@ -89,6 +89,9 @@ public class ChatMessageService {
     }
 
     private ChannelMessageResponse responseWithAttachments(Thread message) {
+        if (isDeletedMessage(message)) {
+            return ChannelMessageResponse.from(message);
+        }
         List<ThreadAttachmentResponse> attachments = threadAttachmentService.getAttachments(message.getId());
         return ChannelMessageResponse.from(message, attachments);
     }
@@ -131,9 +134,15 @@ public class ChatMessageService {
         return orderedMessages.stream()
                 .map(message -> ChannelMessageResponse.from(
                         message,
-                        attachmentsByThread.getOrDefault(message.getId(), List.of())
+                        isDeletedMessage(message)
+                                ? List.of()
+                                : attachmentsByThread.getOrDefault(message.getId(), List.of())
                 ))
                 .toList();
+    }
+
+    private boolean isDeletedMessage(Thread message) {
+        return Thread.DELETED_MESSAGE_CONTENT.equals(message.getContent());
     }
 
     private void validateContent(String content) {

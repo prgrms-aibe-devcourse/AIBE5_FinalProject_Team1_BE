@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ThreadAttachmentService {
 
+    private static final int MAX_ATTACHMENTS_PER_REQUEST = 10;
     private static final Set<String> ALLOWED_ATTACHMENT_TYPES =
             Set.of("file", "image", "link", "pr", "issue", "api", "erd", "docs");
 
@@ -48,6 +49,7 @@ public class ThreadAttachmentService {
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
+        validateAttachmentRequestList(requests);
 
         List<ThreadAttachment> attachments = requests.stream()
                 .map(request -> createAttachment(thread, request))
@@ -56,6 +58,15 @@ public class ThreadAttachmentService {
         return threadAttachmentRepository.saveAll(attachments).stream()
                 .map(ThreadAttachmentResponse::from)
                 .toList();
+    }
+
+    private void validateAttachmentRequestList(List<ThreadAttachmentRequest> requests) {
+        if (requests.size() > MAX_ATTACHMENTS_PER_REQUEST) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachments must be 10 or fewer.");
+        }
+        if (requests.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment must not be null.");
+        }
     }
 
     @Transactional(readOnly = true)
