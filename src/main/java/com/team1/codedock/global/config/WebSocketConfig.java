@@ -1,6 +1,9 @@
 package com.team1.codedock.global.config;
 
+import com.team1.codedock.global.security.WebSocketAuthChannelInterceptor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -8,7 +11,10 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 
 @Configuration
 @EnableWebSocketMessageBroker
+@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
@@ -21,6 +27,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://127.0.0.1:5174",
                         "http://127.0.0.1:3000"
                 );
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(webSocketAuthChannelInterceptor);
     }
 
     @Override
