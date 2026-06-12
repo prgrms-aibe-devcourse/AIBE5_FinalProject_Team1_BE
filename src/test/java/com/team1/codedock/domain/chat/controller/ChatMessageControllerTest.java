@@ -13,6 +13,8 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadAttachmentService;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
+import com.team1.codedock.global.security.CustomUserDetails;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.filter.CharacterEncodingFilter;
@@ -31,6 +36,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -42,6 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @ExtendWith(MockitoExtension.class)
 class ChatMessageControllerTest {
+
+    private static final Long USER_ID = 10L;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -58,6 +66,12 @@ class ChatMessageControllerTest {
 
     @BeforeEach
     void setUp() {
+        CustomUserDetails userDetails = mock(CustomUserDetails.class);
+        when(userDetails.getUserId()).thenReturn(USER_ID);
+        when(userDetails.getAuthorities()).thenReturn(List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities()));
+
         mockMvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(
                         chatMessageService,
                         threadAttachmentService,
@@ -68,11 +82,15 @@ class ChatMessageControllerTest {
                 .build();
     }
 
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
-    @DisplayName("Channel message list API passes X-User-Id and paging params to service")
+    @DisplayName("Channel message list API passes user id and paging params to service")
     void getChannelMessages() throws Exception {
         Long channelId = 1L;
-        Long userId = 10L;
         Long cursor = 100L;
         int limit = 20;
         ChannelMessageResponse response = new ChannelMessageResponse(
@@ -84,10 +102,9 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
-        when(chatMessageService.getChannelMessages(channelId, userId, cursor, limit)).thenReturn(List.of(response));
+        when(chatMessageService.getChannelMessages(channelId, USER_ID, cursor, limit)).thenReturn(List.of(response));
 
         mockMvc.perform(get("/api/channels/{channelId}/messages", channelId)
-                        .header("X-User-Id", userId)
                         .param("cursor", String.valueOf(cursor))
                         .param("limit", String.valueOf(limit)))
                 .andExpect(status().isOk())
@@ -95,14 +112,13 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(101L))
                 .andExpect(jsonPath("$.data[0].content").value("hello"));
 
-        verify(chatMessageService).getChannelMessages(channelId, userId, cursor, limit);
+        verify(chatMessageService).getChannelMessages(channelId, USER_ID, cursor, limit);
     }
 
     @Test
-    @DisplayName("Channel message create API passes request body and X-User-Id to service")
+    @DisplayName("Channel message create API passes request body and user id to service")
     void createChannelMessage() throws Exception {
         Long channelId = 1L;
-        Long userId = 10L;
         ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
         ChannelMessageResponse response = new ChannelMessageResponse(
                 101L,
@@ -113,10 +129,9 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
-        when(chatMessageService.createChannelMessage(eq(channelId), eq(userId), eq(request))).thenReturn(response);
+        when(chatMessageService.createChannelMessage(eq(channelId), eq(USER_ID), eq(request))).thenReturn(response);
 
         mockMvc.perform(post("/api/channels/{channelId}/messages", channelId)
-                        .header("X-User-Id", userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -124,15 +139,14 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data.id").value(101L))
                 .andExpect(jsonPath("$.data.content").value("hello"));
 
-        verify(chatMessageService).createChannelMessage(channelId, userId, request);
+        verify(chatMessageService).createChannelMessage(channelId, USER_ID, request);
     }
 
     @Test
-    @DisplayName("Message attachment create API passes request body and X-User-Id to service")
+    @DisplayName("Message attachment create API passes request body and user id to service")
     void addMessageAttachments() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
-        Long userId = 10L;
         ThreadAttachmentRequest attachmentRequest = new ThreadAttachmentRequest(
                 "image",
                 null,
@@ -159,11 +173,10 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
-        when(threadAttachmentService.addAttachments(channelId, messageId, userId, request.attachments()))
+        when(threadAttachmentService.addAttachments(channelId, messageId, USER_ID, request.attachments()))
                 .thenReturn(List.of(response));
 
         mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", channelId, messageId)
-                        .header("X-User-Id", userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -171,7 +184,7 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(1L))
                 .andExpect(jsonPath("$.data[0].attachmentType").value("image"));
 
-        verify(threadAttachmentService).addAttachments(channelId, messageId, userId, request.attachments());
+        verify(threadAttachmentService).addAttachments(channelId, messageId, USER_ID, request.attachments());
     }
 
     @Test
@@ -179,10 +192,8 @@ class ChatMessageControllerTest {
     void addMessageAttachmentsWithFrontendFields() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
-        Long userId = 10L;
 
         mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", channelId, messageId)
-                        .header("X-User-Id", userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -203,7 +214,7 @@ class ChatMessageControllerTest {
                 .andExpect(status().isOk());
 
         ArgumentCaptor<List<ThreadAttachmentRequest>> captor = ArgumentCaptor.forClass(List.class);
-        verify(threadAttachmentService).addAttachments(eq(channelId), eq(messageId), eq(userId), captor.capture());
+        verify(threadAttachmentService).addAttachments(eq(channelId), eq(messageId), eq(USER_ID), captor.capture());
         assertThat(captor.getValue().get(0).attachmentType()).isEqualTo("image");
         assertThat(captor.getValue().get(0).fileSize()).isEqualTo(100L);
     }
@@ -214,7 +225,6 @@ class ChatMessageControllerTest {
         ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest(" ");
 
         mockMvc.perform(post("/api/channels/{channelId}/messages", 1L)
-                        .header("X-User-Id", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -229,7 +239,6 @@ class ChatMessageControllerTest {
                 new ChannelMessageRestCreateRequest("hello", java.util.Arrays.asList((ThreadAttachmentRequest) null));
 
         mockMvc.perform(post("/api/channels/{channelId}/messages", 1L)
-                        .header("X-User-Id", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -244,7 +253,6 @@ class ChatMessageControllerTest {
                 new ThreadAttachmentListRequest(java.util.Arrays.asList((ThreadAttachmentRequest) null));
 
         mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", 1L, 101L)
-                        .header("X-User-Id", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -257,7 +265,6 @@ class ChatMessageControllerTest {
     void updateChannelMessage() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
-        Long userId = 10L;
         ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest("updated");
         ChannelMessageResponse response = new ChannelMessageResponse(
                 messageId,
@@ -268,11 +275,10 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
-        when(chatMessageService.updateChannelMessage(eq(channelId), eq(messageId), eq(userId), eq(request)))
+        when(chatMessageService.updateChannelMessage(eq(channelId), eq(messageId), eq(USER_ID), eq(request)))
                 .thenReturn(response);
 
         mockMvc.perform(patch("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
-                        .header("X-User-Id", userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -280,7 +286,7 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data.id").value(messageId))
                 .andExpect(jsonPath("$.data.content").value("updated"));
 
-        verify(chatMessageService).updateChannelMessage(channelId, messageId, userId, request);
+        verify(chatMessageService).updateChannelMessage(channelId, messageId, USER_ID, request);
         assertBroadcastEvent(
                 "/topic/channels/" + channelId + "/events",
                 ChatEventType.MESSAGE_UPDATED,
@@ -294,7 +300,6 @@ class ChatMessageControllerTest {
         ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest(" ");
 
         mockMvc.perform(patch("/api/channels/{channelId}/messages/{messageId}", 1L, 101L)
-                        .header("X-User-Id", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -307,7 +312,6 @@ class ChatMessageControllerTest {
     void deleteChannelMessage() throws Exception {
         Long channelId = 1L;
         Long messageId = 101L;
-        Long userId = 10L;
         ChannelMessageResponse response = new ChannelMessageResponse(
                 messageId,
                 channelId,
@@ -317,16 +321,15 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
 
-        when(chatMessageService.deleteChannelMessage(channelId, messageId, userId)).thenReturn(response);
+        when(chatMessageService.deleteChannelMessage(channelId, messageId, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(delete("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
-                        .header("X-User-Id", userId))
+        mockMvc.perform(delete("/api/channels/{channelId}/messages/{messageId}", channelId, messageId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(messageId))
                 .andExpect(jsonPath("$.data.content").value(Thread.DELETED_MESSAGE_CONTENT));
 
-        verify(chatMessageService).deleteChannelMessage(channelId, messageId, userId);
+        verify(chatMessageService).deleteChannelMessage(channelId, messageId, USER_ID);
         assertBroadcastEvent(
                 "/topic/channels/" + channelId + "/events",
                 ChatEventType.MESSAGE_DELETED,
