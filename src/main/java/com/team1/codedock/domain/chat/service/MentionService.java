@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class MentionService {
 
-    private static final Pattern MENTION_PATTERN = Pattern.compile("@([A-Za-z0-9._-]{1,100})");
+    private static final Pattern MENTION_PATTERN = Pattern.compile("@([\\p{L}\\p{N}._-]{1,100})");
 
     private final MentionRepository mentionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;

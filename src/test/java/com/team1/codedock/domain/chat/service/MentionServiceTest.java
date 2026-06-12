@@ -75,6 +75,39 @@ class MentionServiceTest {
     }
 
     @Test
+    @DisplayName("Parses Korean mentions while preserving existing mention formats")
+    void createMentionsForThreadWithKoreanMentionNames() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember koreanMember = workspaceMember(21L, workspace, user("kim", "김재준"));
+        WorkspaceMember dottedMember = workspaceMember(22L, workspace, user("user.name", "User Name"));
+        WorkspaceMember hyphenMember = workspaceMember(23L, workspace, user("dev-1", "Dev One"));
+        Thread thread = thread(
+                100L,
+                channel,
+                sender,
+                "확인 부탁드립니다 @김재준 @user.name @dev-1 @김재준"
+        );
+
+        when(workspaceMemberRepository.findActiveMentionTargets(
+                10L,
+                List.of("김재준", "user.name", "dev-1")
+        )).thenReturn(List.of(koreanMember, dottedMember, hyphenMember));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(3);
+        assertThat(savedMentions)
+                .extracting(Mention::getMentionedMember)
+                .containsExactly(koreanMember, dottedMember, hyphenMember);
+    }
+
+    @Test
     @DisplayName("Does not query or save when content has no mention token")
     void createMentionsForThreadWithoutMentionToken() {
         Workspace workspace = workspace(10L);
