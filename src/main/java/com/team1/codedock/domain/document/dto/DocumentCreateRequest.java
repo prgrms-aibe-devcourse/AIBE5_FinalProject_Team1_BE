@@ -8,7 +8,7 @@ public record DocumentCreateRequest(
         @NotNull Long createdByMemberId,
         @NotBlank @Size(max = 255) String title,
         String content,
-        // 'pr-summary' | 'manual' | 'meeting' | 'release'
+        // 'manual' | 'faq' | 'release'
         String category,
         // 'workspace' | 'private' | 'public'
         String visibility,
