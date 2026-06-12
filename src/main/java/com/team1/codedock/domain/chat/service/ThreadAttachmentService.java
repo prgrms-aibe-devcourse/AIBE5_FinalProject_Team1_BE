@@ -118,21 +118,10 @@ public class ThreadAttachmentService {
         if (requiresUrl(attachmentType) && isBlank(request.url())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment url is required.");
         }
-        if (requiresTargetOrUrl(attachmentType) && request.targetId() == null && isBlank(request.url())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment targetId or url is required.");
-        }
     }
 
     private boolean requiresUrl(String attachmentType) {
         return "file".equals(attachmentType) || "image".equals(attachmentType) || "link".equals(attachmentType);
-    }
-
-    private boolean requiresTargetOrUrl(String attachmentType) {
-        return "pr".equals(attachmentType)
-                || "issue".equals(attachmentType)
-                || "api".equals(attachmentType)
-                || "erd".equals(attachmentType)
-                || "docs".equals(attachmentType);
     }
 
     private boolean isBlank(String value) {

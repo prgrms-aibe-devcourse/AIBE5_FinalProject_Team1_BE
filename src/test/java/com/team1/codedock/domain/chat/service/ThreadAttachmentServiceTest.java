@@ -148,7 +148,7 @@ class ThreadAttachmentServiceTest {
     }
 
     @Test
-    @DisplayName("Domain attachments require targetId or url")
+    @DisplayName("Domain attachments can use frontend title detail and meta without target")
     void addDomainAttachmentWithoutTargetOrUrl() {
         Long channelId = 1L;
         Long workspaceId = 2L;
@@ -172,18 +172,15 @@ class ThreadAttachmentServiceTest {
         when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
                 .thenReturn(Optional.of(member));
+        when(threadAttachmentRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> threadAttachmentService.addAttachments(
-                channelId,
-                100L,
-                userId,
-                List.of(request)
-        ))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.INVALID_INPUT);
+        List<ThreadAttachmentResponse> responses =
+                threadAttachmentService.addAttachments(channelId, 100L, userId, List.of(request));
 
-        verify(threadAttachmentRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).type()).isEqualTo("pr");
+        assertThat(responses.get(0).title()).isEqualTo("PR #142");
     }
 
     @Test
