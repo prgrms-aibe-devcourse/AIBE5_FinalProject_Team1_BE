@@ -11,6 +11,8 @@ import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,9 +28,11 @@ import java.security.Principal;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -75,6 +79,19 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Channel message WebSocket send rejects missing Principal")
+    void createChannelMessageWithoutPrincipal() {
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Thread reply WebSocket send broadcasts THREAD_REPLY_CREATED event")
     void createThreadReply() {
         Long threadId = 1L;
@@ -104,6 +121,19 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Thread reply WebSocket send rejects missing Principal")
+    void createThreadReplyWithoutPrincipal() {
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
+
+        assertThatThrownBy(() -> chatWebSocketController.createThreadReply(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Typing WebSocket send broadcasts TYPING event")
     void sendTypingEvent() {
         Long channelId = 1L;
@@ -122,6 +152,19 @@ class ChatWebSocketControllerTest {
                 ChatEventType.TYPING,
                 response
         );
+    }
+
+    @Test
+    @DisplayName("Typing WebSocket send rejects missing Principal")
+    void sendTypingEventWithoutPrincipal() {
+        TypingEventRequest request = new TypingEventRequest("tester", true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
     }
 
     private void assertBroadcastEvent(
