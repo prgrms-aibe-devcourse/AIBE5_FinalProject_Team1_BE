@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -31,6 +32,8 @@ public class WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final InvitationRepository invitationRepository;
+
+    private static final Set<String> ASSIGNABLE_ROLES = Set.of("admin", "editor", "viewer");
 
     @PersistenceContext
     private EntityManager em;
@@ -117,7 +120,7 @@ public class WorkspaceService {
         }
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        if (!invitation.getInvitedEmail().equals(user.getEmail())) {
+        if (!invitation.getInvitedEmail().equalsIgnoreCase(user.getEmail())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         Workspace workspace = invitation.getWorkspace();
@@ -130,7 +133,50 @@ public class WorkspaceService {
         invitation.accept();
     }
 
+    public void rejectInvite(String token, Long currentUserId) {
+        Invitation invitation = invitationRepository.findByToken(token)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (!"pending".equals(invitation.getStatus())) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+        }
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (!invitation.getInvitedEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        invitation.reject();
+    }
+
+    public List<InvitationResponse> listInvitations(Long workspaceId, Long currentUserId) {
+        WorkspaceMember requester = getMembership(workspaceId, currentUserId);
+        if (!List.of("owner", "admin").contains(requester.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return invitationRepository.findAllByWorkspace(requester.getWorkspace()).stream()
+                .map(InvitationResponse::from)
+                .toList();
+    }
+
+    public void revokeInvitation(Long workspaceId, Long invitationId, Long currentUserId) {
+        WorkspaceMember requester = getMembership(workspaceId, currentUserId);
+        if (!List.of("owner", "admin").contains(requester.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        Invitation invitation = invitationRepository.findByIdAndWorkspace_Id(invitationId, workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if ("revoked".equals(invitation.getStatus())) {
+            return;   // already revoked → idempotent no-op (DELETE is idempotent)
+        }
+        if (!"pending".equals(invitation.getStatus())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);   // accepted/rejected invite can't be revoked
+        }
+        invitation.revoke(requester);
+    }
+
     public void changeMemberRole(Long workspaceId, Long memberId, String newRole, Long currentUserId) {
+        if (newRole == null || !ASSIGNABLE_ROLES.contains(newRole)) {   // null-safe: Set.of(...).contains(null) throws NPE
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
         WorkspaceMember target = validateAndGetTarget(workspaceId, memberId, currentUserId);
         target.changeAuthority(newRole);
     }
@@ -138,6 +184,14 @@ public class WorkspaceService {
     public void removeMember(Long workspaceId, Long memberId, Long currentUserId) {
         WorkspaceMember target = validateAndGetTarget(workspaceId, memberId, currentUserId);
         target.deactivate("removed_by_admin");
+    }
+
+    public void leaveWorkspace(Long workspaceId, Long currentUserId) {
+        WorkspaceMember membership = getMembership(workspaceId, currentUserId);   // 403s if not an active member
+        if ("owner".equals(membership.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);   // owner must transfer or delete the workspace
+        }
+        membership.deactivate("left");
     }
 
     public void deleteWorkspace(Long workspaceId, Long currentUserId) {
@@ -187,8 +241,12 @@ public class WorkspaceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        return workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)
+        WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+        if (!membership.isActive()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return membership;
     }
 
     private WorkspaceMember validateAndGetTarget(Long workspaceId, Long memberId, Long currentUserId) {

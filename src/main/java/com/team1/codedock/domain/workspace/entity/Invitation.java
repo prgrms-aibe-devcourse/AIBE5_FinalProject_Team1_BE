@@ -69,6 +69,10 @@ public class Invitation extends BaseCreatedEntity {
         this.status = "accepted";
     }
 
+    public void reject() {
+        this.status = "rejected";
+    }
+
     public void expire() {
         this.status = "expired";
     }
