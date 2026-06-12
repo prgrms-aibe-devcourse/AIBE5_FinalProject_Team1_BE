@@ -9,6 +9,7 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.JwtProvider;
+import com.team1.codedock.global.security.GithubLinkTokenProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,7 @@ class AuthServiceTest {
     @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtProvider jwtProvider;
+    @Mock private GithubLinkTokenProvider githubLinkTokenProvider;
 
     @InjectMocks
     private AuthService authService;
@@ -40,31 +42,97 @@ class AuthServiceTest {
     // ── signup ────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("정상 회원가입: 저장된 유저 정보를 담은 SignupResponse를 반환한다")
+    @DisplayName("정상 회원가입: link token으로 식별된 GitHub 유저에 email/password를 부여한다")
     void signup_success() {
-        SignupRequest req = signupRequest("test@test.com", "테스트", "password1");
-        User savedUser = user(1L, "test@test.com", "테스트");
+        SignupRequest req = signupRequest("test@test.com", "테스트", "password1", "link-token");
+        User githubUser = githubUser(1L, "github@noreply.com");
 
-        when(userRepository.existsByEmail("test@test.com")).thenReturn(false);
+        when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
+        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.empty());
         when(passwordEncoder.encode("password1")).thenReturn("hashed");
-        when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
         SignupResponse response = authService.signup(req);
 
-        assertThat(response.getEmail()).isEqualTo("test@test.com");
         assertThat(response.getUserId()).isEqualTo(1L);
+        assertThat(response.getEmail()).isEqualTo("test@test.com");
+        assertThat(githubUser.getPasswordHash()).isEqualTo("hashed");
+        assertThat(githubUser.getEmail()).isEqualTo("test@test.com");
     }
 
     @Test
-    @DisplayName("중복 이메일 회원가입: EMAIL_ALREADY_EXISTS 예외가 발생한다")
-    void signup_duplicateEmail() {
-        SignupRequest req = signupRequest("dup@test.com", "testuser", "password1");
-        when(userRepository.existsByEmail("dup@test.com")).thenReturn(true);
+    @DisplayName("유효하지 않은 link token: INVALID_TOKEN 예외가 발생한다")
+    void signup_invalidLinkToken() {
+        SignupRequest req = signupRequest("test@test.com", "테스트", "password1", "bad-token");
+        when(githubLinkTokenProvider.validateAndGetUserId("bad-token"))
+                .thenThrow(new RuntimeException("invalid"));
+
+        assertThatThrownBy(() -> authService.signup(req))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+    }
+
+    @Test
+    @DisplayName("link token의 유저가 없으면 USER_NOT_FOUND 예외가 발생한다")
+    void signup_userNotFound() {
+        SignupRequest req = signupRequest("test@test.com", "테스트", "password1", "link-token");
+        when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(99L);
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.signup(req))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("이미 비밀번호가 있는 계정으로 재가입: EMAIL_ALREADY_EXISTS 예외가 발생한다")
+    void signup_alreadyRegistered() {
+        SignupRequest req = signupRequest("test@test.com", "테스트", "password1", "link-token");
+        User existing = user(1L, "test@test.com", "테스트"); // user()는 passwordHash가 채워짐
+
+        when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> authService.signup(req))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("가입 이메일이 다른 유저의 이메일과 충돌: EMAIL_ALREADY_EXISTS 예외가 발생한다")
+    void signup_emailCollisionWithOtherUser() {
+        SignupRequest req = signupRequest("taken@test.com", "테스트", "password1", "link-token");
+        User githubUser = githubUser(1L, "github@noreply.com");
+        User otherUser = user(2L, "taken@test.com", "다른유저");
+
+        when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
+        when(userRepository.findByEmail("taken@test.com")).thenReturn(Optional.of(otherUser));
+
+        assertThatThrownBy(() -> authService.signup(req))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("가입 이메일이 본인 GitHub 이메일과 동일: 정상 가입된다")
+    void signup_emailMatchesSelf_ok() {
+        SignupRequest req = signupRequest("self@github.com", "테스트", "password1", "link-token");
+        User githubUser = githubUser(1L, "self@github.com");
+
+        when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
+        when(userRepository.findByEmail("self@github.com")).thenReturn(Optional.of(githubUser));
+        when(passwordEncoder.encode("password1")).thenReturn("hashed");
+
+        SignupResponse response = authService.signup(req);
+
+        assertThat(response.getUserId()).isEqualTo(1L);
+        assertThat(githubUser.getPasswordHash()).isEqualTo("hashed");
     }
 
     // ── login ─────────────────────────────────────────────────────────────────
@@ -243,12 +311,19 @@ class AuthServiceTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private static SignupRequest signupRequest(String email, String displayName, String password) {
+    private static SignupRequest signupRequest(String email, String displayName, String password, String githubLinkToken) {
         SignupRequest req = new SignupRequest();
         req.setEmail(email);
         req.setDisplayName(displayName);
         req.setPassword(password);
+        req.setGithubLinkToken(githubLinkToken);
         return req;
+    }
+
+    private static User githubUser(Long id, String email) {
+        User user = User.createFromGithub("gh-" + id, "ghlogin" + id, email, "avatar", "gh-token");
+        ReflectionTestUtils.setField(user, "id", id);
+        return user;
     }
 
     private static LoginRequest loginRequest(String email, String password) {
