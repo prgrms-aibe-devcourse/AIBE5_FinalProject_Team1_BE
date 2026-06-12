@@ -5,9 +5,12 @@ import com.team1.codedock.domain.workspace.entity.Workspace;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
+import java.util.List;
 
 public interface InvitationRepository extends JpaRepository<Invitation, Long> {
 
+    List<Invitation> findAllByWorkspace(Workspace workspace);
+    Optional<Invitation> findByIdAndWorkspace_Id(Long id, Long workspaceId);
     Optional<Invitation> findByToken(String token);
 
     void deleteAllByWorkspace(Workspace workspace);
