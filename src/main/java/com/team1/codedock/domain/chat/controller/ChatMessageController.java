@@ -56,13 +56,12 @@ public class ChatMessageController {
     public ApiResponse<List<ThreadAttachmentResponse>> addMessageAttachments(
             @PathVariable Long channelId,
             @PathVariable Long messageId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @Valid @RequestBody ThreadAttachmentListRequest request
     ) {
         return ApiResponse.ok(threadAttachmentService.addAttachments(
                 channelId,
                 messageId,
-                userId,
+                SecurityUtils.getCurrentUserId(),
                 request.attachments()
         ));
     }
