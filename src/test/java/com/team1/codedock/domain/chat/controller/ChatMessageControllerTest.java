@@ -36,6 +36,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -67,7 +68,7 @@ class ChatMessageControllerTest {
     @BeforeEach
     void setUp() {
         CustomUserDetails userDetails = mock(CustomUserDetails.class);
-        when(userDetails.getUserId()).thenReturn(USER_ID);
+        lenient().when(userDetails.getUserId()).thenReturn(USER_ID);
         List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userDetails, null, authorities));
