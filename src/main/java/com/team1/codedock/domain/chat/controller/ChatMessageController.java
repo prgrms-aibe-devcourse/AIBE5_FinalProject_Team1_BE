@@ -5,7 +5,10 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentListRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
+import com.team1.codedock.domain.chat.service.ThreadAttachmentService;
 import com.team1.codedock.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,7 @@ import java.util.List;
 public class ChatMessageController {
 
     private final ChatMessageService chatMessageService;
+    private final ThreadAttachmentService threadAttachmentService;
     private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
@@ -48,6 +52,21 @@ public class ChatMessageController {
             @Valid @RequestBody ChannelMessageRestCreateRequest request
     ) {
         return ApiResponse.ok(chatMessageService.createChannelMessage(channelId, userId, request));
+    }
+
+    @PostMapping("/{messageId}/attachments")
+    public ApiResponse<List<ThreadAttachmentResponse>> addMessageAttachments(
+            @PathVariable Long channelId,
+            @PathVariable Long messageId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @Valid @RequestBody ThreadAttachmentListRequest request
+    ) {
+        return ApiResponse.ok(threadAttachmentService.addAttachments(
+                channelId,
+                messageId,
+                userId,
+                request.attachments()
+        ));
     }
 
     @PatchMapping("/{messageId}")

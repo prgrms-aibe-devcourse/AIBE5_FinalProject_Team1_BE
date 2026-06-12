@@ -5,6 +5,7 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class ChatMessageService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
     private final MentionService mentionService;
+    private final ThreadAttachmentService threadAttachmentService;
 
     @Transactional
     public ChannelMessageResponse createChannelMessage(Long channelId, ChannelMessageCreateRequest request) {
@@ -49,7 +52,10 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
-        return saveChannelMessage(channel, sender, request.content());
+        Thread savedThread = saveChannelMessageEntity(channel, sender, request.content());
+        List<ThreadAttachmentResponse> attachments =
+                threadAttachmentService.saveAttachments(savedThread, request.attachments());
+        return ChannelMessageResponse.from(savedThread, attachments);
     }
 
     @Transactional
@@ -65,7 +71,7 @@ public class ChatMessageService {
         Thread message = findEditableChannelMessage(channel, messageId, member);
 
         message.updateContent(request.content());
-        return ChannelMessageResponse.from(message);
+        return responseWithAttachments(message);
     }
 
     @Transactional
@@ -75,10 +81,22 @@ public class ChatMessageService {
         Thread message = findEditableChannelMessage(channel, messageId, member);
 
         message.markAsDeleted();
-        return ChannelMessageResponse.from(message);
+        return responseWithAttachments(message);
     }
 
     private ChannelMessageResponse saveChannelMessage(Channel channel, WorkspaceMember sender, String content) {
+        return ChannelMessageResponse.from(saveChannelMessageEntity(channel, sender, content));
+    }
+
+    private ChannelMessageResponse responseWithAttachments(Thread message) {
+        if (isDeletedMessage(message)) {
+            return ChannelMessageResponse.from(message);
+        }
+        List<ThreadAttachmentResponse> attachments = threadAttachmentService.getAttachments(message.getId());
+        return ChannelMessageResponse.from(message, attachments);
+    }
+
+    private Thread saveChannelMessageEntity(Channel channel, WorkspaceMember sender, String content) {
         Thread thread =
                 Thread.createChannelMessage(
                         channel,
@@ -88,7 +106,7 @@ public class ChatMessageService {
 
         Thread savedThread = threadRepository.save(thread);
         mentionService.createMentionsForThread(savedThread, sender, content);
-        return ChannelMessageResponse.from(savedThread);
+        return savedThread;
     }
 
     @Transactional(readOnly = true)
@@ -105,9 +123,26 @@ public class ChatMessageService {
         List<Thread> orderedMessages = new ArrayList<>(messages);
         Collections.reverse(orderedMessages);
 
+        Map<Long, List<ThreadAttachmentResponse>> attachmentMap = threadAttachmentService.getAttachmentMap(
+                orderedMessages.stream()
+                        .map(Thread::getId)
+                        .toList()
+        );
+        Map<Long, List<ThreadAttachmentResponse>> attachmentsByThread =
+                attachmentMap == null ? Map.of() : attachmentMap;
+
         return orderedMessages.stream()
-                .map(ChannelMessageResponse::from)
+                .map(message -> ChannelMessageResponse.from(
+                        message,
+                        isDeletedMessage(message)
+                                ? List.of()
+                                : attachmentsByThread.getOrDefault(message.getId(), List.of())
+                ))
                 .toList();
+    }
+
+    private boolean isDeletedMessage(Thread message) {
+        return Thread.DELETED_MESSAGE_CONTENT.equals(message.getContent());
     }
 
     private void validateContent(String content) {

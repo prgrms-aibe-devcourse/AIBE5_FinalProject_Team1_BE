@@ -5,6 +5,7 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record ChannelMessageResponse(
         Long id,
@@ -12,10 +13,26 @@ public record ChannelMessageResponse(
         Long senderMemberId,
         String senderName,
         String content,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        List<ThreadAttachmentResponse> attachments
 ) {
 
+    public ChannelMessageResponse(
+            Long id,
+            Long channelId,
+            Long senderMemberId,
+            String senderName,
+            String content,
+            LocalDateTime createdAt
+    ) {
+        this(id, channelId, senderMemberId, senderName, content, createdAt, List.of());
+    }
+
     public static ChannelMessageResponse from(Thread thread) {
+        return from(thread, List.of());
+    }
+
+    public static ChannelMessageResponse from(Thread thread, List<ThreadAttachmentResponse> attachments) {
         WorkspaceMember sender = thread.getCreatedBy();
         User user = sender.getUser();
 
@@ -25,7 +42,8 @@ public record ChannelMessageResponse(
                 sender.getId(),
                 resolveSenderName(user),
                 thread.getContent(),
-                thread.getCreatedAt()
+                thread.getCreatedAt(),
+                attachments == null ? List.of() : attachments
         );
     }
 

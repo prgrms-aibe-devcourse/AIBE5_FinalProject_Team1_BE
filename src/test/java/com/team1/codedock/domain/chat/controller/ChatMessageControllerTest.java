@@ -6,8 +6,12 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentListRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
+import com.team1.codedock.domain.chat.service.ThreadAttachmentService;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,13 +49,20 @@ class ChatMessageControllerTest {
     private ChatMessageService chatMessageService;
 
     @Mock
+    private ThreadAttachmentService threadAttachmentService;
+
+    @Mock
     private SimpMessagingTemplate messagingTemplate;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(chatMessageService, messagingTemplate))
+        mockMvc = MockMvcBuilders.standaloneSetup(new ChatMessageController(
+                        chatMessageService,
+                        threadAttachmentService,
+                        messagingTemplate
+                ))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
@@ -117,11 +128,122 @@ class ChatMessageControllerTest {
     }
 
     @Test
+    @DisplayName("Message attachment create API passes request body and X-User-Id to service")
+    void addMessageAttachments() throws Exception {
+        Long channelId = 1L;
+        Long messageId = 101L;
+        Long userId = 10L;
+        ThreadAttachmentRequest attachmentRequest = new ThreadAttachmentRequest(
+                "image",
+                null,
+                "https://example.com/image.png",
+                "image.png",
+                null,
+                null,
+                null,
+                "image/png",
+                100L
+        );
+        ThreadAttachmentListRequest request = new ThreadAttachmentListRequest(List.of(attachmentRequest));
+        ThreadAttachmentResponse response = new ThreadAttachmentResponse(
+                1L,
+                "image",
+                null,
+                "https://example.com/image.png",
+                "image.png",
+                null,
+                null,
+                null,
+                "image/png",
+                100L,
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(threadAttachmentService.addAttachments(channelId, messageId, userId, request.attachments()))
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", channelId, messageId)
+                        .header("X-User-Id", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].id").value(1L))
+                .andExpect(jsonPath("$.data[0].attachmentType").value("image"));
+
+        verify(threadAttachmentService).addAttachments(channelId, messageId, userId, request.attachments());
+    }
+
+    @Test
+    @DisplayName("Message attachment create API accepts frontend type and size fields")
+    void addMessageAttachmentsWithFrontendFields() throws Exception {
+        Long channelId = 1L;
+        Long messageId = 101L;
+        Long userId = 10L;
+
+        mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", channelId, messageId)
+                        .header("X-User-Id", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "attachments": [
+                                    {
+                                      "type": "image",
+                                      "url": "blob:http://localhost/image",
+                                      "title": "image.png",
+                                      "detail": "image/png",
+                                      "meta": "100 B",
+                                      "previewUrl": "blob:http://localhost/image",
+                                      "mimeType": "image/png",
+                                      "size": 100
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<List<ThreadAttachmentRequest>> captor = ArgumentCaptor.forClass(List.class);
+        verify(threadAttachmentService).addAttachments(eq(channelId), eq(messageId), eq(userId), captor.capture());
+        assertThat(captor.getValue().get(0).attachmentType()).isEqualTo("image");
+        assertThat(captor.getValue().get(0).fileSize()).isEqualTo(100L);
+    }
+
+    @Test
     @DisplayName("Channel message create API rejects blank content")
     void createChannelMessageWithInvalidContent() throws Exception {
         ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest(" ");
 
         mockMvc.perform(post("/api/channels/{channelId}/messages", 1L)
+                        .header("X-User-Id", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Channel message create API rejects null attachment item")
+    void createChannelMessageWithNullAttachmentItem() throws Exception {
+        ChannelMessageRestCreateRequest request =
+                new ChannelMessageRestCreateRequest("hello", java.util.Arrays.asList((ThreadAttachmentRequest) null));
+
+        mockMvc.perform(post("/api/channels/{channelId}/messages", 1L)
+                        .header("X-User-Id", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("Message attachment create API rejects null attachment item")
+    void addMessageAttachmentsWithNullAttachmentItem() throws Exception {
+        ThreadAttachmentListRequest request =
+                new ThreadAttachmentListRequest(java.util.Arrays.asList((ThreadAttachmentRequest) null));
+
+        mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", 1L, 101L)
                         .header("X-User-Id", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))

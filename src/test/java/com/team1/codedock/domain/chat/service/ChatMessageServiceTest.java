@@ -5,6 +5,8 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentRequest;
+import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.user.entity.User;
@@ -50,6 +52,9 @@ class ChatMessageServiceTest {
     @Mock
     private MentionService mentionService;
 
+    @Mock
+    private ThreadAttachmentService threadAttachmentService;
+
     @InjectMocks
     private ChatMessageService chatMessageService;
 
@@ -85,6 +90,66 @@ class ChatMessageServiceTest {
                 org.mockito.ArgumentMatchers.any(Thread.class),
                 org.mockito.ArgumentMatchers.eq(sender),
                 org.mockito.ArgumentMatchers.eq("hello")
+        );
+    }
+
+    @Test
+    @DisplayName("REST message create saves attachments and returns them")
+    void createChannelMessageByRestWithAttachments() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        ThreadAttachmentRequest attachmentRequest = new ThreadAttachmentRequest(
+                "image",
+                null,
+                "https://example.com/image.png",
+                "image.png",
+                null,
+                null,
+                null,
+                "image/png",
+                100L
+        );
+        ChannelMessageRestCreateRequest request =
+                new ChannelMessageRestCreateRequest("hello", List.of(attachmentRequest));
+        ThreadAttachmentResponse attachmentResponse = new ThreadAttachmentResponse(
+                1L,
+                "image",
+                null,
+                "https://example.com/image.png",
+                "image.png",
+                null,
+                null,
+                null,
+                "image/png",
+                100L,
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+        when(threadAttachmentService.saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(List.of(attachmentRequest))
+        )).thenReturn(List.of(attachmentResponse));
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.attachments()).containsExactly(attachmentResponse);
+        verify(threadAttachmentService).saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(List.of(attachmentRequest))
         );
     }
 
@@ -483,6 +548,7 @@ class ChatMessageServiceTest {
 
         assertThat(response.id()).isEqualTo(messageId);
         assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(response.attachments()).isEmpty();
         assertThat(message.getContent()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
         verify(threadRepository, never()).delete(org.mockito.ArgumentMatchers.any(Thread.class));
     }
@@ -531,6 +597,89 @@ class ChatMessageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("Channel message list includes attachments")
+    void getChannelMessagesWithAttachments() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        Thread message = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ThreadAttachmentResponse attachment = new ThreadAttachmentResponse(
+                1L,
+                "link",
+                null,
+                "https://example.com",
+                "example",
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).thenReturn(List.of(message));
+        when(threadAttachmentService.getAttachmentMap(List.of(100L)))
+                .thenReturn(java.util.Map.of(100L, List.of(attachment)));
+
+        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId, userId, null, 30);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).attachments()).containsExactly(attachment);
+    }
+
+    @Test
+    @DisplayName("Deleted channel message list response does not include attachments")
+    void getChannelMessagesExcludesAttachmentsForDeletedMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        Thread message = thread(100L, channel, sender, Thread.DELETED_MESSAGE_CONTENT, LocalDateTime.of(2026, 6, 9, 10, 0));
+        ThreadAttachmentResponse attachment = new ThreadAttachmentResponse(
+                1L,
+                "link",
+                null,
+                "https://example.com",
+                "example",
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).thenReturn(List.of(message));
+        when(threadAttachmentService.getAttachmentMap(List.of(100L)))
+                .thenReturn(java.util.Map.of(100L, List.of(attachment)));
+
+        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId, userId, null, 30);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(responses.get(0).attachments()).isEmpty();
     }
 
     private static Thread thread(
