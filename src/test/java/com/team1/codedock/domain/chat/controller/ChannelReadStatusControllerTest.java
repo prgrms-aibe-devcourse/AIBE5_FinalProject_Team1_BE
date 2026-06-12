@@ -42,9 +42,9 @@ class ChannelReadStatusControllerTest {
     void setUp() {
         CustomUserDetails userDetails = mock(CustomUserDetails.class);
         when(userDetails.getUserId()).thenReturn(USER_ID);
-        when(userDetails.getAuthorities()).thenReturn(List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities()));
+                new UsernamePasswordAuthenticationToken(userDetails, null, authorities));
 
         mockMvc = MockMvcBuilders.standaloneSetup(new ChannelReadStatusController(channelReadStatusService))
                 .setControllerAdvice(new GlobalExceptionHandler())
