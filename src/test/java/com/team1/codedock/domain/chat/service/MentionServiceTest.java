@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.service;
 
 import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.chat.dto.ChatNotificationResponse;
 import com.team1.codedock.domain.chat.dto.MentionResponse;
 import com.team1.codedock.domain.chat.entity.Mention;
 import com.team1.codedock.domain.chat.entity.Thread;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,6 +43,9 @@ class MentionServiceTest {
 
     @Mock
     private WorkspaceMemberRepository workspaceMemberRepository;
+
+    @Mock
+    private ChatNotificationService chatNotificationService;
 
     @InjectMocks
     private MentionService mentionService;
@@ -72,6 +77,64 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).getMentionedByMember()).isEqualTo(sender);
         assertThat(savedMentions.get(0).isRead()).isFalse();
         assertThat(savedMentions.get(1).getMentionedMember()).isEqualTo(bob);
+
+        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
+                ArgumentCaptor.forClass(ChatNotificationResponse.class);
+        verify(chatNotificationService, times(2))
+                .sendNotification(userKeyCaptor.capture(), notificationCaptor.capture());
+
+        assertThat(userKeyCaptor.getAllValues()).containsExactly("alice@test.com", "bob@test.com");
+        assertThat(notificationCaptor.getAllValues())
+                .extracting(ChatNotificationResponse::mentionedMemberId)
+                .containsExactly(21L, 22L);
+        assertThat(notificationCaptor.getAllValues())
+                .allSatisfy(notification -> {
+                    assertThat(notification.workspaceId()).isEqualTo(10L);
+                    assertThat(notification.channelId()).isEqualTo(1L);
+                    assertThat(notification.threadId()).isEqualTo(100L);
+                    assertThat(notification.threadReplyId()).isNull();
+                    assertThat(notification.message()).isEqualTo("새 멘션이 도착했습니다.");
+                });
+    }
+
+    @Test
+    @DisplayName("Parses Korean mentions while preserving existing mention formats")
+    void createMentionsForThreadWithKoreanMentionNames() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember koreanMember = workspaceMember(21L, workspace, user("kim", "김재준"));
+        WorkspaceMember dottedMember = workspaceMember(22L, workspace, user("user.name", "User Name"));
+        WorkspaceMember hyphenMember = workspaceMember(23L, workspace, user("dev-1", "Dev One"));
+        Thread thread = thread(
+                100L,
+                channel,
+                sender,
+                "확인 부탁드립니다 @김재준 @user.name @dev-1 @김재준"
+        );
+
+        when(workspaceMemberRepository.findActiveMentionTargets(
+                10L,
+                List.of("김재준", "user.name", "dev-1")
+        )).thenReturn(List.of(koreanMember, dottedMember, hyphenMember));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(3);
+        assertThat(savedMentions)
+                .extracting(Mention::getMentionedMember)
+                .containsExactly(koreanMember, dottedMember, hyphenMember);
+
+        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatNotificationService, times(3))
+                .sendNotification(userKeyCaptor.capture(), org.mockito.ArgumentMatchers.any());
+        assertThat(userKeyCaptor.getAllValues())
+                .containsExactly("kim@test.com", "user.name@test.com", "dev-1@test.com");
     }
 
     @Test
@@ -89,6 +152,10 @@ class MentionServiceTest {
                 org.mockito.ArgumentMatchers.anyList()
         );
         verify(mentionRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
+        verify(chatNotificationService, never()).sendNotification(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test
@@ -114,6 +181,19 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).getThread()).isNull();
         assertThat(savedMentions.get(0).getThreadReply()).isEqualTo(reply);
         assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
+
+        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
+                ArgumentCaptor.forClass(ChatNotificationResponse.class);
+        verify(chatNotificationService)
+                .sendNotification(org.mockito.ArgumentMatchers.eq("alice@test.com"), notificationCaptor.capture());
+
+        ChatNotificationResponse notification = notificationCaptor.getValue();
+        assertThat(notification.workspaceId()).isEqualTo(10L);
+        assertThat(notification.channelId()).isEqualTo(1L);
+        assertThat(notification.threadId()).isEqualTo(100L);
+        assertThat(notification.threadReplyId()).isEqualTo(200L);
+        assertThat(notification.mentionedMemberId()).isEqualTo(21L);
+        assertThat(notification.message()).isEqualTo("새 멘션 답글이 도착했습니다.");
     }
 
     @Test
@@ -214,6 +294,7 @@ class MentionServiceTest {
 
     private static User user(String username, String displayName) {
         User user = newInstance(User.class);
+        ReflectionTestUtils.setField(user, "email", username + "@test.com");
         ReflectionTestUtils.setField(user, "username", username);
         ReflectionTestUtils.setField(user, "displayName", displayName);
         return user;

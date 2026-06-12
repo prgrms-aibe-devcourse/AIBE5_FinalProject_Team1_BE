@@ -7,6 +7,8 @@ import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
 import com.team1.codedock.domain.chat.dto.ThreadReplyWebSocketCreateRequest;
+import com.team1.codedock.domain.chat.dto.TypingEventRequest;
+import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import org.junit.jupiter.api.DisplayName;
@@ -90,6 +92,22 @@ class ChatWebSocketControllerTest {
         assertBroadcastEvent(
                 "/topic/threads/" + threadId + "/events",
                 ChatEventType.THREAD_REPLY_CREATED,
+                response
+        );
+    }
+
+    @Test
+    @DisplayName("Typing WebSocket send broadcasts TYPING event")
+    void sendTypingEvent() {
+        Long channelId = 1L;
+        TypingEventRequest request = new TypingEventRequest(10L, "tester", true);
+        TypingEventResponse response = new TypingEventResponse(channelId, 10L, "tester", true);
+
+        chatWebSocketController.sendTypingEvent(channelId, request);
+
+        assertBroadcastEvent(
+                "/topic/channels/" + channelId + "/typing",
+                ChatEventType.TYPING,
                 response
         );
     }
