@@ -37,6 +37,7 @@ public class ChatWebSocketController {
             Principal principal,
             @Valid ChannelMessageCreateRequest request
     ) {
+        // CONNECT 인증에서 세팅한 Principal 기준으로 메시지 작성자 식별함
         Long userId = getCurrentUserId(principal);
         ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
@@ -52,6 +53,7 @@ public class ChatWebSocketController {
             Principal principal,
             @Valid ThreadReplyWebSocketCreateRequest request
     ) {
+        // 답글 작성자도 요청 body가 아니라 인증 사용자 기준으로 처리함
         Long userId = getCurrentUserId(principal);
         ThreadReplyResponse response = threadReplyService.createReply(
                 threadId,
@@ -71,6 +73,7 @@ public class ChatWebSocketController {
             Principal principal,
             @Valid TypingEventRequest request
     ) {
+        // typing 이벤트도 서버에서 현재 멤버를 찾아 payload에 담음
         Long userId = getCurrentUserId(principal);
         TypingEventResponse response = chatMessageService.createTypingEventResponse(channelId, userId, request);
 
@@ -81,6 +84,7 @@ public class ChatWebSocketController {
     }
 
     private Long getCurrentUserId(Principal principal) {
+        // WebSocketAuthChannelInterceptor가 Authentication Principal을 심어둔 상태여야 함
         if (principal instanceof Authentication authentication
                 && authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
             return userDetails.getUserId();

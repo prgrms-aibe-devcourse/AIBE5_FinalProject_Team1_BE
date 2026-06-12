@@ -7,6 +7,8 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
+import com.team1.codedock.domain.chat.dto.TypingEventRequest;
+import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.user.entity.User;
@@ -63,14 +65,16 @@ class ChatMessageServiceTest {
     void createChannelMessage() {
         Long channelId = 1L;
         Long workspaceId = 2L;
+        Long userId = 3L;
         Long senderMemberId = 10L;
         Workspace workspace = workspace(workspaceId);
         Channel channel = channel(channelId, workspace);
         WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
-        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
         when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
             Thread saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "id", 100L);
@@ -78,7 +82,7 @@ class ChatMessageServiceTest {
             return saved;
         });
 
-        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, request);
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.channelId()).isEqualTo(channelId);
@@ -154,20 +158,20 @@ class ChatMessageServiceTest {
     }
 
     @Test
-    @DisplayName("작성자가 비활성 멤버이면 채널 메시지를 저장하지 않는다")
+    @DisplayName("WebSocket 메시지 작성 사용자가 활성 채널 멤버가 아니면 저장하지 않는다")
     void createChannelMessageWithInactiveSender() {
         Long channelId = 1L;
         Long workspaceId = 2L;
-        Long senderMemberId = 10L;
+        Long userId = 3L;
         Workspace workspace = workspace(workspaceId);
         Channel channel = channel(channelId, workspace);
-        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, false, user("tester", "tester"));
-        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, request))
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, userId, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
@@ -176,23 +180,44 @@ class ChatMessageServiceTest {
     }
 
     @Test
-    @DisplayName("작성자가 채널의 워크스페이스 멤버가 아니면 채널 메시지를 저장하지 않는다")
-    void createChannelMessageWithDifferentWorkspaceSender() {
+    @DisplayName("WebSocket 메시지 작성 사용자 식별값이 없으면 UNAUTHORIZED 예외가 발생한다")
+    void createChannelMessageWithoutUserId() {
         Long channelId = 1L;
-        Long senderMemberId = 10L;
-        Channel channel = channel(channelId, workspace(2L));
-        WorkspaceMember sender = workspaceMember(senderMemberId, workspace(3L), true, user("tester", "tester"));
-        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(senderMemberId, "hello");
+        Long workspaceId = 2L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
-        when(entityManager.find(WorkspaceMember.class, senderMemberId)).thenReturn(sender);
 
-        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, request))
+        assertThatThrownBy(() -> chatMessageService.createChannelMessage(channelId, null, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.FORBIDDEN);
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
 
         verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("typing 이벤트는 인증 사용자 기준으로 워크스페이스 멤버 id를 채운다")
+    void createTypingEventResponse() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long workspaceMemberId = 10L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+        WorkspaceMember member = workspaceMember(workspaceMemberId, channel.getWorkspace(), true, user("tester", "tester"));
+        TypingEventRequest request = new TypingEventRequest("tester", true);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+
+        TypingEventResponse response = chatMessageService.createTypingEventResponse(channelId, userId, request);
+
+        assertThat(response.channelId()).isEqualTo(channelId);
+        assertThat(response.workspaceMemberId()).isEqualTo(workspaceMemberId);
+        assertThat(response.senderName()).isEqualTo("tester");
+        assertThat(response.typing()).isTrue();
     }
 
     @Test

@@ -42,6 +42,7 @@ public class ChatMessageService {
     public ChannelMessageResponse createChannelMessage(Long channelId, Long userId, ChannelMessageCreateRequest request) {
         validateContent(request.content());
         Channel channel = findChannel(channelId);
+        // 클라이언트 senderMemberId를 믿지 않고 인증 userId로 채널 멤버 조회함
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
         return saveChannelMessage(channel, sender, request.content());
@@ -50,6 +51,7 @@ public class ChatMessageService {
     @Transactional(readOnly = true)
     public TypingEventResponse createTypingEventResponse(Long channelId, Long userId, TypingEventRequest request) {
         Channel channel = findChannel(channelId);
+        // typing은 DB 저장 없이 현재 멤버 정보로 브로드캐스트 payload만 구성함
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
         return TypingEventResponse.of(channelId, sender.getId(), request);
@@ -200,6 +202,7 @@ public class ChatMessageService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
+        // 채널이 속한 워크스페이스에서 활성 멤버인지 확인함
         Long workspaceId = channel.getWorkspace().getId();
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
