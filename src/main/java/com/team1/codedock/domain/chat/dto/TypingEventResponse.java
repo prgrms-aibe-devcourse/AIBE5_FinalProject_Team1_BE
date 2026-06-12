@@ -8,10 +8,10 @@ public record TypingEventResponse(
 ) {
     //서버가 채널 연결 response payload
 
-    public static TypingEventResponse of(Long channelId, TypingEventRequest request) {
+    public static TypingEventResponse of(Long channelId, Long workspaceMemberId, TypingEventRequest request) {
         return new TypingEventResponse(
                 channelId,
-                request.workspaceMemberId(),
+                workspaceMemberId,
                 request.senderName(),
                 request.typing()
         );

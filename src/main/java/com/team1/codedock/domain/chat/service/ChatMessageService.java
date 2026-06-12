@@ -6,6 +6,8 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
+import com.team1.codedock.domain.chat.dto.TypingEventRequest;
+import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -37,13 +39,20 @@ public class ChatMessageService {
     private final ThreadAttachmentService threadAttachmentService;
 
     @Transactional
-    public ChannelMessageResponse createChannelMessage(Long channelId, ChannelMessageCreateRequest request) {
+    public ChannelMessageResponse createChannelMessage(Long channelId, Long userId, ChannelMessageCreateRequest request) {
         validateContent(request.content());
         Channel channel = findChannel(channelId);
-        WorkspaceMember sender = findWorkspaceMember(request.senderMemberId());
-        validateSenderCanWriteChannelMessage(channel, sender);
+        WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
         return saveChannelMessage(channel, sender, request.content());
+    }
+
+    @Transactional(readOnly = true)
+    public TypingEventResponse createTypingEventResponse(Long channelId, Long userId, TypingEventRequest request) {
+        Channel channel = findChannel(channelId);
+        WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
+
+        return TypingEventResponse.of(channelId, sender.getId(), request);
     }
 
     @Transactional
@@ -196,18 +205,6 @@ public class ChatMessageService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 
-    private void validateSenderCanWriteChannelMessage(Channel channel, WorkspaceMember sender) {
-        if (!sender.isActive()) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-
-        Long channelWorkspaceId = channel.getWorkspace().getId();
-        Long senderWorkspaceId = sender.getWorkspace().getId();
-        if (!channelWorkspaceId.equals(senderWorkspaceId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);
-        }
-    }
-
     private Thread findEditableChannelMessage(Channel channel, Long messageId, WorkspaceMember member) {
         Thread message = threadRepository.findById(messageId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Message not found."));
@@ -244,11 +241,4 @@ public class ChatMessageService {
         return channel;
     }
 
-    private WorkspaceMember findWorkspaceMember(Long memberId) {
-        WorkspaceMember member = entityManager.find(WorkspaceMember.class, memberId);
-        if (member == null) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
-        }
-        return member;
-    }
 }
