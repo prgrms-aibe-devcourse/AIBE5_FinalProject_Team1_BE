@@ -52,6 +52,19 @@ public class WorkspaceController {
         return ApiResponse.ok(workspaceService.createInvite(workspaceId, request, SecurityUtils.getCurrentUserId()));
     }
 
+    @GetMapping("/{workspaceId}/invites")
+    public ApiResponse<List<InvitationResponse>> listInvitations(@PathVariable Long workspaceId) {
+        return ApiResponse.ok(workspaceService.listInvitations(workspaceId, SecurityUtils.getCurrentUserId()));
+    }
+
+    @DeleteMapping("/{workspaceId}/invites/{invitationId}")
+    public ApiResponse<Void> revokeInvitation(
+            @PathVariable Long workspaceId,
+            @PathVariable Long invitationId) {
+        workspaceService.revokeInvitation(workspaceId, invitationId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
+
     @PatchMapping("/{workspaceId}/members/{memberId}/role")
     public ApiResponse<Void> changeMemberRole(
             @PathVariable Long workspaceId,
@@ -72,6 +85,12 @@ public class WorkspaceController {
             @PathVariable Long workspaceId,
             @PathVariable Long memberId) {
         workspaceService.removeMember(workspaceId, memberId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
+
+    @DeleteMapping("/{workspaceId}/leave")
+    public ApiResponse<Void> leaveWorkspace(@PathVariable Long workspaceId) {
+        workspaceService.leaveWorkspace(workspaceId, SecurityUtils.getCurrentUserId());
         return ApiResponse.ok();
     }
 }
