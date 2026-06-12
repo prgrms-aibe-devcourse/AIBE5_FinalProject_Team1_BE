@@ -37,7 +37,7 @@ public class Document extends BaseEntity {
     @Column
     private String content;
 
-    // 'pr-summary' | 'manual' | 'meeting' | 'release'
+    // 'manual' | 'faq' | 'release'
     @Column(length = 50)
     private String category;
 
