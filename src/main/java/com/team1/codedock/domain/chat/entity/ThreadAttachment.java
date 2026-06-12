@@ -52,4 +52,30 @@ public class ThreadAttachment extends BaseCreatedEntity {
     // Oracle 예약어 size -> file_size 로 변경됨
     @Column(name = "file_size")
     private Long fileSize;
+
+    public static ThreadAttachment create(
+            Thread thread,
+            String attachmentType,
+            Long targetId,
+            String url,
+            String title,
+            String detail,
+            String meta,
+            String previewUrl,
+            String mimeType,
+            Long fileSize
+    ) {
+        ThreadAttachment attachment = new ThreadAttachment();
+        attachment.thread = thread;
+        attachment.attachmentType = attachmentType;
+        attachment.targetId = targetId;
+        attachment.url = url;
+        attachment.title = title;
+        attachment.detail = detail;
+        attachment.meta = meta;
+        attachment.previewUrl = previewUrl;
+        attachment.mimeType = mimeType;
+        attachment.fileSize = fileSize;
+        return attachment;
+    }
 }
