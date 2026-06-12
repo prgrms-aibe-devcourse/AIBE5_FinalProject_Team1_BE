@@ -122,10 +122,16 @@ public class GeminiClient {
     private String buildDocumentPrompt(List<String> entitySources) {
         String sourcesText = String.join("\n\n---\n\n", entitySources);
         return """
-                다음 Java Spring Boot @Entity 클래스들을 분석하여 도메인 모델 설명 문서 초안을 작성해주세요.
+                다음 Java Spring Boot @Entity 클래스들을 분석하여 외부 사용자(운영팀, CS팀, 비개발자 등)에게 제공할 문서 초안을 작성해주세요.
+                기술적인 내용보다는 서비스 기능과 사용 방법을 쉽게 설명하는 문서를 작성해주세요.
 
                 [엔티티 소스코드]
                 %s
+
+                category는 문서 내용에 따라 아래 중 가장 적합한 것을 선택해주세요:
+                - manual: 사용 설명서, 사용 가이드, 튜토리얼
+                - faq: 자주 묻는 질문
+                - release: 릴리즈 노트, 변경 이력
 
                 다음 JSON 형식으로 응답해주세요:
                 {

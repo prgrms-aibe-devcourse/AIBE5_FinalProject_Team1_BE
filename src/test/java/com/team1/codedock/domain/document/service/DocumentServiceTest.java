@@ -78,13 +78,13 @@ class DocumentServiceTest {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
         GithubPullRequest pr = mock(GithubPullRequest.class);
-        DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "pr-summary", "workspace", 10L);
+        DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "manual", "workspace", 10L);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
         when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
         when(githubPullRequestRepository.findByIdAndRepository_Workspace_Id(10L, 1L)).thenReturn(Optional.of(pr));
 
-        Document document = Document.create(workspace, member, "제목", "내용", "pr-summary", "workspace", pr);
+        Document document = Document.create(workspace, member, "제목", "내용", "manual", "workspace", pr);
         when(documentRepository.save(any(Document.class))).thenReturn(document);
 
         documentService.createDocument(1L, request);
@@ -110,7 +110,7 @@ class DocumentServiceTest {
     void createDocument_다른_워크스페이스_PR_예외() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
-        DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "pr-summary", "workspace", 10L);
+        DocumentCreateRequest request = new DocumentCreateRequest(1L, "제목", "내용", "manual", "workspace", 10L);
 
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
         when(workspaceMemberRepository.findByIdAndWorkspace_Id(1L, 1L)).thenReturn(Optional.of(member));
