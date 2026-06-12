@@ -18,4 +18,10 @@ public class InviteController {
         workspaceService.acceptInvite(inviteToken, SecurityUtils.getCurrentUserId());
         return ApiResponse.ok();
     }
+
+    @PostMapping("/{inviteToken}/reject")
+    public ApiResponse<Void> rejectInvite(@PathVariable String inviteToken) {
+        workspaceService.rejectInvite(inviteToken, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
 }
