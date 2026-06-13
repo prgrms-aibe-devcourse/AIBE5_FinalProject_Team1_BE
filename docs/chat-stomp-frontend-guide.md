@@ -19,12 +19,18 @@ ws://localhost:8080/ws
 ```
 
 현재 백엔드는 SockJS fallback을 사용하지 않습니다. 프론트에서는 `@stomp/stompjs`의 `brokerURL` 방식으로 연결합니다.
+STOMP CONNECT 요청에는 JWT access token을 `Authorization: Bearer {accessToken}` 형식으로 전달합니다.
 
 ```ts
 import { Client } from "@stomp/stompjs";
 
+const accessToken = getAccessToken();
+
 const client = new Client({
   brokerURL: "ws://localhost:8080/ws",
+  connectHeaders: {
+    Authorization: `Bearer ${accessToken}`,
+  },
   reconnectDelay: 5000,
   onConnect: () => {
     console.log("STOMP connected");
@@ -35,6 +41,12 @@ const client = new Client({
 });
 
 client.activate();
+```
+
+채팅 REST API도 동일하게 JWT access token을 사용합니다. 프론트는 `X-User-Id` 헤더나 요청 body의 `workspaceMemberId`로 현재 사용자를 넘기지 않습니다.
+
+```http
+Authorization: Bearer {accessToken}
 ```
 
 ## 2. Destination Summary
@@ -259,18 +271,20 @@ Endpoint:
 
 ```http
 POST /api/channels/{channelId}/reactions/toggle
+Authorization: Bearer {accessToken}
 ```
 
 Payload:
 
 ```json
 {
-  "workspaceMemberId": 1,
   "targetType": "thread",
   "targetId": 100,
   "emoji": "👍"
 }
 ```
+
+`workspaceMemberId`는 요청 body에 포함하지 않습니다. 백엔드는 JWT 인증 사용자와 대상 채널의 workspace를 기준으로 활성 `WorkspaceMember`를 조회합니다.
 
 `targetType`:
 
@@ -415,8 +429,9 @@ typingSubscription.unsubscribe();
 
 ## 9. Current Limitations
 
-- JWT WebSocket 인증은 아직 적용하지 않습니다.
-- 현재 메시지/typing 요청은 `workspaceMemberId` 또는 `senderMemberId`를 payload로 전달합니다.
+- REST 채팅 API는 `Authorization: Bearer {accessToken}` 기준으로 현재 사용자를 식별합니다.
+- Reaction REST 요청 body에는 `workspaceMemberId`를 전달하지 않습니다.
+- WebSocket 메시지/답글/typing payload에 남아 있는 `workspaceMemberId`, `senderMemberId`, `userId` 제거는 별도 이슈에서 처리합니다.
 - Redis Pub/Sub은 아직 적용하지 않습니다.
 - 메시지 목록 조회, 답글 저장/조회, 읽음 처리, 멘션, 북마크는 별도 구현 범위입니다.
 - 운영 배포 환경에서는 WebSocket URL과 CORS origin을 환경에 맞게 조정해야 합니다.

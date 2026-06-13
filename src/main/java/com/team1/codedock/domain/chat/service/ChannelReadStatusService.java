@@ -47,13 +47,13 @@ public class ChannelReadStatusService {
         return ChannelReadStatusResponse.from(status);
     }
 
-    // 존재하지 않는 채널이면 읽음 상태를 만들 수 없으므로 예외 처리함
+    // 존재하지 않는 채널이면 읽음 상태를 만들 수 없으므로 예외 처리
     private Channel findChannel(Long channelId) {
         return channelRepository.findById(channelId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_NOT_FOUND));
     }
 
-    // JWT 연동 전까지 X-User-Id로 워크스페이스 멤버 확인함
+    // 인증 사용자 기준으로 활성 워크스페이스 멤버 확인함
     private WorkspaceMember findActiveWorkspaceMember(Channel channel, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);

@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.chat.service;
 
+import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.dto.ReactionSummaryResponse;
 import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
@@ -30,12 +31,12 @@ public class ReactionService {
     private final EntityManager entityManager;
 
     @Transactional
-    public ReactionToggleResponse toggleReaction(Long channelId, ReactionToggleRequest request) {
+    public ReactionToggleResponse toggleReaction(Long channelId, Long userId, ReactionToggleRequest request) {
         validateTargetType(request.targetType());
-        validateTargetBelongsToChannel(channelId, request.targetType(), request.targetId());
+        Channel targetChannel = resolveTargetChannel(request.targetType(), request.targetId());
+        validateTargetBelongsToChannel(channelId, targetChannel);
 
-        WorkspaceMember workspaceMember = workspaceMemberRepository.findById(request.workspaceMemberId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
+        WorkspaceMember workspaceMember = findActiveWorkspaceMember(targetChannel, userId);
 
         boolean reacted = toggle(request, workspaceMember);
         long count = reactionRepository.countByTargetTypeAndTargetIdAndEmoji(
@@ -46,7 +47,7 @@ public class ReactionService {
 
         return ReactionToggleResponse.of(
                 channelId,
-                request.workspaceMemberId(),
+                workspaceMember.getId(),
                 request.targetType(),
                 request.targetId(),
                 request.emoji(),
@@ -57,7 +58,7 @@ public class ReactionService {
 
     @Transactional(readOnly = true)
     public List<ReactionSummaryResponse> getReactionSummaries(Long channelId) {
-        // 프론트 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 두 집계를 합친다.
+        // 프론트 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 두 집계를 합침
         List<ReactionSummaryResponse> summaries = new ArrayList<>();
         summaries.addAll(reactionRepository.findThreadReactionSummariesByChannelId(channelId));
         summaries.addAll(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId));
@@ -66,7 +67,7 @@ public class ReactionService {
 
     private boolean toggle(ReactionToggleRequest request, WorkspaceMember workspaceMember) {
         return reactionRepository.findByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
-                        request.workspaceMemberId(),
+                        workspaceMember.getId(),
                         request.targetType(),
                         request.targetId(),
                         request.emoji()
@@ -94,24 +95,33 @@ public class ReactionService {
         }
     }
 
-    private void validateTargetBelongsToChannel(Long channelId, String targetType, Long targetId) {
-        Long targetChannelId = resolveTargetChannelId(targetType, targetId);
-        if (!channelId.equals(targetChannelId)) {
+    private void validateTargetBelongsToChannel(Long channelId, Channel targetChannel) {
+        if (!channelId.equals(targetChannel.getId())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "리액션 대상이 요청한 채널에 속하지 않습니다.");
         }
     }
 
-    private Long resolveTargetChannelId(String targetType, Long targetId) {
+    private Channel resolveTargetChannel(String targetType, Long targetId) {
         if (Reaction.TARGET_TYPE_THREAD.equals(targetType)) {
             Thread thread = threadRepository.findById(targetId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
-            return thread.getChannel().getId();
+            return thread.getChannel();
         }
 
         ThreadReply threadReply = entityManager.find(ThreadReply.class, targetId);
         if (threadReply == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "스레드 답글을 찾을 수 없습니다.");
         }
-        return threadReply.getThread().getChannel().getId();
+        return threadReply.getThread().getChannel();
+    }
+
+    private WorkspaceMember findActiveWorkspaceMember(Channel channel, Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+
+        Long workspaceId = channel.getWorkspace().getId();
+        return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 }
