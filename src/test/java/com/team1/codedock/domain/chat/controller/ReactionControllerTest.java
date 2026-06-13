@@ -7,6 +7,8 @@ import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
 import com.team1.codedock.domain.chat.entity.Reaction;
 import com.team1.codedock.domain.chat.service.ReactionService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -25,9 +27,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -87,6 +91,23 @@ class ReactionControllerTest {
         assertThat(event.type()).isEqualTo(ChatEventType.REACTION_UPDATED);
         assertThat(event.payload()).isEqualTo(response);
         verify(reactionService).toggleReaction(channelId, USER_ID, request);
+    }
+
+    @Test
+    @DisplayName("인증 사용자가 없으면 리액션 토글 요청을 UNAUTHORIZED로 차단한다")
+    void toggleReaction_unauthorizedWhenUserIsNotAuthenticated() {
+        Long channelId = 1L;
+        ReactionToggleRequest request = new ReactionToggleRequest(
+                Reaction.TARGET_TYPE_THREAD,
+                100L,
+                "like"
+        );
+
+        assertThatThrownBy(() -> reactionController.toggleReaction(channelId, request))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(reactionService, messagingTemplate);
     }
 
     @Test
