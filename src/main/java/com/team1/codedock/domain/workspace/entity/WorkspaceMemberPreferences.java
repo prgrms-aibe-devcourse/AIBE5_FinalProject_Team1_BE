@@ -33,6 +33,18 @@ public class WorkspaceMemberPreferences {
     @Column(nullable = false, length = 20)
     private String presence = "active";
 
+    public static WorkspaceMemberPreferences create(WorkspaceMember member) {
+        WorkspaceMemberPreferences p = new WorkspaceMemberPreferences();
+        p.workspaceMember = member;
+        p.notificationMode = "mentions";
+        p.presence = "active";
+        return p;
+    }
+
+    public void updatePresence(String presence) {
+        this.presence = presence;
+    }
+
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

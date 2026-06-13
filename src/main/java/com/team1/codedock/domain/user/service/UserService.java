@@ -54,4 +54,11 @@ public class UserService {
                 .map(UserSkill::getSkillName)
                 .toList();
     }
+
+    @Transactional(readOnly = true)
+    public UserResponse getUserById(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        return UserResponse.from(user);
+    }
 }
