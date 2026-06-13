@@ -16,6 +16,7 @@ public class WorkspaceMemberResponse {
     private String username;
     private String role;
     private LocalDateTime joinedAt;
+    private String presence;
 
     public static WorkspaceMemberResponse from(WorkspaceMember member) {
         return WorkspaceMemberResponse.builder()
@@ -25,6 +26,19 @@ public class WorkspaceMemberResponse {
                 .username(member.getUser().getUsername())
                 .role(member.getAuthority())
                 .joinedAt(member.getCreatedAt())
+                .presence("active")
+                .build();
+    }
+
+    public static WorkspaceMemberResponse from(WorkspaceMember member, String presence) {
+        return WorkspaceMemberResponse.builder()
+                .memberId(member.getId())
+                .userId(member.getUser().getId())
+                .email(member.getUser().getEmail())
+                .username(member.getUser().getUsername())
+                .role(member.getAuthority())
+                .joinedAt(member.getCreatedAt())
+                .presence(presence != null ? presence : "active")
                 .build();
     }
 }

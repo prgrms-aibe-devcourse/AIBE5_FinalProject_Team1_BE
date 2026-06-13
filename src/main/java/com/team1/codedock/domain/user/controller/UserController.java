@@ -33,4 +33,9 @@ public class UserController {
     public ApiResponse<List<String>> getSkills() {
         return ApiResponse.ok(userService.getSkills(SecurityUtils.getCurrentUserId()));
     }
+
+    @GetMapping("/{userId}")
+    public ApiResponse<UserResponse> getUserById(@PathVariable Long userId) {
+        return ApiResponse.ok(userService.getUserById(userId));
+    }
 }

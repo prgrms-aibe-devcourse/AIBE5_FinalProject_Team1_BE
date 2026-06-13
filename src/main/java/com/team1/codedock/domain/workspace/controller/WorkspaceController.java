@@ -93,4 +93,12 @@ public class WorkspaceController {
         workspaceService.leaveWorkspace(workspaceId, SecurityUtils.getCurrentUserId());
         return ApiResponse.ok();
     }
+
+    @PatchMapping("/{workspaceId}/me/presence")
+    public ApiResponse<Void> updatePresence(
+            @PathVariable Long workspaceId,
+            @RequestBody java.util.Map<String, String> body) {
+        workspaceService.updatePresence(workspaceId, body.get("presence"), SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
 }
