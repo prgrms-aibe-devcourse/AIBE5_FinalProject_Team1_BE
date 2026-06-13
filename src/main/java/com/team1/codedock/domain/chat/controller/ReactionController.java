@@ -7,6 +7,7 @@ import com.team1.codedock.domain.chat.dto.ReactionToggleRequest;
 import com.team1.codedock.domain.chat.dto.ReactionToggleResponse;
 import com.team1.codedock.domain.chat.service.ReactionService;
 import com.team1.codedock.global.response.ApiResponse;
+import com.team1.codedock.global.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -32,7 +33,11 @@ public class ReactionController {
             @PathVariable Long channelId,
             @Valid @RequestBody ReactionToggleRequest request
     ) {
-        ReactionToggleResponse response = reactionService.toggleReaction(channelId, request);
+        ReactionToggleResponse response = reactionService.toggleReaction(
+                channelId,
+                SecurityUtils.getCurrentUserId(),
+                request
+        );
 
         messagingTemplate.convertAndSend(
                 "/topic/channels/" + channelId + "/events",
