@@ -10,12 +10,18 @@ import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
+
+import java.security.Principal;
 
 @Controller
 @RequiredArgsConstructor
@@ -28,9 +34,12 @@ public class ChatWebSocketController {
     @MessageMapping("/channels/{channelId}/messages")
     public void createChannelMessage(
             @DestinationVariable Long channelId,
+            Principal principal,
             @Valid ChannelMessageCreateRequest request
     ) {
-        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, request);
+        // CONNECT 인증에서 세팅한 Principal 기준으로 메시지 작성자 식별함
+        Long userId = getCurrentUserId(principal);
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
         messagingTemplate.convertAndSend(
                 "/topic/channels/" + channelId + "/events",
@@ -41,11 +50,14 @@ public class ChatWebSocketController {
     @MessageMapping("/threads/{threadId}/replies")
     public void createThreadReply(
             @DestinationVariable Long threadId,
+            Principal principal,
             @Valid ThreadReplyWebSocketCreateRequest request
     ) {
+        // 답글 작성자도 요청 body가 아니라 인증 사용자 기준으로 처리함
+        Long userId = getCurrentUserId(principal);
         ThreadReplyResponse response = threadReplyService.createReply(
                 threadId,
-                request.userId(),
+                userId,
                 request.toCreateRequest()
         );
 
@@ -58,13 +70,25 @@ public class ChatWebSocketController {
     @MessageMapping("/channels/{channelId}/typing")
     public void sendTypingEvent(
             @DestinationVariable Long channelId,
+            Principal principal,
             @Valid TypingEventRequest request
     ) {
-        TypingEventResponse response = TypingEventResponse.of(channelId, request);
+        // typing 이벤트도 서버에서 현재 멤버를 찾아 payload에 담음
+        Long userId = getCurrentUserId(principal);
+        TypingEventResponse response = chatMessageService.createTypingEventResponse(channelId, userId, request);
 
         messagingTemplate.convertAndSend(
                 "/topic/channels/" + channelId + "/typing",
                 ChatEventResponse.of(ChatEventType.TYPING, response)
         );
+    }
+
+    private Long getCurrentUserId(Principal principal) {
+        // WebSocketAuthChannelInterceptor가 Authentication Principal을 심어둔 상태여야 함
+        if (principal instanceof Authentication authentication
+                && authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
+            return userDetails.getUserId();
+        }
+        throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }
 }

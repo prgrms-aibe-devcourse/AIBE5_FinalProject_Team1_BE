@@ -6,12 +6,11 @@ public record TypingEventResponse(
         String senderName,
         Boolean typing
 ) {
-    //서버가 채널 연결 response payload
-
-    public static TypingEventResponse of(Long channelId, TypingEventRequest request) {
+    // 서버가 인증 멤버 id를 채워서 내려주는 typing 이벤트 payload임
+    public static TypingEventResponse of(Long channelId, Long workspaceMemberId, TypingEventRequest request) {
         return new TypingEventResponse(
                 channelId,
-                request.workspaceMemberId(),
+                workspaceMemberId,
                 request.senderName(),
                 request.typing()
         );

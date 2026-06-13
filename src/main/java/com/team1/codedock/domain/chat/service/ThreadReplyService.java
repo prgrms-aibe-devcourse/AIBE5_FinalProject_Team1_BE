@@ -40,6 +40,7 @@ public class ThreadReplyService {
     public ThreadReplyResponse createReply(Long threadId, Long userId, ThreadReplyCreateRequest request) {
         validateContent(request.content());
         Thread thread = findThread(threadId);
+        // 요청 body가 아니라 인증 userId로 답글 작성 멤버 확인함
         WorkspaceMember member = findActiveWorkspaceMember(thread, userId);
 
         ThreadReply reply = ThreadReply.create(thread, member, request.content());
@@ -98,6 +99,7 @@ public class ThreadReplyService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
+        // 답글 대상 스레드가 속한 워크스페이스에서 활성 멤버인지 확인함
         Long workspaceId = thread.getChannel().getWorkspace().getId();
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));

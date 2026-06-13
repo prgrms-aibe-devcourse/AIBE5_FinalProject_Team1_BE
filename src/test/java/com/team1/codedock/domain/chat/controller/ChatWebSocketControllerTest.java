@@ -11,6 +11,9 @@ import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,12 +22,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import java.security.Principal;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,7 +54,9 @@ class ChatWebSocketControllerTest {
     @DisplayName("Channel message WebSocket send broadcasts MESSAGE_CREATED event")
     void createChannelMessage() {
         Long channelId = 1L;
-        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(10L, "hello");
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
         ChannelMessageResponse response = new ChannelMessageResponse(
                 100L,
                 channelId,
@@ -56,11 +66,11 @@ class ChatWebSocketControllerTest {
                 LocalDateTime.of(2026, 6, 8, 10, 0)
         );
 
-        when(chatMessageService.createChannelMessage(channelId, request)).thenReturn(response);
+        when(chatMessageService.createChannelMessage(channelId, userId, request)).thenReturn(response);
 
-        chatWebSocketController.createChannelMessage(channelId, request);
+        chatWebSocketController.createChannelMessage(channelId, principal, request);
 
-        verify(chatMessageService).createChannelMessage(channelId, request);
+        verify(chatMessageService).createChannelMessage(channelId, userId, request);
         assertBroadcastEvent(
                 "/topic/channels/" + channelId + "/events",
                 ChatEventType.MESSAGE_CREATED,
@@ -69,11 +79,53 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Channel message WebSocket send rejects missing Principal")
+    void createChannelMessageWithoutPrincipal() {
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Channel message WebSocket send rejects non-authentication Principal")
+    void createChannelMessageWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Channel message WebSocket send rejects Principal without CustomUserDetails")
+    void createChannelMessageWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Thread reply WebSocket send broadcasts THREAD_REPLY_CREATED event")
     void createThreadReply() {
         Long threadId = 1L;
         Long userId = 10L;
-        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest(userId, "reply");
+        Principal principal = principal(userId);
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
         ThreadReplyCreateRequest serviceRequest = new ThreadReplyCreateRequest("reply");
         ThreadReplyResponse response = new ThreadReplyResponse(
                 100L,
@@ -86,7 +138,7 @@ class ChatWebSocketControllerTest {
 
         when(threadReplyService.createReply(eq(threadId), eq(userId), eq(serviceRequest))).thenReturn(response);
 
-        chatWebSocketController.createThreadReply(threadId, request);
+        chatWebSocketController.createThreadReply(threadId, principal, request);
 
         verify(threadReplyService).createReply(threadId, userId, serviceRequest);
         assertBroadcastEvent(
@@ -97,19 +149,50 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Thread reply WebSocket send rejects missing Principal")
+    void createThreadReplyWithoutPrincipal() {
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
+
+        assertThatThrownBy(() -> chatWebSocketController.createThreadReply(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Typing WebSocket send broadcasts TYPING event")
     void sendTypingEvent() {
         Long channelId = 1L;
-        TypingEventRequest request = new TypingEventRequest(10L, "tester", true);
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        TypingEventRequest request = new TypingEventRequest("tester", true);
         TypingEventResponse response = new TypingEventResponse(channelId, 10L, "tester", true);
 
-        chatWebSocketController.sendTypingEvent(channelId, request);
+        when(chatMessageService.createTypingEventResponse(channelId, userId, request)).thenReturn(response);
 
+        chatWebSocketController.sendTypingEvent(channelId, principal, request);
+
+        verify(chatMessageService).createTypingEventResponse(channelId, userId, request);
         assertBroadcastEvent(
                 "/topic/channels/" + channelId + "/typing",
                 ChatEventType.TYPING,
                 response
         );
+    }
+
+    @Test
+    @DisplayName("Typing WebSocket send rejects missing Principal")
+    void sendTypingEventWithoutPrincipal() {
+        TypingEventRequest request = new TypingEventRequest("tester", true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
     }
 
     private void assertBroadcastEvent(
@@ -125,5 +208,11 @@ class ChatWebSocketControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(expectedType);
         assertThat(event.payload()).isEqualTo(expectedPayload);
+    }
+
+    private static Principal principal(Long userId) {
+        CustomUserDetails userDetails = mock(CustomUserDetails.class);
+        when(userDetails.getUserId()).thenReturn(userId);
+        return new UsernamePasswordAuthenticationToken(userDetails, null);
     }
 }

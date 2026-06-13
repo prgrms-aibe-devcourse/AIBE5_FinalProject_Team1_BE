@@ -108,6 +108,7 @@ class ThreadReplyServiceTest {
         assertThat(response.senderMemberId()).isEqualTo(20L);
         assertThat(response.senderName()).isEqualTo("테스터");
         assertThat(response.content()).isEqualTo("새 답글");
+        verify(workspaceMemberRepository).findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId);
         verify(threadReplyRepository).save(org.mockito.ArgumentMatchers.any(ThreadReply.class));
         verify(mentionService).createMentionsForThreadReply(
                 org.mockito.ArgumentMatchers.any(ThreadReply.class),
