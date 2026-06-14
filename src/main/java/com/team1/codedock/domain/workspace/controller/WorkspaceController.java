@@ -94,6 +94,14 @@ public class WorkspaceController {
         return ApiResponse.ok();
     }
 
+    @PostMapping("/{workspaceId}/members/{memberId}/transfer-ownership")
+    public ApiResponse<Void> transferOwnership(
+            @PathVariable Long workspaceId,
+            @PathVariable Long memberId) {
+        workspaceService.transferOwnership(workspaceId, memberId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
+
     @PatchMapping("/{workspaceId}/me/presence")
     public ApiResponse<Void> updatePresence(
             @PathVariable Long workspaceId,

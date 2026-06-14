@@ -1,0 +1,1 @@
+ALTER TABLE workspace_members ADD (version NUMBER(19) DEFAULT 0 NOT NULL);
