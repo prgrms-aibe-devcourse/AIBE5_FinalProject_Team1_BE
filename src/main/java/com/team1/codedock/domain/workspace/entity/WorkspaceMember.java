@@ -44,6 +44,9 @@ public class WorkspaceMember extends BaseEntity {
     @Column(name = "left_reason", length = 255)
     private String leftReason;
 
+    @Version
+    private Long version;
+
     public static WorkspaceMember create(Workspace workspace, User user, String authority) {
         WorkspaceMember member = new WorkspaceMember();
         member.workspace = workspace;

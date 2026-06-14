@@ -162,7 +162,7 @@ public class WorkspaceService {
         Invitation invitation = invitationRepository.findByToken(token)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         if (!"pending".equals(invitation.getStatus())) {
-            throw new BusinessException(ErrorCode.INVALID_TOKEN);
+            throw new BusinessException     (ErrorCode.INVALID_TOKEN);
         }
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -217,6 +217,20 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.FORBIDDEN);   // owner must transfer or delete the workspace
         }
         membership.deactivate("left");
+    }
+
+    public void transferOwnership(Long workspaceId, Long memberId, Long currentUserId) {
+        WorkspaceMember requester = getMembership(workspaceId, currentUserId);
+        if (!"owner".equals(requester.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        WorkspaceMember target = workspaceMemberRepository.findByIdAndWorkspace_Id(memberId, workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
+        if (!target.isActive() || target.getId().equals(requester.getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        requester.changeAuthority("admin");
+        target.changeAuthority("owner");
     }
 
     public void deleteWorkspace(Long workspaceId, Long currentUserId) {
