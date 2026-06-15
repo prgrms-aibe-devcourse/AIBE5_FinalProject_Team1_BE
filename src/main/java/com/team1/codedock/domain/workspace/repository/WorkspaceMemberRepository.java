@@ -25,6 +25,9 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     @Query("SELECT COUNT(m) FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId AND m.user.id = :userId AND m.isActive = true")
     long countByWorkspace_IdAndUser_IdAndIsActiveTrue(@Param("workspaceId") Long workspaceId, @Param("userId") Long userId);
 
+    @Query("SELECT COUNT(m) FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId AND m.isActive = true AND LOWER(m.user.email) = LOWER(:email)")
+    long countActiveByWorkspaceIdAndUserEmail(@Param("workspaceId") Long workspaceId, @Param("email") String email);
+
     Optional<WorkspaceMember> findByWorkspace_IdAndUser_IdAndIsActiveTrue(Long workspaceId, Long userId);
 
     Optional<WorkspaceMember> findByIdAndWorkspace_Id(Long id, Long workspaceId);

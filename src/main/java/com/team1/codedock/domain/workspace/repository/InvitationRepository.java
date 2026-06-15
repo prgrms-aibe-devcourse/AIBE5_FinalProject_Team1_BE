@@ -15,4 +15,6 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
     List<Invitation> findAllByInvitedEmailIgnoreCaseAndStatus(String invitedEmail, String status);
 
     void deleteAllByWorkspace(Workspace workspace);
+
+    boolean existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(Long workspaceId, String invitedEmail, String status);
 }
