@@ -54,7 +54,7 @@ public class ChatMessageService {
         // typing은 DB 저장 없이 현재 멤버 정보로 브로드캐스트 payload만 구성함
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
-        return TypingEventResponse.of(channelId, sender.getId(), request);
+        return TypingEventResponse.of(channelId, sender, request);
     }
 
     @Transactional

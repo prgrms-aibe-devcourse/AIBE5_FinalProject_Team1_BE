@@ -206,7 +206,7 @@ class ChatMessageServiceTest {
         Long workspaceMemberId = 10L;
         Channel channel = channel(channelId, workspace(workspaceId));
         WorkspaceMember member = workspaceMember(workspaceMemberId, channel.getWorkspace(), true, user("tester", "tester"));
-        TypingEventRequest request = new TypingEventRequest("tester", true);
+        TypingEventRequest request = new TypingEventRequest(true);
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
