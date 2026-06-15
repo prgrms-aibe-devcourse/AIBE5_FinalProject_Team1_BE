@@ -60,8 +60,6 @@ Authorization: Bearer {accessToken}
 | Thread reply | `/app/threads/{threadId}/replies` | `/topic/threads/{threadId}/events` |
 | Personal notification | - | `/user/queue/notifications` |
 
-> `Thread reply`, `Personal notification`은 추후 구현 범위입니다.
-
 ## 3. Event Envelope
 
 모든 WebSocket broadcast 응답은 아래 형식을 사용합니다.
@@ -131,7 +129,6 @@ Payload:
 
 ```json
 {
-  "senderMemberId": 1,
   "content": "메시지 내용"
 }
 ```
@@ -142,7 +139,6 @@ Example:
 client.publish({
   destination: `/app/channels/${channelId}/messages`,
   body: JSON.stringify({
-    senderMemberId: currentWorkspaceMemberId,
     content,
   }),
 });
@@ -167,7 +163,8 @@ Event:
     "senderMemberId": 10,
     "senderName": "김재준",
     "content": "메시지 내용",
-    "createdAt": "2026-06-09T10:30:00"
+    "createdAt": "2026-06-09T10:30:00",
+    "attachments": []
   }
 }
 ```
@@ -182,10 +179,93 @@ type ChannelMessagePayload = {
   senderName: string;
   content: string;
   createdAt: string;
+  attachments: ThreadAttachmentPayload[];
+};
+
+type ThreadAttachmentPayload = {
+  id: number;
+  attachmentType: string;
+  type: string;
+  targetId: number | null;
+  url: string | null;
+  title: string | null;
+  detail: string | null;
+  meta: string | null;
+  previewUrl: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  size: number | null;
+  createdAt: string;
 };
 ```
 
-## 6. Typing
+## 6. Thread Reply
+
+### Send
+
+Destination:
+
+```text
+/app/threads/{threadId}/replies
+```
+
+Payload:
+
+```json
+{
+  "content": "답글 내용"
+}
+```
+
+Example:
+
+```ts
+client.publish({
+  destination: `/app/threads/${threadId}/replies`,
+  body: JSON.stringify({
+    content,
+  }),
+});
+```
+
+### Receive
+
+Subscribe:
+
+```text
+/topic/threads/{threadId}/events
+```
+
+Event:
+
+```json
+{
+  "type": "THREAD_REPLY_CREATED",
+  "payload": {
+    "id": 200,
+    "threadId": 100,
+    "senderMemberId": 10,
+    "senderName": "김재준",
+    "content": "답글 내용",
+    "createdAt": "2026-06-09T10:35:00"
+  }
+}
+```
+
+TypeScript payload:
+
+```ts
+type ThreadReplyPayload = {
+  id: number;
+  threadId: number;
+  senderMemberId: number;
+  senderName: string;
+  content: string;
+  createdAt: string;
+};
+```
+
+## 7. Typing
 
 ### Send
 
@@ -199,7 +279,6 @@ Payload:
 
 ```json
 {
-  "workspaceMemberId": 1,
   "senderName": "김재준",
   "typing": true
 }
@@ -211,7 +290,6 @@ Example:
 client.publish({
   destination: `/app/channels/${channelId}/typing`,
   body: JSON.stringify({
-    workspaceMemberId: currentWorkspaceMemberId,
     senderName: currentUserName,
     typing: true,
   }),
@@ -261,7 +339,7 @@ if (payload.workspaceMemberId !== currentWorkspaceMemberId && payload.typing) {
 }
 ```
 
-## 7. Reaction
+## 8. Reaction
 
 리액션은 REST API로 토글하고, 변경 결과는 WebSocket channel event로 수신합니다.
 
@@ -408,7 +486,48 @@ type ReactionUpdatedPayload = {
 };
 ```
 
-## 8. Cleanup
+## 9. Personal Notification
+
+개인 알림은 `/user` destination으로 수신합니다. 백엔드는 `convertAndSendToUser(..., "/queue/notifications", ...)`로 전송하므로 프론트 구독 주소는 `/user/queue/notifications`입니다.
+
+### Subscribe
+
+```text
+/user/queue/notifications
+```
+
+Event:
+
+```json
+{
+  "type": "NOTIFICATION_CREATED",
+  "payload": {
+    "workspaceId": 1,
+    "channelId": 1,
+    "threadId": 100,
+    "threadReplyId": null,
+    "mentionedMemberId": 10,
+    "message": "김재준님이 회원님을 멘션했습니다.",
+    "createdAt": "2026-06-09T10:40:00"
+  }
+}
+```
+
+TypeScript payload:
+
+```ts
+type PersonalNotificationPayload = {
+  workspaceId: number;
+  channelId: number;
+  threadId: number;
+  threadReplyId: number | null;
+  mentionedMemberId: number;
+  message: string;
+  createdAt: string;
+};
+```
+
+## 10. Cleanup
 
 채널 이동 또는 컴포넌트 unmount 시에는 구독을 해제합니다.
 
@@ -427,11 +546,11 @@ channelEventsSubscription.unsubscribe();
 typingSubscription.unsubscribe();
 ```
 
-## 9. Current Limitations
+## 11. Current Limitations
 
 - REST 채팅 API는 `Authorization: Bearer {accessToken}` 기준으로 현재 사용자를 식별합니다.
 - Reaction REST 요청 body에는 `workspaceMemberId`를 전달하지 않습니다.
-- WebSocket 메시지/답글/typing payload에 남아 있는 `workspaceMemberId`, `senderMemberId`, `userId` 제거는 별도 이슈에서 처리합니다.
+- WebSocket 메시지/답글/typing 요청 body에는 `workspaceMemberId`, `senderMemberId`, `userId`를 전달하지 않습니다.
 - Redis Pub/Sub은 아직 적용하지 않습니다.
-- 메시지 목록 조회, 답글 저장/조회, 읽음 처리, 멘션, 북마크는 별도 구현 범위입니다.
+- 첨부파일은 메시지 메타데이터로 저장되며, 실제 바이너리 파일 업로드/스토리지 연동은 별도 흐름으로 다룹니다.
 - 운영 배포 환경에서는 WebSocket URL과 CORS origin을 환경에 맞게 조정해야 합니다.
