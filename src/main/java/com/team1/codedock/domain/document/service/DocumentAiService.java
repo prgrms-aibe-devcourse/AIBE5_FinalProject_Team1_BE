@@ -42,7 +42,8 @@ public class DocumentAiService {
                 .findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
-        GithubRepository githubRepo = githubRepositoryRepository.findFirstByWorkspace_Id(workspaceId)
+        GithubRepository githubRepo = githubRepositoryRepository.findByWorkspaceId(workspaceId)
+                .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
         List<String> entitySources = githubApiClient.fetchEntitySources(
