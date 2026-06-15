@@ -173,10 +173,10 @@ class DocumentControllerTest {
     @Test
     @DisplayName("문서 수정 성공 시 200과 수정된 문서를 반환한다")
     void updateDocument_성공_200() throws Exception {
-        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public", "faq");
         DocumentResponse updated = new DocumentResponse(
                 1L, 1L, 1L,
-                "수정된 제목", "수정된 내용", "manual", "Manual", "public",
+                "수정된 제목", "수정된 내용", "faq", "Manual", "public",
                 null, LocalDateTime.now(), LocalDateTime.now()
         );
         when(documentService.updateDocument(eq(1L), eq(1L), any())).thenReturn(updated);
@@ -187,13 +187,14 @@ class DocumentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.title").value("수정된 제목"))
-                .andExpect(jsonPath("$.data.visibility").value("public"));
+                .andExpect(jsonPath("$.data.visibility").value("public"))
+                .andExpect(jsonPath("$.data.category").value("faq"));
     }
 
     @Test
     @DisplayName("존재하지 않는 문서 수정 시 404를 반환한다")
     void updateDocument_없으면_404() throws Exception {
-        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public", null);
         when(documentService.updateDocument(eq(1L), eq(99L), any()))
                 .thenThrow(new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
 
@@ -208,7 +209,7 @@ class DocumentControllerTest {
     @Test
     @DisplayName("수정 시 제목이 blank이면 400을 반환한다")
     void updateDocument_제목_blank_400() throws Exception {
-        DocumentUpdateRequest request = new DocumentUpdateRequest("", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("", "수정된 내용", "public", null);
 
         mockMvc.perform(patch("/api/workspaces/1/documents/1")
                         .contentType(MediaType.APPLICATION_JSON)
