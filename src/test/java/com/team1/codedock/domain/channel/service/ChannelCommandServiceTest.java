@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -29,6 +30,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -232,13 +234,14 @@ class ChannelCommandServiceTest {
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
 
         channelCommandService.deleteChannel(10L, 2L, 100L);
 
-        verify(channelRepository).delete(channel);
+        InOrder inOrder = inOrder(channelReadStatusRepository, channelRepository);
+        inOrder.verify(channelReadStatusRepository).deleteAllByChannel_Id(2L);
+        inOrder.verify(channelRepository).delete(channel);
     }
 
     @Test
@@ -270,24 +273,26 @@ class ChannelCommandServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with messages cannot be deleted");
 
+        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
     }
 
     @Test
-    @DisplayName("Rejects deleting channel with read status")
+    @DisplayName("Deletes empty channel after removing read status")
     void deleteChannelWithReadStatus() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(true);
+        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel with read status cannot be deleted");
+        channelCommandService.deleteChannel(10L, 2L, 100L);
 
-        verify(channelRepository, never()).delete(any(Channel.class));
+        InOrder inOrder = inOrder(channelReadStatusRepository, channelRepository);
+        inOrder.verify(channelReadStatusRepository).deleteAllByChannel_Id(2L);
+        inOrder.verify(channelRepository).delete(channel);
     }
 
     @Test
@@ -298,13 +303,13 @@ class ChannelCommandServiceTest {
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(true);
 
         assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with pull requests cannot be deleted");
 
+        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
     }
 
@@ -316,7 +321,6 @@ class ChannelCommandServiceTest {
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
         when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(channelReadStatusRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
         when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(true);
 
@@ -324,6 +328,7 @@ class ChannelCommandServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with issues cannot be deleted");
 
+        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
     }
 
