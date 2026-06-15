@@ -1,18 +1,31 @@
 package com.team1.codedock.domain.chat.dto;
 
+import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+
 public record TypingEventResponse(
         Long channelId,
         Long workspaceMemberId,
         String senderName,
         Boolean typing
 ) {
-    // 서버가 인증 멤버 id를 채워서 내려주는 typing 이벤트 payload임
-    public static TypingEventResponse of(Long channelId, Long workspaceMemberId, TypingEventRequest request) {
+    // Server fills sender identity from the authenticated workspace member.
+    public static TypingEventResponse of(Long channelId, WorkspaceMember sender, TypingEventRequest request) {
         return new TypingEventResponse(
                 channelId,
-                workspaceMemberId,
-                request.senderName(),
+                sender.getId(),
+                resolveSenderName(sender.getUser()),
                 request.typing()
         );
+    }
+
+    private static String resolveSenderName(User user) {
+        if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
+            return user.getDisplayName();
+        }
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            return user.getNickname();
+        }
+        return user.getUsername();
     }
 }

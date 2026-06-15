@@ -167,7 +167,7 @@ class ChatWebSocketControllerTest {
         Long channelId = 1L;
         Long userId = 10L;
         Principal principal = principal(userId);
-        TypingEventRequest request = new TypingEventRequest("tester", true);
+        TypingEventRequest request = new TypingEventRequest(true);
         TypingEventResponse response = new TypingEventResponse(channelId, 10L, "tester", true);
 
         when(chatMessageService.createTypingEventResponse(channelId, userId, request)).thenReturn(response);
@@ -185,7 +185,7 @@ class ChatWebSocketControllerTest {
     @Test
     @DisplayName("Typing WebSocket send rejects missing Principal")
     void sendTypingEventWithoutPrincipal() {
-        TypingEventRequest request = new TypingEventRequest("tester", true);
+        TypingEventRequest request = new TypingEventRequest(true);
 
         assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, null, request))
                 .isInstanceOf(BusinessException.class)
