@@ -5,10 +5,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.Optional;
+import java.util.List;
 
 public interface GithubRepositoryRepository extends JpaRepository<GithubRepository, Long> {
 
-    @Query(value = "SELECT * FROM github_repositories WHERE workspace_id = :workspaceId AND ROWNUM = 1", nativeQuery = true)
-    Optional<GithubRepository> findFirstByWorkspace_Id(@Param("workspaceId") Long workspaceId);
+    @Query("SELECT g FROM GithubRepository g WHERE g.workspace.id = :workspaceId")
+    List<GithubRepository> findByWorkspaceId(@Param("workspaceId") Long workspaceId);
 }
