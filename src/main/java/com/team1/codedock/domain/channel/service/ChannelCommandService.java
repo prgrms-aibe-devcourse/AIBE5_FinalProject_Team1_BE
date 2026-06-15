@@ -65,6 +65,8 @@ public class ChannelCommandService {
         Channel channel = findWorkspaceChannel(workspaceId, channelId);
         validateDeletableChannel(channel);
         validateNoChannelReferences(channelId);
+        // read status는 사용자가 채널에 진입하면 생기는 파생 상태라 채널 삭제 시 함께 정리함
+        channelReadStatusRepository.deleteAllByChannel_Id(channelId);
         channelRepository.delete(channel);
     }
 
@@ -130,9 +132,6 @@ public class ChannelCommandService {
     private void validateNoChannelReferences(Long channelId) {
         if (threadRepository.existsByChannel_Id(channelId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with messages cannot be deleted.");
-        }
-        if (channelReadStatusRepository.existsByChannel_Id(channelId)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with read status cannot be deleted.");
         }
         if (githubPullRequestRepository.existsByChannel_Id(channelId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with pull requests cannot be deleted.");
