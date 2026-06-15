@@ -65,4 +65,11 @@ public class WorkspaceMember extends BaseEntity {
         this.leftAt = LocalDateTime.now();
         this.leftReason = reason;
     }
+
+    public void reactivate(String authority) {
+        this.authority = authority;
+        this.isActive = true;
+        this.leftAt = null;
+        this.leftReason = null;
+    }
 }

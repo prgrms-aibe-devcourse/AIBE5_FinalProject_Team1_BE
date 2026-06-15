@@ -125,6 +125,12 @@ public class WorkspaceService {
         if (!List.of("owner", "admin").contains(inviterMember.getAuthority())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
+        if (workspaceMemberRepository.countActiveByWorkspaceIdAndUserEmail(workspaceId, req.getEmail()) > 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        if (invitationRepository.existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(workspaceId, req.getEmail(), "pending")) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
         Workspace workspace = inviterMember.getWorkspace();
         String token = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(req.getExpiresInHours());
@@ -149,12 +155,17 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         Workspace workspace = invitation.getWorkspace();
-        if (workspaceMemberRepository.countByWorkspaceAndUser(workspace, user) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        WorkspaceMember existing = workspaceMemberRepository.findByWorkspaceAndUser(workspace, user).orElse(null);
+        if (existing != null) {
+            if (existing.isActive()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+            existing.reactivate(invitation.getInvitedAuthority());
+        } else {
+            workspaceMemberRepository.save(
+                    WorkspaceMember.create(workspace, user, invitation.getInvitedAuthority())
+            );
         }
-        workspaceMemberRepository.save(
-                WorkspaceMember.create(workspace, user, invitation.getInvitedAuthority())
-        );
         invitation.accept();
     }
 
@@ -240,6 +251,7 @@ public class WorkspaceService {
         }
         requester.changeAuthority("admin");
         target.changeAuthority("owner");
+        requester.getWorkspace().changeOwner(target.getUser());
     }
 
     public void deleteWorkspace(Long workspaceId, Long currentUserId) {

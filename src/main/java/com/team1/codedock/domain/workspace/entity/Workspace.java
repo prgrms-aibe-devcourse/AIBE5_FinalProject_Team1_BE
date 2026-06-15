@@ -56,6 +56,10 @@ public class Workspace extends BaseEntity {
         if (description != null) this.description = description;
     }
 
+    public void changeOwner(User owner) {
+        this.owner = owner;
+    }
+
     public void updateSwaggerUrl(String swaggerUrl) {
         this.swaggerUrl = swaggerUrl;
     }
