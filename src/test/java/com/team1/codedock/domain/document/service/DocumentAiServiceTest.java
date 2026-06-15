@@ -101,7 +101,7 @@ class DocumentAiServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
-        when(githubRepositoryRepository.findFirstByWorkspace_Id(1L)).thenReturn(Optional.of(githubRepo));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
         when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
         when(geminiClient.generateDocument(any())).thenReturn(result);
         when(documentRepository.save(any(Document.class))).thenReturn(savedDoc);
@@ -143,7 +143,7 @@ class DocumentAiServiceTest {
     void generateDocument_GitHub_레포_없으면_예외() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(mock(WorkspaceMember.class)));
-        when(githubRepositoryRepository.findFirstByWorkspace_Id(1L)).thenReturn(Optional.empty());
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> documentAiService.generateDocument(1L))
                 .isInstanceOf(BusinessException.class)
