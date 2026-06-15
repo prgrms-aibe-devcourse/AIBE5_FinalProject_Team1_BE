@@ -235,12 +235,28 @@ class DocumentServiceTest {
 
         when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 1L)).thenReturn(Optional.of(doc));
 
-        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public", "faq");
         DocumentResponse response = documentService.updateDocument(1L, 1L, request);
 
         assertThat(response.title()).isEqualTo("수정된 제목");
         assertThat(response.content()).isEqualTo("수정된 내용");
         assertThat(response.visibility()).isEqualTo("public");
+        assertThat(response.category()).isEqualTo("faq");
+    }
+
+    @Test
+    @DisplayName("updateDocument 시 category가 null이면 기존 값을 유지한다")
+    void updateDocument_category_null이면_기존값_유지() {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        Document doc = Document.create(workspace, member, "제목", "내용", "release", "workspace", null);
+
+        when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 1L)).thenReturn(Optional.of(doc));
+
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", null, null, null);
+        DocumentResponse response = documentService.updateDocument(1L, 1L, request);
+
+        assertThat(response.category()).isEqualTo("release");
     }
 
     @Test
@@ -248,7 +264,7 @@ class DocumentServiceTest {
     void updateDocument_없으면_예외() {
         when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(99L, 1L)).thenReturn(Optional.empty());
 
-        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public", null);
 
         assertThatThrownBy(() -> documentService.updateDocument(1L, 99L, request))
                 .isInstanceOf(BusinessException.class)
@@ -260,7 +276,7 @@ class DocumentServiceTest {
     void updateDocument_다른_워크스페이스면_예외() {
         when(documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(1L, 999L)).thenReturn(Optional.empty());
 
-        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public");
+        DocumentUpdateRequest request = new DocumentUpdateRequest("수정된 제목", "수정된 내용", "public", null);
 
         assertThatThrownBy(() -> documentService.updateDocument(999L, 1L, request))
                 .isInstanceOf(BusinessException.class)

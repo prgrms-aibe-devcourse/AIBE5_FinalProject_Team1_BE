@@ -95,11 +95,12 @@ class DocumentTest {
     void update_모든_필드_수정() {
         Document document = Document.create(workspace, member, "원래 제목", "원래 내용", "manual", "workspace", null);
 
-        document.update("수정된 제목", "수정된 내용", "public");
+        document.update("수정된 제목", "수정된 내용", "public", "faq");
 
         assertThat(document.getTitle()).isEqualTo("수정된 제목");
         assertThat(document.getContent()).isEqualTo("수정된 내용");
         assertThat(document.getVisibility()).isEqualTo("public");
+        assertThat(document.getCategory()).isEqualTo("faq");
     }
 
     @Test
@@ -107,11 +108,12 @@ class DocumentTest {
     void update_null_필드는_기존값_유지() {
         Document document = Document.create(workspace, member, "원래 제목", "원래 내용", "manual", "workspace", null);
 
-        document.update(null, null, null);
+        document.update(null, null, null, null);
 
         assertThat(document.getTitle()).isEqualTo("원래 제목");
         assertThat(document.getContent()).isEqualTo("원래 내용");
         assertThat(document.getVisibility()).isEqualTo("workspace");
+        assertThat(document.getCategory()).isEqualTo("manual");
     }
 
     @Test
@@ -119,11 +121,32 @@ class DocumentTest {
     void update_일부_필드만_수정() {
         Document document = Document.create(workspace, member, "원래 제목", "원래 내용", "manual", "workspace", null);
 
-        document.update("수정된 제목", null, null);
+        document.update("수정된 제목", null, null, null);
 
         assertThat(document.getTitle()).isEqualTo("수정된 제목");
         assertThat(document.getContent()).isEqualTo("원래 내용");
         assertThat(document.getVisibility()).isEqualTo("workspace");
+        assertThat(document.getCategory()).isEqualTo("manual");
+    }
+
+    @Test
+    @DisplayName("update() 시 category를 정상적으로 수정한다")
+    void update_category_수정() {
+        Document document = Document.create(workspace, member, "제목", "내용", "manual", "workspace", null);
+
+        document.update(null, null, null, "faq");
+
+        assertThat(document.getCategory()).isEqualTo("faq");
+    }
+
+    @Test
+    @DisplayName("update() 시 category가 null이면 기존 값을 유지한다")
+    void update_category_null이면_기존값_유지() {
+        Document document = Document.create(workspace, member, "제목", "내용", "release", "workspace", null);
+
+        document.update(null, null, null, null);
+
+        assertThat(document.getCategory()).isEqualTo("release");
     }
 
     // ── softDelete() ──────────────────────────────────────────
