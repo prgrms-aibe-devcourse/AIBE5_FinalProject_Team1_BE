@@ -172,6 +172,15 @@ public class WorkspaceService {
         invitation.reject();
     }
 
+    public List<ReceivedInviteResponse> listReceivedInvites(Long currentUserId) {
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        return invitationRepository.findAllByInvitedEmailIgnoreCaseAndStatus(user.getEmail(), "pending").stream()
+                .filter(inv -> inv.getExpiresAt().isAfter(LocalDateTime.now()))
+                .map(inv -> ReceivedInviteResponse.from(inv, workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(inv.getWorkspace())))
+                .toList();
+    }
+
     public List<InvitationResponse> listInvitations(Long workspaceId, Long currentUserId) {
         WorkspaceMember requester = getMembership(workspaceId, currentUserId);
         if (!List.of("owner", "admin").contains(requester.getAuthority())) {

@@ -12,6 +12,7 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
     List<Invitation> findAllByWorkspace(Workspace workspace);
     Optional<Invitation> findByIdAndWorkspace_Id(Long id, Long workspaceId);
     Optional<Invitation> findByToken(String token);
+    List<Invitation> findAllByInvitedEmailIgnoreCaseAndStatus(String invitedEmail, String status);
 
     void deleteAllByWorkspace(Workspace workspace);
 }
