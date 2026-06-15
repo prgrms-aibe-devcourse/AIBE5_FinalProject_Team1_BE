@@ -7,5 +7,7 @@ public record DocumentUpdateRequest(
         @NotBlank @Size(max = 255) String title,
         String content,
         // 'workspace' | 'private' | 'public'
-        String visibility
+        String visibility,
+        // 'manual' | 'faq' | 'release'
+        String category
 ) {}
