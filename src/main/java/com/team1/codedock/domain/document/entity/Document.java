@@ -95,10 +95,11 @@ public class Document extends BaseEntity {
         return document;
     }
 
-    public void update(String title, String content, String visibility) {
+    public void update(String title, String content, String visibility, String category) {
         if (title != null) this.title = title;
         if (content != null) this.content = content;
         if (visibility != null) this.visibility = visibility;
+        if (category != null) this.category = category;
     }
 
     public void softDelete() {

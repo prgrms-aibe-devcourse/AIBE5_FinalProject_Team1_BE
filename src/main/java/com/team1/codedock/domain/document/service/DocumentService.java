@@ -77,7 +77,7 @@ public class DocumentService {
         Document document = documentRepository.findByIdAndWorkspace_IdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
 
-        document.update(request.title(), request.content(), request.visibility());
+        document.update(request.title(), request.content(), request.visibility(), request.category());
         return DocumentResponse.from(document);
     }
 
