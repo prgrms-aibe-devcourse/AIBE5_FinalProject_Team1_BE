@@ -15,6 +15,14 @@ CodeDock 채팅 기능에서 백엔드와 프론트엔드가 동일한 WebSocket
 | Subscribe prefix | `/topic`, `/queue` |
 | User destination prefix | `/user` |
 
+STOMP `CONNECT` 요청에는 JWT access token을 아래 형식으로 전달합니다.
+
+```http
+Authorization: Bearer {accessToken}
+```
+
+백엔드는 CONNECT 시점의 JWT를 검증하고, 이후 메시지/답글/typing 요청의 작성자는 STOMP `Principal` 기준으로 식별합니다. 따라서 WebSocket 요청 body에 `workspaceMemberId`, `senderMemberId`, `userId`를 포함하지 않습니다.
+
 ## 3. STOMP Destinations
 
 | Feature | Client Send | Client Subscribe |
@@ -61,7 +69,6 @@ Request:
 
 ```json
 {
-  "workspaceMemberId": 1,
   "content": "이번 PR 리뷰 부탁드립니다."
 }
 ```
@@ -82,11 +89,11 @@ Response:
   "payload": {
     "id": 10,
     "channelId": 1,
-    "workspaceMemberId": 1,
+    "senderMemberId": 1,
     "senderName": "김자바",
     "content": "이번 PR 리뷰 부탁드립니다.",
-    "threadType": "user_message",
-    "createdAt": "2026-06-08T10:30:00"
+    "createdAt": "2026-06-08T10:30:00",
+    "attachments": []
   }
 }
 ```
@@ -105,7 +112,6 @@ Request:
 
 ```json
 {
-  "workspaceMemberId": 1,
   "content": "이 부분은 rate limit 추가가 필요해 보여요."
 }
 ```
@@ -126,7 +132,7 @@ Response:
   "payload": {
     "id": 21,
     "threadId": 10,
-    "workspaceMemberId": 1,
+    "senderMemberId": 1,
     "senderName": "김자바",
     "content": "이 부분은 rate limit 추가가 필요해 보여요.",
     "createdAt": "2026-06-08T10:35:00"
@@ -148,7 +154,6 @@ Request:
 
 ```json
 {
-  "workspaceMemberId": 1,
   "senderName": "김자바",
   "typing": true
 }
@@ -195,18 +200,21 @@ Response:
     "workspaceId": 1,
     "channelId": 1,
     "threadId": 10,
+    "threadReplyId": null,
     "mentionedMemberId": 2,
-    "message": "김자바님이 회원님을 멘션했습니다."
+    "message": "김자바님이 회원님을 멘션했습니다.",
+    "createdAt": "2026-06-08T10:40:00"
   }
 }
 ```
 
 ## 10. Development Notes
 
-- JWT 인증이 완료되기 전 초기 구현에서는 request DTO에 `workspaceMemberId`를 임시로 포함할 수 있습니다.
-- JWT 인증이 완료된 뒤에는 인증된 사용자와 workspace context로 `workspaceMemberId`를 해석합니다.
+- WebSocket 요청 사용자는 JWT 인증으로 식별합니다.
+- 메시지/답글/typing 요청 body에는 `workspaceMemberId`, `senderMemberId`, `userId`를 포함하지 않습니다.
+- 백엔드는 인증된 `userId`와 대상 채널 또는 스레드의 workspace context로 활성 `WorkspaceMember`를 조회합니다.
 - 채널 메시지는 `Thread`로 저장합니다.
 - 스레드 답글은 `ThreadReply`로 저장합니다.
 - 모든 broadcast 응답은 `type`, `payload` envelope 형식을 유지합니다.
 - 채널 이벤트 구독자는 `type` 값으로 UI 갱신 로직을 분기합니다.
-- Reaction, mention, bookmark, read status, Redis Pub/Sub, WebSocket 인증은 이후 확장 범위입니다.
+- Redis Pub/Sub은 이후 확장 범위입니다.
