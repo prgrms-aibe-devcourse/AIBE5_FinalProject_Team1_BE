@@ -14,4 +14,6 @@ public class WorkspaceUpdateRequest {
     private String name;
 
     private String description;
+
+    private String logoUrl;
 }

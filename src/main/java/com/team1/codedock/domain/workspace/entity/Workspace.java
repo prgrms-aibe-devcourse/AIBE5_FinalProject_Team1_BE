@@ -51,9 +51,10 @@ public class Workspace extends BaseEntity {
         return workspace;
     }
 
-    public void update(String name, String description) {
+    public void update(String name, String description, String logoUrl) {
         if (name != null) this.name = name;
         if (description != null) this.description = description;
+        if (logoUrl != null) this.logoUrl = logoUrl;
     }
 
     public void changeOwner(User owner) {
