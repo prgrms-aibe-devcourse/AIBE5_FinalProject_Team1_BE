@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.Locale;
 
 @Service
 @Transactional
@@ -125,17 +127,20 @@ public class WorkspaceService {
         if (!List.of("owner", "admin").contains(inviterMember.getAuthority())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        if (workspaceMemberRepository.countActiveByWorkspaceIdAndUserEmail(workspaceId, req.getEmail()) > 0) {
+        String invitedEmail = req.getEmail().toLowerCase(Locale.ROOT);
+        User invitedOwner = resolveOwner(invitedEmail);
+        if (invitedOwner != null
+                && workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, invitedOwner.getId()) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-        if (invitationRepository.existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(workspaceId, req.getEmail(), "pending")) {
+        if (invitationRepository.existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(workspaceId, invitedEmail, "pending")) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
         Workspace workspace = inviterMember.getWorkspace();
         String token = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(req.getExpiresInHours());
         Invitation invitation = invitationRepository.save(
-                Invitation.create(workspace, inviterMember, req.getEmail(), req.getRole(), token, expiresAt)
+                Invitation.create(workspace, inviterMember, invitedEmail, req.getRole(), token, expiresAt)
         );
         return InviteResponse.from(invitation, baseUrl);
     }
@@ -151,7 +156,8 @@ public class WorkspaceService {
         }
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        if (!invitation.getInvitedEmail().equalsIgnoreCase(user.getEmail())) {
+        User owner = resolveOwner(invitation.getInvitedEmail());
+        if (owner == null || !owner.getId().equals(user.getId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         Workspace workspace = invitation.getWorkspace();
@@ -177,17 +183,41 @@ public class WorkspaceService {
         }
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        if (!invitation.getInvitedEmail().equalsIgnoreCase(user.getEmail())) {
+        User owner = resolveOwner(invitation.getInvitedEmail());
+        if (owner == null || !owner.getId().equals(user.getId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         invitation.reject();
     }
 
+    private User resolveOwner(String email) {
+        if (email == null) {
+            return null;
+        }
+        return userRepository.findByEmailIgnoreCase(email)
+                .orElseGet(() -> userRepository.findByGithubEmailIgnoreCaseOrderByIdAsc(email)
+                        .stream().findFirst().orElse(null));
+    }
+
     public List<ReceivedInviteResponse> listReceivedInvites(Long currentUserId) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        return invitationRepository.findAllByInvitedEmailIgnoreCaseAndStatus(user.getEmail(), "pending").stream()
+        Set<String> candidateEmails = new HashSet<>();
+        if (user.getEmail() != null) {
+            candidateEmails.add(user.getEmail().toLowerCase(Locale.ROOT));
+        }
+        if (user.getGithubEmail() != null) {
+            candidateEmails.add(user.getGithubEmail().toLowerCase(Locale.ROOT));
+        }
+        if (candidateEmails.isEmpty()) {
+            return List.of();
+        }
+        return invitationRepository.findAllByStatusAndLoweredInvitedEmailIn("pending", candidateEmails).stream()
                 .filter(inv -> inv.getExpiresAt().isAfter(LocalDateTime.now()))
+                .filter(inv -> {
+                    User owner = resolveOwner(inv.getInvitedEmail());
+                    return owner != null && owner.getId().equals(user.getId());
+                })
                 .map(inv -> ReceivedInviteResponse.from(inv, workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(inv.getWorkspace())))
                 .toList();
     }

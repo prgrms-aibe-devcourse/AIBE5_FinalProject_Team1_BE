@@ -38,7 +38,7 @@ public class AuthService {
         if (user.getPasswordHash() != null) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
-        userRepository.findByEmail(request.getEmail())
+        userRepository.findByEmailIgnoreCase(request.getEmail())
                 .filter(existing -> !existing.getId().equals(userId))
                 .ifPresent(existing -> { throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS); });
         String hash = passwordEncoder.encode(request.getPassword());
@@ -48,7 +48,7 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmailIgnoreCase(request.getEmail())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
