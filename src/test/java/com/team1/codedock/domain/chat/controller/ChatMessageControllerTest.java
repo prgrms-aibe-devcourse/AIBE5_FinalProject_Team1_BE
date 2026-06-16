@@ -141,6 +141,11 @@ class ChatMessageControllerTest {
                 .andExpect(jsonPath("$.data.content").value("hello"));
 
         verify(chatMessageService).createChannelMessage(channelId, USER_ID, request);
+        assertBroadcastEvent(
+                "/topic/channels/" + channelId + "/events",
+                ChatEventType.MESSAGE_CREATED,
+                response
+        );
     }
 
     @Test

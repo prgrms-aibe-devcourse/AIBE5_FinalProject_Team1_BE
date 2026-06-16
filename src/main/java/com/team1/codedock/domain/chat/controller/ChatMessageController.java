@@ -49,7 +49,10 @@ public class ChatMessageController {
             @PathVariable Long channelId,
             @Valid @RequestBody ChannelMessageRestCreateRequest request
     ) {
-        return ApiResponse.ok(chatMessageService.createChannelMessage(channelId, SecurityUtils.getCurrentUserId(), request));
+        ChannelMessageResponse response =
+                chatMessageService.createChannelMessage(channelId, SecurityUtils.getCurrentUserId(), request);
+        broadcastChannelEvent(channelId, ChatEventType.MESSAGE_CREATED, response);
+        return ApiResponse.ok(response);
     }
 
     @PostMapping("/{messageId}/attachments")

@@ -1,5 +1,7 @@
 package com.team1.codedock.domain.chat.controller;
 
+import com.team1.codedock.domain.chat.dto.ChatEventResponse;
+import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
 import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
@@ -8,6 +10,7 @@ import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,6 +28,7 @@ import java.util.List;
 public class ThreadReplyController {
 
     private final ThreadReplyService threadReplyService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     public ApiResponse<List<ThreadReplyResponse>> getReplies(
@@ -38,7 +42,9 @@ public class ThreadReplyController {
             @PathVariable Long threadId,
             @Valid @RequestBody ThreadReplyCreateRequest request
     ) {
-        return ApiResponse.ok(threadReplyService.createReply(threadId, SecurityUtils.getCurrentUserId(), request));
+        ThreadReplyResponse response = threadReplyService.createReply(threadId, SecurityUtils.getCurrentUserId(), request);
+        broadcastThreadEvent(threadId, ChatEventType.THREAD_REPLY_CREATED, response);
+        return ApiResponse.ok(response);
     }
 
     @PatchMapping("/{replyId}")
@@ -56,5 +62,12 @@ public class ThreadReplyController {
             @PathVariable Long replyId
     ) {
         return ApiResponse.ok(threadReplyService.deleteReply(threadId, replyId, SecurityUtils.getCurrentUserId()));
+    }
+
+    private void broadcastThreadEvent(Long threadId, ChatEventType eventType, ThreadReplyResponse response) {
+        messagingTemplate.convertAndSend(
+                "/topic/threads/" + threadId + "/events",
+                ChatEventResponse.of(eventType, response)
+        );
     }
 }
