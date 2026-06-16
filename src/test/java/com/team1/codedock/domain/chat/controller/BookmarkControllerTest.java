@@ -66,7 +66,8 @@ class BookmarkControllerTest {
 
         when(bookmarkService.toggleMessageBookmark(1L, 100L, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/bookmark", 1L, 100L))
+        mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/bookmark", 1L, 100L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.channelId").value(1L))
@@ -93,7 +94,8 @@ class BookmarkControllerTest {
 
         when(bookmarkService.getMyBookmarks(10L, USER_ID)).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/workspaces/{workspaceId}/bookmarks", 10L))
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/bookmarks", 10L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].bookmarkId").value(200L))
