@@ -127,7 +127,7 @@ public class WorkspaceService {
         if (!List.of("owner", "admin").contains(inviterMember.getAuthority())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        String invitedEmail = req.getEmail().toLowerCase(Locale.ROOT);
+        String invitedEmail = req.getEmail().trim().toLowerCase(Locale.ROOT);
         User invitedOwner = resolveOwner(invitedEmail);
         if (invitedOwner != null
                 && workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, invitedOwner.getId()) > 0) {
@@ -194,7 +194,7 @@ public class WorkspaceService {
         if (email == null) {
             return null;
         }
-        return userRepository.findByEmailIgnoreCase(email)
+        return userRepository.findByEmailIgnoreCaseOrderByIdAsc(email).stream().findFirst()
                 .orElseGet(() -> userRepository.findByGithubEmailIgnoreCaseOrderByIdAsc(email)
                         .stream().findFirst().orElse(null));
     }

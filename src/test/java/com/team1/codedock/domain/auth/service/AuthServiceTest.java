@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,7 +50,7 @@ class AuthServiceTest {
 
         when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("test@test.com")).thenReturn(List.of());
         when(passwordEncoder.encode("password1")).thenReturn("hashed");
 
         SignupResponse response = authService.signup(req);
@@ -110,7 +111,7 @@ class AuthServiceTest {
 
         when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
-        when(userRepository.findByEmail("taken@test.com")).thenReturn(Optional.of(otherUser));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("taken@test.com")).thenReturn(List.of(otherUser));
 
         assertThatThrownBy(() -> authService.signup(req))
                 .isInstanceOf(BusinessException.class)
@@ -126,7 +127,7 @@ class AuthServiceTest {
 
         when(githubLinkTokenProvider.validateAndGetUserId("link-token")).thenReturn(1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(githubUser));
-        when(userRepository.findByEmail("self@github.com")).thenReturn(Optional.of(githubUser));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("self@github.com")).thenReturn(List.of(githubUser));
         when(passwordEncoder.encode("password1")).thenReturn("hashed");
 
         SignupResponse response = authService.signup(req);
@@ -143,7 +144,7 @@ class AuthServiceTest {
         LoginRequest req = loginRequest("test@test.com", "password1");
         User user = user(1L, "test@test.com", "testuser");
 
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("test@test.com")).thenReturn(List.of(user));
         when(passwordEncoder.matches("password1", user.getPasswordHash())).thenReturn(true);
         when(jwtProvider.generateAccessToken(1L)).thenReturn("access-token");
         when(jwtProvider.generateRefreshToken(1L)).thenReturn("refresh-token");
@@ -162,7 +163,7 @@ class AuthServiceTest {
     @DisplayName("존재하지 않는 이메일 로그인: USER_NOT_FOUND 예외가 발생한다")
     void login_userNotFound() {
         LoginRequest req = loginRequest("nobody@test.com", "password1");
-        when(userRepository.findByEmail("nobody@test.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("nobody@test.com")).thenReturn(List.of());
 
         assertThatThrownBy(() -> authService.login(req))
                 .isInstanceOf(BusinessException.class)
@@ -176,7 +177,7 @@ class AuthServiceTest {
         LoginRequest req = loginRequest("test@test.com", "wrongpw");
         User user = user(1L, "test@test.com", "testuser");
 
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("test@test.com")).thenReturn(List.of(user));
         when(passwordEncoder.matches("wrongpw", user.getPasswordHash())).thenReturn(false);
 
         assertThatThrownBy(() -> authService.login(req))
