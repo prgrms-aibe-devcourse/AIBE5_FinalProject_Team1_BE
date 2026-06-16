@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Entity
 @Table(name = "users")
@@ -79,12 +80,15 @@ public class User extends BaseEntity {
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
 
-    // 이메일/비밀번호 회원가입
+    private static String normalizeEmail(String email) {
+        return (email == null) ? null : email.trim().toLowerCase(Locale.ROOT);
+    }
+
     public static User create(String email, String passwordHash, String displayName) {
         User user = new User();
-        user.email = email;
+        user.email = normalizeEmail(email);
         user.passwordHash = passwordHash;
-        user.username = email;
+        user.username = normalizeEmail(email);
         user.displayName = displayName;
         user.isActive = true;
         user.emailVerified = false;
@@ -102,8 +106,8 @@ public class User extends BaseEntity {
         String resolved = (email != null && !email.isBlank())
                 ? email
                 : githubId + "+" + githubUsername + "@users.noreply.github.com";
-        user.githubEmail = resolved;
-        user.email = resolved;
+        user.githubEmail = normalizeEmail(resolved);
+        user.email = normalizeEmail(resolved);
         user.username = githubUsername;
         user.displayName = githubUsername;
         user.avatarUrl = avatarUrl;
@@ -134,7 +138,7 @@ public class User extends BaseEntity {
     public void updateOnGithubLogin(String githubAccessToken, String avatarUrl, String githubEmail) {
         updateOnGithubLogin(githubAccessToken, avatarUrl);
         if (githubEmail != null && !githubEmail.isBlank()) {
-            this.githubEmail = githubEmail;
+            this.githubEmail = normalizeEmail(githubEmail);
         }
     }
 
@@ -143,7 +147,7 @@ public class User extends BaseEntity {
         this.githubId = githubId;
         this.githubUsername = githubUsername;
         if (githubEmail != null && !githubEmail.isBlank()) {
-            this.githubEmail = githubEmail;
+            this.githubEmail = normalizeEmail(githubEmail);
         }
         if (avatarUrl != null) {
             this.avatarUrl = avatarUrl;
@@ -155,7 +159,7 @@ public class User extends BaseEntity {
     }
 
     public void completeEmailSignup(String email, String passwordHash, String displayName) {
-        this.email = email;
+        this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
         this.displayName = displayName;
     }
