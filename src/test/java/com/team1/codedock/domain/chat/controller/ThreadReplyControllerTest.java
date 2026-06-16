@@ -1,6 +1,8 @@
 package com.team1.codedock.domain.chat.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team1.codedock.domain.chat.dto.ChatEventResponse;
+import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
 import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
@@ -13,9 +15,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,6 +30,7 @@ import org.springframework.web.filter.CharacterEncodingFilter;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -48,6 +53,9 @@ class ThreadReplyControllerTest {
     @Mock
     private ThreadReplyService threadReplyService;
 
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -58,7 +66,7 @@ class ThreadReplyControllerTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userDetails, null, authorities));
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new ThreadReplyController(threadReplyService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new ThreadReplyController(threadReplyService, messagingTemplate))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
@@ -122,6 +130,11 @@ class ThreadReplyControllerTest {
                 .andExpect(jsonPath("$.data.content").value("reply"));
 
         verify(threadReplyService).createReply(threadId, USER_ID, request);
+        assertBroadcastEvent(
+                "/topic/threads/" + threadId + "/events",
+                ChatEventType.THREAD_REPLY_CREATED,
+                response
+        );
     }
 
     @Test
@@ -231,5 +244,20 @@ class ThreadReplyControllerTest {
                 .andExpect(jsonPath("$.data.content").value(ThreadReply.DELETED_REPLY_CONTENT));
 
         verify(threadReplyService).deleteReply(threadId, replyId, USER_ID);
+    }
+
+    private void assertBroadcastEvent(
+            String destination,
+            ChatEventType expectedType,
+            ThreadReplyResponse expectedPayload
+    ) {
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(eq(destination), payloadCaptor.capture());
+
+        assertThat(payloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
+
+        ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
+        assertThat(event.type()).isEqualTo(expectedType);
+        assertThat(event.payload()).isEqualTo(expectedPayload);
     }
 }
