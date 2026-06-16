@@ -18,6 +18,7 @@ public class WorkspaceResponse {
     private String myRole;
     private int memberCount;
     private LocalDateTime createdAt;
+    private String logoUrl;
 
     public static WorkspaceResponse from(Workspace workspace, WorkspaceMember myMembership, int memberCount) {
         return WorkspaceResponse.builder()
@@ -28,6 +29,19 @@ public class WorkspaceResponse {
                 .myRole(myMembership.getAuthority())
                 .memberCount(memberCount)
                 .createdAt(workspace.getCreatedAt())
+                .build();
+    }
+
+    public static WorkspaceResponse fromDetail(Workspace workspace, WorkspaceMember myMembership, int memberCount) {
+        return WorkspaceResponse.builder()
+                .id(workspace.getId())
+                .name(workspace.getName())
+                .slug(workspace.getSlug())
+                .description(workspace.getDescription())
+                .myRole(myMembership.getAuthority())
+                .memberCount(memberCount)
+                .createdAt(workspace.getCreatedAt())
+                .logoUrl(workspace.getLogoUrl())
                 .build();
     }
 }

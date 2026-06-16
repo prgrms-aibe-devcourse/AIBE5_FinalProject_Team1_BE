@@ -76,7 +76,7 @@ public class WorkspaceService {
         WorkspaceMember membership = getMembership(workspaceId, currentUserId);
         Workspace workspace = membership.getWorkspace();
         int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
-        return WorkspaceResponse.from(workspace, membership, count);
+        return WorkspaceResponse.fromDetail(workspace, membership, count);
     }
 
     public WorkspaceResponse updateWorkspace(Long workspaceId, WorkspaceUpdateRequest req, Long currentUserId) {
@@ -86,9 +86,9 @@ public class WorkspaceService {
         }
         Workspace workspace = membership.getWorkspace();
         String trimmedName = req.getName() != null ? req.getName().trim() : null;
-        workspace.update(trimmedName, req.getDescription());
+        workspace.update(trimmedName, req.getDescription(), req.getLogoUrl());
         int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
-        return WorkspaceResponse.from(workspace, membership, count);
+        return WorkspaceResponse.fromDetail(workspace, membership, count);
     }
 
     public List<WorkspaceMemberResponse> getMembers(Long workspaceId, Long currentUserId) {
