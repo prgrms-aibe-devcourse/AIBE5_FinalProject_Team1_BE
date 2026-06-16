@@ -164,6 +164,26 @@ class ChannelCommandServiceTest {
     }
 
     @Test
+    @DisplayName("Creates a custom channel when manager authority has mixed case or spaces")
+    void createChannelWithNormalizedManagerAuthority() {
+        WorkspaceMember manager = workspaceMember(" ADMIN ");
+        Workspace workspace = workspace(10L);
+        Channel saved = channel(2L, workspace, "team-chat", true);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(manager));
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCase(10L, "team-chat")).thenReturn(false);
+        when(channelRepository.save(any(Channel.class))).thenReturn(saved);
+
+        ChannelListResponse response =
+                channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null));
+
+        assertThat(response.id()).isEqualTo(2L);
+        assertThat(response.name()).isEqualTo("team-chat");
+    }
+
+    @Test
     @DisplayName("Rejects duplicate channel name on create")
     void createChannelWithDuplicateName() {
         Workspace workspace = mock(Workspace.class);
