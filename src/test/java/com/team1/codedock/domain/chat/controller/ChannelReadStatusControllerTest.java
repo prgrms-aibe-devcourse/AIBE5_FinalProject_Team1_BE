@@ -69,7 +69,8 @@ class ChannelReadStatusControllerTest {
 
         when(channelReadStatusService.markChannelAsRead(1L, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(put("/api/channels/{channelId}/read", 1L))
+        mockMvc.perform(put("/api/channels/{channelId}/read", 1L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.channelId").value(1L))

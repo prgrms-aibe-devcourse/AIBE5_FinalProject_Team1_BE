@@ -106,6 +106,7 @@ class ChatMessageControllerTest {
         when(chatMessageService.getChannelMessages(channelId, USER_ID, cursor, limit)).thenReturn(List.of(response));
 
         mockMvc.perform(get("/api/channels/{channelId}/messages", channelId)
+                        .header("X-User-Id", "999")
                         .param("cursor", String.valueOf(cursor))
                         .param("limit", String.valueOf(limit)))
                 .andExpect(status().isOk())
@@ -149,6 +150,32 @@ class ChatMessageControllerTest {
     }
 
     @Test
+    @DisplayName("Channel message create API ignores X-User-Id and uses authenticated user id")
+    void createChannelMessageIgnoresXUserIdHeader() throws Exception {
+        Long channelId = 1L;
+        ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
+        ChannelMessageResponse response = new ChannelMessageResponse(
+                101L,
+                channelId,
+                20L,
+                "tester",
+                "hello",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(chatMessageService.createChannelMessage(eq(channelId), eq(USER_ID), eq(request))).thenReturn(response);
+
+        mockMvc.perform(post("/api/channels/{channelId}/messages", channelId)
+                        .header("X-User-Id", "999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(chatMessageService).createChannelMessage(channelId, USER_ID, request);
+    }
+
+    @Test
     @DisplayName("Message attachment create API passes request body and user id to service")
     void addMessageAttachments() throws Exception {
         Long channelId = 1L;
@@ -183,6 +210,7 @@ class ChatMessageControllerTest {
                 .thenReturn(List.of(response));
 
         mockMvc.perform(post("/api/channels/{channelId}/messages/{messageId}/attachments", channelId, messageId)
+                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -285,6 +313,7 @@ class ChatMessageControllerTest {
                 .thenReturn(response);
 
         mockMvc.perform(patch("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
+                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -329,7 +358,8 @@ class ChatMessageControllerTest {
 
         when(chatMessageService.deleteChannelMessage(channelId, messageId, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(delete("/api/channels/{channelId}/messages/{messageId}", channelId, messageId))
+        mockMvc.perform(delete("/api/channels/{channelId}/messages/{messageId}", channelId, messageId)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(messageId))

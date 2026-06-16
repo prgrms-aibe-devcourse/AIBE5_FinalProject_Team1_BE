@@ -92,7 +92,8 @@ class ThreadReplyControllerTest {
 
         when(threadReplyService.getReplies(threadId, USER_ID)).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/threads/{threadId}/replies", threadId))
+        mockMvc.perform(get("/api/threads/{threadId}/replies", threadId)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(100L))
@@ -137,6 +138,32 @@ class ThreadReplyControllerTest {
     }
 
     @Test
+    @DisplayName("Thread reply create API ignores X-User-Id and uses authenticated user id")
+    void createReplyIgnoresXUserIdHeader() throws Exception {
+        Long threadId = 1L;
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("reply");
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                100L,
+                threadId,
+                20L,
+                "tester",
+                "reply",
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(threadReplyService.createReply(eq(threadId), eq(USER_ID), eq(request))).thenReturn(response);
+
+        mockMvc.perform(post("/api/threads/{threadId}/replies", threadId)
+                        .header("X-User-Id", "999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(threadReplyService).createReply(threadId, USER_ID, request);
+    }
+
+    @Test
     @DisplayName("Thread reply create API rejects blank content")
     void createReplyWithInvalidContent() throws Exception {
         ThreadReplyCreateRequest request = new ThreadReplyCreateRequest(" ");
@@ -167,6 +194,7 @@ class ThreadReplyControllerTest {
         when(threadReplyService.updateReply(eq(threadId), eq(replyId), eq(USER_ID), eq(request))).thenReturn(response);
 
         mockMvc.perform(patch("/api/threads/{threadId}/replies/{replyId}", threadId, replyId)
+                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -207,7 +235,8 @@ class ThreadReplyControllerTest {
 
         when(threadReplyService.deleteReply(threadId, replyId, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(delete("/api/threads/{threadId}/replies/{replyId}", threadId, replyId))
+        mockMvc.perform(delete("/api/threads/{threadId}/replies/{replyId}", threadId, replyId)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(replyId))

@@ -101,6 +101,19 @@ class ChannelControllerTest {
     }
 
     @Test
+    @DisplayName("Channel list API ignores X-User-Id and uses authenticated user id")
+    void getChannelsIgnoresXUserIdHeader() throws Exception {
+        when(channelQueryService.getChannels(10L, USER_ID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/channels", 10L)
+                        .header("X-User-Id", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(channelQueryService).getChannels(10L, USER_ID);
+    }
+
+    @Test
     @DisplayName("Channel create API passes request to service")
     void createChannel() throws Exception {
         ChannelCreateRequest request = new ChannelCreateRequest("team-chat", "Team chat");
@@ -120,6 +133,7 @@ class ChannelControllerTest {
         when(channelCommandService.createChannel(eq(10L), eq(USER_ID), eq(request))).thenReturn(response);
 
         mockMvc.perform(post("/api/workspaces/{workspaceId}/channels", 10L)
+                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -163,6 +177,7 @@ class ChannelControllerTest {
         when(channelCommandService.updateChannel(eq(10L), eq(2L), eq(USER_ID), eq(request))).thenReturn(response);
 
         mockMvc.perform(patch("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L)
+                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -176,7 +191,8 @@ class ChannelControllerTest {
     @Test
     @DisplayName("Channel delete API passes path variables to service")
     void deleteChannel() throws Exception {
-        mockMvc.perform(delete("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L))
+        mockMvc.perform(delete("/api/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isNoContent());
 
         verify(channelCommandService).deleteChannel(10L, 2L, USER_ID);

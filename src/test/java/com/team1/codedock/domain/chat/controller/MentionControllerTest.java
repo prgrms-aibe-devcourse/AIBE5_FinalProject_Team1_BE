@@ -64,7 +64,8 @@ class MentionControllerTest {
         MentionResponse response = response(false);
         when(mentionService.getMyMentions(10L, USER_ID)).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/workspaces/{workspaceId}/mentions", 10L))
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/mentions", 10L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(300L))
@@ -81,7 +82,8 @@ class MentionControllerTest {
         MentionResponse response = response(true);
         when(mentionService.markMentionAsRead(300L, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L))
+        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L)
+                        .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(300L))
