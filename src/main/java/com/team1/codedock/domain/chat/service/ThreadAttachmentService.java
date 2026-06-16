@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadAttachment;
 import com.team1.codedock.domain.chat.repository.ThreadAttachmentRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -42,6 +43,25 @@ public class ThreadAttachmentService {
         validateActiveWorkspaceMember(thread, userId);
 
         return saveAttachments(thread, requests);
+    }
+
+    @Transactional
+    public void deleteAttachment(
+            Long channelId,
+            Long messageId,
+            Long attachmentId,
+            Long userId
+    ) {
+        Thread thread = findUserMessage(messageId);
+        validateMessageBelongsToChannel(thread, channelId);
+        WorkspaceMember member = validateActiveWorkspaceMember(thread, userId);
+        validateMessageAuthor(thread, member);
+
+        ThreadAttachment attachment = threadAttachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Attachment not found."));
+        validateAttachmentBelongsToMessage(attachment, thread);
+
+        threadAttachmentRepository.delete(attachment);
     }
 
     @Transactional
@@ -157,13 +177,25 @@ public class ThreadAttachmentService {
         }
     }
 
-    private void validateActiveWorkspaceMember(Thread thread, Long userId) {
+    private WorkspaceMember validateActiveWorkspaceMember(Thread thread, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
         Long workspaceId = thread.getChannel().getWorkspace().getId();
-        workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+        return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
+    private void validateMessageAuthor(Thread thread, WorkspaceMember member) {
+        if (thread.getCreatedBy() == null || !member.getId().equals(thread.getCreatedBy().getId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private void validateAttachmentBelongsToMessage(ThreadAttachment attachment, Thread thread) {
+        if (!thread.getId().equals(attachment.getThread().getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment does not belong to the requested message.");
+        }
     }
 }

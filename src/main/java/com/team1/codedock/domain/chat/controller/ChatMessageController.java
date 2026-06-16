@@ -69,6 +69,21 @@ public class ChatMessageController {
         ));
     }
 
+    @DeleteMapping("/{messageId}/attachments/{attachmentId}")
+    public ApiResponse<Void> deleteMessageAttachment(
+            @PathVariable Long channelId,
+            @PathVariable Long messageId,
+            @PathVariable Long attachmentId
+    ) {
+        threadAttachmentService.deleteAttachment(
+                channelId,
+                messageId,
+                attachmentId,
+                SecurityUtils.getCurrentUserId()
+        );
+        return ApiResponse.ok();
+    }
+
     @PatchMapping("/{messageId}")
     public ApiResponse<ChannelMessageResponse> updateChannelMessage(
             @PathVariable Long channelId,

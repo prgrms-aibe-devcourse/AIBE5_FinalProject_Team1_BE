@@ -331,6 +331,146 @@ class ThreadAttachmentServiceTest {
         verify(threadAttachmentRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
     }
 
+    @Test
+    @DisplayName("Message author can delete attachment from channel message")
+    void deleteAttachment() {
+        Long channelId = 1L;
+        Long messageId = 100L;
+        Long attachmentId = 200L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true);
+        Thread message = message(messageId, channel, member);
+        ThreadAttachment attachment = attachment(attachmentId, message);
+
+        when(threadRepository.findById(messageId)).thenReturn(Optional.of(message));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadAttachmentRepository.findById(attachmentId)).thenReturn(Optional.of(attachment));
+
+        threadAttachmentService.deleteAttachment(channelId, messageId, attachmentId, userId);
+
+        verify(threadAttachmentRepository).delete(attachment);
+    }
+
+    @Test
+    @DisplayName("Cannot delete attachment from another message")
+    void deleteAttachmentFromAnotherMessage() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true);
+        Thread message = message(100L, channel, member);
+        Thread otherMessage = message(101L, channel, member);
+        ThreadAttachment attachment = attachment(200L, otherMessage);
+
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadAttachmentRepository.findById(200L)).thenReturn(Optional.of(attachment));
+
+        assertThatThrownBy(() -> threadAttachmentService.deleteAttachment(channelId, 100L, 200L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(threadAttachmentRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Cannot delete attachment from message in another channel")
+    void deleteAttachmentFromMessageInAnotherChannel() {
+        Long requestedChannelId = 1L;
+        Thread message = message(100L, channel(99L, workspace(2L)), workspaceMember(10L, workspace(2L), true));
+
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> threadAttachmentService.deleteAttachment(requestedChannelId, 100L, 200L, 3L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(threadAttachmentRepository, never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        verify(threadAttachmentRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Inactive or non-member user cannot delete attachment")
+    void deleteAttachmentWithForbiddenUser() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Thread message = message(100L, channel(channelId, workspace), workspaceMember(10L, workspace, true));
+
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> threadAttachmentService.deleteAttachment(channelId, 100L, 200L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadAttachmentRepository, never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        verify(threadAttachmentRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Only message author can delete attachment")
+    void deleteAttachmentByNonAuthor() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember author = workspaceMember(10L, workspace, true);
+        WorkspaceMember requester = workspaceMember(11L, workspace, true);
+        Thread message = message(100L, channel, author);
+
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(requester));
+
+        assertThatThrownBy(() -> threadAttachmentService.deleteAttachment(channelId, 100L, 200L, userId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(threadAttachmentRepository, never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        verify(threadAttachmentRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Cannot delete attachment from deleted message")
+    void deleteAttachmentFromDeletedMessage() {
+        Long channelId = 1L;
+        Workspace workspace = workspace(2L);
+        Thread message = message(100L, channel(channelId, workspace), workspaceMember(10L, workspace, true));
+        ReflectionTestUtils.setField(message, "content", Thread.DELETED_MESSAGE_CONTENT);
+
+        when(threadRepository.findById(100L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> threadAttachmentService.deleteAttachment(channelId, 100L, 200L, 3L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(threadAttachmentRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
     private static ThreadAttachmentRequest request(String attachmentType) {
         return new ThreadAttachmentRequest(
                 attachmentType,
@@ -353,6 +493,23 @@ class ThreadAttachmentServiceTest {
         ReflectionTestUtils.setField(thread, "threadType", Thread.TYPE_USER_MESSAGE);
         ReflectionTestUtils.setField(thread, "content", "hello");
         return thread;
+    }
+
+    private static ThreadAttachment attachment(Long id, Thread thread) {
+        ThreadAttachment attachment = ThreadAttachment.create(
+                thread,
+                "image",
+                null,
+                "https://example.com/image.png",
+                "image.png",
+                null,
+                null,
+                null,
+                "image/png",
+                100L
+        );
+        ReflectionTestUtils.setField(attachment, "id", id);
+        return attachment;
     }
 
     private static Channel channel(Long id, Workspace workspace) {

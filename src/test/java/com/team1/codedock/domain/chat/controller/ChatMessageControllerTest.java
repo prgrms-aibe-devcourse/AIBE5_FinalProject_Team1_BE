@@ -254,6 +254,26 @@ class ChatMessageControllerTest {
     }
 
     @Test
+    @DisplayName("Message attachment delete API passes path variables and user id to service")
+    void deleteMessageAttachment() throws Exception {
+        Long channelId = 1L;
+        Long messageId = 101L;
+        Long attachmentId = 201L;
+
+        mockMvc.perform(delete(
+                        "/api/channels/{channelId}/messages/{messageId}/attachments/{attachmentId}",
+                        channelId,
+                        messageId,
+                        attachmentId
+                )
+                        .header("X-User-Id", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(threadAttachmentService).deleteAttachment(channelId, messageId, attachmentId, USER_ID);
+    }
+
+    @Test
     @DisplayName("Channel message create API rejects blank content")
     void createChannelMessageWithInvalidContent() throws Exception {
         ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest(" ");
