@@ -1,5 +1,7 @@
 package com.team1.codedock.domain.workspace.service;
 
+import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.dto.*;
@@ -35,6 +37,7 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final InvitationRepository invitationRepository;
     private final WorkspaceMemberPreferencesRepository preferencesRepository;
@@ -58,7 +61,9 @@ public class WorkspaceService {
                 Workspace.create(user, req.getName(), req.getSlug(), req.getDescription())
         );
         workspaceMemberRepository.save(WorkspaceMember.create(workspace, user, "owner"));
-        return WorkspaceCreateResponse.from(workspace);
+        // 새 워크스페이스가 채널 0개 상태면 채팅 WebSocket 연결 조건을 못 탐. 기본 채널을 같이 생성함.
+        Channel defaultChannel = channelRepository.save(Channel.createGeneral(workspace));
+        return WorkspaceCreateResponse.from(workspace, defaultChannel.getId());
     }
 
     public List<WorkspaceResponse> getMyWorkspaces(Long currentUserId) {
@@ -370,6 +375,10 @@ public class WorkspaceService {
         WorkspaceMember target = workspaceMemberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
         if (!target.getWorkspace().getId().equals(workspaceId)) {
+            throw new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
+        }
+        // 비활성 멤버는 권한을 바꿔도 접근 권한이 살아나지 않음. 성공처럼 보이지 않게 차단함.
+        if (!target.isActive()) {
             throw new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
         }
         if (target.getAuthority().equals("owner")) {

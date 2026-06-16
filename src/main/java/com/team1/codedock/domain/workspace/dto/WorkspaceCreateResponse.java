@@ -14,11 +14,15 @@ public class WorkspaceCreateResponse {
     private Long defaultChannelId;
 
     public static WorkspaceCreateResponse from(Workspace workspace) {
+        return from(workspace, null);
+    }
+
+    public static WorkspaceCreateResponse from(Workspace workspace, Long defaultChannelId) {
         return WorkspaceCreateResponse.builder()
                 .id(workspace.getId())
                 .name(workspace.getName())
                 .slug(workspace.getSlug())
-                .defaultChannelId(null) // 채널 개발 후 .defaultChannelId(defaultChannelId) 로 변경
+                .defaultChannelId(defaultChannelId)
                 .build();
     }
 }

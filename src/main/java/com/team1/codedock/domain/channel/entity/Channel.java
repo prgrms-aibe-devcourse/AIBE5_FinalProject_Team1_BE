@@ -14,7 +14,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Channel extends BaseEntity {
 
+    public static final String TYPE_GENERAL = "general";
     public static final String TYPE_CUSTOM = "custom";
+    public static final String DEFAULT_GENERAL_NAME = "general";
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_channels")
@@ -42,6 +44,17 @@ public class Channel extends BaseEntity {
     @Lob
     @Column
     private String description;
+
+    public static Channel createGeneral(Workspace workspace) {
+        Channel channel = new Channel();
+        channel.workspace = workspace;
+        channel.githubRepository = null;
+        channel.name = DEFAULT_GENERAL_NAME;
+        channel.channelType = TYPE_GENERAL;
+        channel.isDeletable = false;
+        channel.description = "Default workspace channel";
+        return channel;
+    }
 
     public static Channel createCustom(Workspace workspace, String name, String description) {
         Channel channel = new Channel();
