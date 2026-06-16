@@ -38,8 +38,9 @@ public class AuthService {
         if (user.getPasswordHash() != null) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
-        userRepository.findByEmailIgnoreCase(request.getEmail())
+        userRepository.findByEmailIgnoreCaseOrderByIdAsc(request.getEmail()).stream()
                 .filter(existing -> !existing.getId().equals(userId))
+                .findFirst()
                 .ifPresent(existing -> { throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS); });
         String hash = passwordEncoder.encode(request.getPassword());
         user.completeEmailSignup(request.getEmail(), hash, request.getDisplayName());
@@ -48,7 +49,8 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailIgnoreCase(request.getEmail())
+        User user = userRepository.findByEmailIgnoreCaseOrderByIdAsc(request.getEmail()).stream()
+                .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
