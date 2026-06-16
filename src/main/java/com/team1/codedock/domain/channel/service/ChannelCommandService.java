@@ -89,7 +89,8 @@ public class ChannelCommandService {
     }
 
     private boolean canManageChannel(String authority) {
-        return AUTHORITY_OWNER.equals(authority) || AUTHORITY_ADMIN.equals(authority);
+        String normalizedAuthority = authority == null ? "" : authority.trim().toLowerCase();
+        return AUTHORITY_OWNER.equals(normalizedAuthority) || AUTHORITY_ADMIN.equals(normalizedAuthority);
     }
 
     private Channel findWorkspaceChannel(Long workspaceId, Long channelId) {
