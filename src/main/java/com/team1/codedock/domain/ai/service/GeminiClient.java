@@ -142,8 +142,8 @@ public class GeminiClient {
                 """.formatted(sourcesText);
     }
 
-    public ApiSpecChecklistResult generateApiSpecChecklist(String swaggerJson) {
-        String prompt = buildApiSpecPrompt(swaggerJson);
+    public ApiSpecChecklistResult generateApiSpecChecklist(String swaggerJson, List<String> entitySources) {
+        String prompt = buildApiSpecPrompt(swaggerJson, entitySources);
 
         Map<String, Object> request = Map.of(
                 "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
@@ -166,12 +166,20 @@ public class GeminiClient {
         }
     }
 
-    private String buildApiSpecPrompt(String swaggerJson) {
+    private String buildApiSpecPrompt(String swaggerJson, List<String> entitySources) {
+        String sourcesText = String.join("\n\n---\n\n", entitySources);
         return """
-                다음 OpenAPI(Swagger) 명세를 분석하여 누락되었거나 보강이 필요한 API 목록을 체크리스트 형식으로 제안해주세요.
+                다음 Java Spring Boot @Entity 클래스들과 OpenAPI(Swagger) 명세를 함께 분석하여
+                도메인 관점에서 누락되었거나 보강이 필요한 API 목록을 체크리스트 형식으로 제안해주세요.
+
+                [엔티티 소스코드]
+                %s
 
                 [Swagger 명세]
                 %s
+
+                엔티티 구조를 기반으로 어떤 비즈니스 기능이 필요한지 파악하고,
+                Swagger에 이미 구현된 API와 비교하여 누락된 API를 제안해주세요.
 
                 다음 JSON 형식으로 응답해주세요:
                 {
@@ -186,7 +194,7 @@ public class GeminiClient {
                     }
                   ]
                 }
-                """.formatted(swaggerJson);
+                """.formatted(sourcesText, swaggerJson);
     }
 
     public PrAnalysisResult generatePrAnalysis(String combinedDiff) {

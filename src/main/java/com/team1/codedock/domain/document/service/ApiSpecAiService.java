@@ -4,6 +4,11 @@ import com.team1.codedock.domain.ai.service.GeminiClient;
 import com.team1.codedock.domain.document.dto.ApiSpecResponse;
 import com.team1.codedock.domain.document.entity.ApiSpec;
 import com.team1.codedock.domain.document.repository.ApiSpecRepository;
+import com.team1.codedock.domain.github.entity.GithubRepository;
+import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
+import com.team1.codedock.domain.github.service.GithubApiClient;
+import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -27,6 +32,9 @@ public class ApiSpecAiService {
     private final ApiSpecRepository apiSpecRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final UserRepository userRepository;
+    private final GithubRepositoryRepository githubRepositoryRepository;
+    private final GithubApiClient githubApiClient;
     private final GeminiClient geminiClient;
     private final RestClient.Builder restClientBuilder;
 
@@ -39,11 +47,26 @@ public class ApiSpecAiService {
         }
 
         Long userId = SecurityUtils.getCurrentUserId();
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
         WorkspaceMember member = workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
+        GithubRepository githubRepo = githubRepositoryRepository.findByWorkspaceId(workspaceId)
+                .stream().findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        List<String> entitySources = githubApiClient.fetchEntitySources(
+                githubRepo.getOwner(),
+                githubRepo.getName(),
+                githubRepo.getDefaultBranch(),
+                user.getGithubAccessToken()
+        );
+
         String swaggerJson = fetchSwaggerJson(workspace.getSwaggerUrl());
-        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(swaggerJson);
+        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(swaggerJson, entitySources);
 
         if (result == null || result.checklist() == null || result.checklist().isEmpty()) {
             return List.of();
