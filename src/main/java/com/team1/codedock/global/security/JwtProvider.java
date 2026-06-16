@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -29,6 +30,7 @@ public class JwtProvider {
 
     public String generateAccessToken(Long userId) {
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(String.valueOf(userId))
                 .claim("type", "access")
                 .issuedAt(new Date())
@@ -39,6 +41,7 @@ public class JwtProvider {
 
     public String generateRefreshToken(Long userId) {
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(String.valueOf(userId))
                 .claim("type", "refresh")
                 .issuedAt(new Date())
