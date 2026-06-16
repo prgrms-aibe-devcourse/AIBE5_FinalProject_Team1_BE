@@ -44,7 +44,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                     existing.updateOnGithubLogin(accessToken, avatarUrl, email);
                     return existing;
                 })
-                .orElseGet(() -> userRepository.findByEmail(email)
+                .orElseGet(() -> userRepository.findByEmailIgnoreCaseOrderByIdAsc(email).stream().findFirst()
                         .map(existing -> {
                             log.info("이메일 일치 → 기존 계정에 GitHub 연동: userId={}, github={}", existing.getId(), githubLogin);
                             existing.linkGithub(githubId, githubLogin, email, avatarUrl, accessToken);
