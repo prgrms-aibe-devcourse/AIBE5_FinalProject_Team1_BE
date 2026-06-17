@@ -2,6 +2,8 @@ package com.team1.codedock.domain.channel.repository;
 
 import com.team1.codedock.domain.channel.entity.Channel;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -9,7 +11,19 @@ public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
     List<Channel> findAllByWorkspace_IdOrderByIdAsc(Long workspaceId);
 
-    boolean existsByWorkspace_IdAndNameIgnoreCase(Long workspaceId, String name);
+    @Query("SELECT COUNT(c) FROM Channel c WHERE c.workspace.id = :workspaceId AND LOWER(c.name) = LOWER(:name)")
+    long countByWorkspaceIdAndNameIgnoreCase(@Param("workspaceId") Long workspaceId, @Param("name") String name);
 
-    boolean existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(Long workspaceId, String name, Long id);
+    @Query("""
+            SELECT COUNT(c)
+            FROM Channel c
+            WHERE c.workspace.id = :workspaceId
+              AND LOWER(c.name) = LOWER(:name)
+              AND c.id <> :id
+            """)
+    long countByWorkspaceIdAndNameIgnoreCaseAndIdNot(
+            @Param("workspaceId") Long workspaceId,
+            @Param("name") String name,
+            @Param("id") Long id
+    );
 }

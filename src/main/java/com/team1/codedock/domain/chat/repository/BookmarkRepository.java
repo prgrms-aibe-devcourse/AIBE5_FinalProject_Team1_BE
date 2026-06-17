@@ -2,6 +2,9 @@ package com.team1.codedock.domain.chat.repository;
 
 import com.team1.codedock.domain.chat.entity.Bookmark;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,4 +16,15 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     // 북마크 목록을 최신 저장 순서로 조회함
     List<Bookmark> findAllByWorkspaceMember_IdOrderByCreatedAtDesc(Long workspaceMemberId);
+
+    @Modifying
+    @Query(value = """
+            DELETE FROM bookmarks
+            WHERE thread_id IN (
+                SELECT id
+                FROM threads
+                WHERE channel_id = :channelId
+            )
+            """, nativeQuery = true)
+    void deleteAllByThreadChannelId(@Param("channelId") Long channelId);
 }

@@ -5,7 +5,12 @@ import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ChannelReadStatusRepository;
+import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.chat.repository.ReactionRepository;
+import com.team1.codedock.domain.chat.repository.ThreadAttachmentRepository;
+import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
@@ -51,6 +56,21 @@ class ChannelCommandServiceTest {
 
     @Mock
     private ThreadRepository threadRepository;
+
+    @Mock
+    private ThreadReplyRepository threadReplyRepository;
+
+    @Mock
+    private ThreadAttachmentRepository threadAttachmentRepository;
+
+    @Mock
+    private ReactionRepository reactionRepository;
+
+    @Mock
+    private BookmarkRepository bookmarkRepository;
+
+    @Mock
+    private MentionRepository mentionRepository;
 
     @Mock
     private ChannelReadStatusRepository channelReadStatusRepository;
@@ -152,7 +172,7 @@ class ChannelCommandServiceTest {
         Channel saved = channel(2L, workspace, "team-chat", true);
 
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
-        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCase(10L, "team-chat")).thenReturn(false);
+        when(channelRepository.countByWorkspaceIdAndNameIgnoreCase(10L, "team-chat")).thenReturn(0L);
         when(channelRepository.save(any(Channel.class))).thenReturn(saved);
 
         ChannelListResponse response =
@@ -173,7 +193,7 @@ class ChannelCommandServiceTest {
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
                 .thenReturn(Optional.of(manager));
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
-        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCase(10L, "team-chat")).thenReturn(false);
+        when(channelRepository.countByWorkspaceIdAndNameIgnoreCase(10L, "team-chat")).thenReturn(0L);
         when(channelRepository.save(any(Channel.class))).thenReturn(saved);
 
         ChannelListResponse response =
@@ -189,7 +209,7 @@ class ChannelCommandServiceTest {
         Workspace workspace = mock(Workspace.class);
 
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
-        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCase(10L, "team-chat")).thenReturn(true);
+        when(channelRepository.countByWorkspaceIdAndNameIgnoreCase(10L, "team-chat")).thenReturn(1L);
 
         assertThatThrownBy(() ->
                 channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null)))
@@ -206,7 +226,7 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "old-name", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(10L, "new-name", 2L)).thenReturn(false);
+        when(channelRepository.countByWorkspaceIdAndNameIgnoreCaseAndIdNot(10L, "new-name", 2L)).thenReturn(0L);
 
         ChannelListResponse response =
                 channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest(" new-name ", "Updated"));
@@ -223,7 +243,7 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "old-name", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(channelRepository.existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(10L, "general", 2L)).thenReturn(true);
+        when(channelRepository.countByWorkspaceIdAndNameIgnoreCaseAndIdNot(10L, "general", 2L)).thenReturn(1L);
 
         assertThatThrownBy(() ->
                 channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest("general", null)))
@@ -253,14 +273,34 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubPullRequestRepository.countByChannelId(2L)).thenReturn(0L);
+        when(githubIssueRepository.countByChannelId(2L)).thenReturn(0L);
 
         channelCommandService.deleteChannel(10L, 2L, 100L);
 
-        InOrder inOrder = inOrder(channelReadStatusRepository, channelRepository);
-        inOrder.verify(channelReadStatusRepository).deleteAllByChannel_Id(2L);
+        InOrder inOrder = inOrder(
+                channelReadStatusRepository,
+                reactionRepository,
+                mentionRepository,
+                bookmarkRepository,
+                threadAttachmentRepository,
+                threadReplyRepository,
+                threadRepository,
+                channelRepository
+        );
+        inOrder.verify(channelReadStatusRepository).clearLastReadThreadByThreadChannelId(2L);
+        inOrder.verify(channelReadStatusRepository).deleteAllByChannelId(2L);
+        inOrder.verify(reactionRepository).deleteAllThreadReplyReactionsByChannelId(2L);
+        inOrder.verify(reactionRepository).deleteAllThreadReactionsByChannelId(2L);
+        inOrder.verify(mentionRepository).deleteAllByThreadReplyChannelId(2L);
+        inOrder.verify(mentionRepository).deleteAllByThreadChannelId(2L);
+        inOrder.verify(bookmarkRepository).deleteAllByThreadChannelId(2L);
+        inOrder.verify(threadAttachmentRepository).deleteAllByThreadChannelId(2L);
+        inOrder.verify(threadReplyRepository).clearPullRequestReviewReferencesByThreadChannelId(2L);
+        inOrder.verify(threadReplyRepository).clearPullRequestReviewCommentReferencesByThreadChannelId(2L);
+        inOrder.verify(threadReplyRepository).deleteAllByThreadChannelId(2L);
+        inOrder.verify(threadRepository).clearReplyToByChannelId(2L);
+        inOrder.verify(threadRepository).deleteAllByChannelId(2L);
         inOrder.verify(channelRepository).delete(channel);
     }
 
@@ -281,20 +321,20 @@ class ChannelCommandServiceTest {
     }
 
     @Test
-    @DisplayName("Rejects deleting channel with messages")
+    @DisplayName("Deletes deletable channel with messages and chat data")
     void deleteChannelWithMessages() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(threadRepository.existsByChannel_Id(2L)).thenReturn(true);
+        when(githubPullRequestRepository.countByChannelId(2L)).thenReturn(0L);
+        when(githubIssueRepository.countByChannelId(2L)).thenReturn(0L);
 
-        assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel with messages cannot be deleted");
+        channelCommandService.deleteChannel(10L, 2L, 100L);
 
-        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
-        verify(channelRepository, never()).delete(any(Channel.class));
+        verify(threadReplyRepository).deleteAllByThreadChannelId(2L);
+        verify(threadRepository).deleteAllByChannelId(2L);
+        verify(channelRepository).delete(channel);
     }
 
     @Test
@@ -304,14 +344,14 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(false);
+        when(githubPullRequestRepository.countByChannelId(2L)).thenReturn(0L);
+        when(githubIssueRepository.countByChannelId(2L)).thenReturn(0L);
 
         channelCommandService.deleteChannel(10L, 2L, 100L);
 
         InOrder inOrder = inOrder(channelReadStatusRepository, channelRepository);
-        inOrder.verify(channelReadStatusRepository).deleteAllByChannel_Id(2L);
+        inOrder.verify(channelReadStatusRepository).clearLastReadThreadByThreadChannelId(2L);
+        inOrder.verify(channelReadStatusRepository).deleteAllByChannelId(2L);
         inOrder.verify(channelRepository).delete(channel);
     }
 
@@ -322,14 +362,13 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(true);
+        when(githubPullRequestRepository.countByChannelId(2L)).thenReturn(1L);
 
         assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with pull requests cannot be deleted");
 
-        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
+        verify(channelReadStatusRepository, never()).deleteAllByChannelId(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
     }
 
@@ -340,15 +379,14 @@ class ChannelCommandServiceTest {
         Channel channel = channel(2L, workspace, "team-chat", true);
 
         when(channelRepository.findById(2L)).thenReturn(Optional.of(channel));
-        when(threadRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubPullRequestRepository.existsByChannel_Id(2L)).thenReturn(false);
-        when(githubIssueRepository.existsByChannel_Id(2L)).thenReturn(true);
+        when(githubPullRequestRepository.countByChannelId(2L)).thenReturn(0L);
+        when(githubIssueRepository.countByChannelId(2L)).thenReturn(1L);
 
         assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Channel with issues cannot be deleted");
 
-        verify(channelReadStatusRepository, never()).deleteAllByChannel_Id(2L);
+        verify(channelReadStatusRepository, never()).deleteAllByChannelId(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
     }
 

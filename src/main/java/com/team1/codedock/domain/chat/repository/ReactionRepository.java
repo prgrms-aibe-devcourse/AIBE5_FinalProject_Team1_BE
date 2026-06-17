@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.repository;
 import com.team1.codedock.domain.chat.dto.ReactionSummaryResponse;
 import com.team1.codedock.domain.chat.entity.Reaction;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -51,4 +52,29 @@ public interface ReactionRepository extends JpaRepository<Reaction, Long> {
             group by r.targetType, r.targetId, r.emoji
             """)
     List<ReactionSummaryResponse> findThreadReplyReactionSummariesByChannelId(@Param("channelId") Long channelId);
+
+    @Modifying
+    @Query(value = """
+            DELETE FROM reactions
+            WHERE target_type = 'thread_reply'
+              AND target_id IN (
+                  SELECT tr.id
+                  FROM thread_replies tr
+                  JOIN threads t ON t.id = tr.thread_id
+                  WHERE t.channel_id = :channelId
+              )
+            """, nativeQuery = true)
+    void deleteAllThreadReplyReactionsByChannelId(@Param("channelId") Long channelId);
+
+    @Modifying
+    @Query(value = """
+            DELETE FROM reactions
+            WHERE target_type = 'thread'
+              AND target_id IN (
+                  SELECT id
+                  FROM threads
+                  WHERE channel_id = :channelId
+              )
+            """, nativeQuery = true)
+    void deleteAllThreadReactionsByChannelId(@Param("channelId") Long channelId);
 }
