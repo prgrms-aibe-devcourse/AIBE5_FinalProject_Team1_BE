@@ -3,7 +3,6 @@ package com.team1.codedock.global.security;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -11,6 +10,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
@@ -54,7 +53,41 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final ConcurrentMap<String, SendRateLimitWindow> sendRateLimitWindows = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, SubscriptionWorkspaceCacheEntry> subscriptionWorkspaceCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, SubscribeAuthorizationCacheEntry> subscribeAuthorizationCache = new ConcurrentHashMap<>();
-    private final Clock clock = Clock.systemUTC();
+    private final Clock clock;
+
+    @Autowired
+    public WebSocketAuthChannelInterceptor(
+            JwtProvider jwtProvider,
+            CustomUserDetailsService userDetailsService,
+            ChannelRepository channelRepository,
+            ThreadRepository threadRepository,
+            WorkspaceMemberRepository workspaceMemberRepository
+    ) {
+        this(
+                jwtProvider,
+                userDetailsService,
+                channelRepository,
+                threadRepository,
+                workspaceMemberRepository,
+                Clock.systemUTC()
+        );
+    }
+
+    WebSocketAuthChannelInterceptor(
+            JwtProvider jwtProvider,
+            CustomUserDetailsService userDetailsService,
+            ChannelRepository channelRepository,
+            ThreadRepository threadRepository,
+            WorkspaceMemberRepository workspaceMemberRepository,
+            Clock clock
+    ) {
+        this.jwtProvider = jwtProvider;
+        this.userDetailsService = userDetailsService;
+        this.channelRepository = channelRepository;
+        this.threadRepository = threadRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.clock = clock;
+    }
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {

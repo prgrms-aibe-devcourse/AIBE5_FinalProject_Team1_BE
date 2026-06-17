@@ -4,9 +4,9 @@ import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
@@ -22,6 +22,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,8 +61,12 @@ class WebSocketAuthChannelInterceptorTest {
     @Mock
     private MessageChannel messageChannel;
 
-    @InjectMocks
     private WebSocketAuthChannelInterceptor interceptor;
+
+    @BeforeEach
+    void setUp() {
+        interceptor = interceptorWithClock(Clock.systemUTC());
+    }
 
     @Test
     @DisplayName("CONNECT 요청에 유효한 JWT가 있으면 Principal을 설정한다")
@@ -110,6 +119,25 @@ class WebSocketAuthChannelInterceptorTest {
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    @Test
+    @DisplayName("SEND rate limit은 윈도우가 지나면 다시 허용한다")
+    void sendRateLimitResetsAfterWindowExpires() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(message, messageChannel);
+        }
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class);
+
+        clock.advance(Duration.ofMillis(10_000));
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
     }
 
     @Test
@@ -222,6 +250,91 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("구독 권한 캐시는 세션 간 공유하지 않는다")
+    void subscribeAuthorizationCacheIsSeparatedBySession() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> secondSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-2");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("같은 세션이라도 사용자 id가 다르면 구독 권한 캐시를 공유하지 않는다")
+    void subscribeAuthorizationCacheIsSeparatedByUser() {
+        Message<?> firstUserMessage = subscribeMessage("/topic/channels/10/events", authentication(1L), "session-1");
+        Message<?> secondUserMessage = subscribeMessage("/topic/channels/10/events", authentication(2L), "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 2L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstUserMessage, messageChannel)).isSameAs(firstUserMessage);
+        assertThat(interceptor.preSend(secondUserMessage, messageChannel)).isSameAs(secondUserMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 2L);
+    }
+
+    @Test
+    @DisplayName("구독 권한 캐시는 TTL이 지나면 다시 검증한다")
+    void subscribeAuthorizationCacheExpires() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        clock.advance(Duration.ofMillis(30_000));
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(channelRepository, times(2)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("DISCONNECT는 해당 세션의 구독 권한 캐시만 정리한다")
+    void disconnectClearsOnlyMatchingSessionSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> secondSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-2");
+        Message<?> disconnectFirstSession = disconnectMessage("session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        interceptor.preSend(disconnectFirstSession, messageChannel);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(3))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
     @DisplayName("구독 권한 실패 결과는 캐시하지 않는다")
     void subscribeDeniedResultIsNotCached() {
         Authentication authentication = authenticatedPrincipal(1L);
@@ -239,6 +352,27 @@ class WebSocketAuthChannelInterceptorTest {
 
         verify(channelRepository, times(1)).findWorkspaceIdById(10L);
         verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 destination 결과는 캐시하지 않는다")
+    void missingDestinationResultIsNotCached() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.empty(), Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(channelRepository, times(2)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(1))
                 .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
     }
 
@@ -270,6 +404,18 @@ class WebSocketAuthChannelInterceptorTest {
 
         assertThat(interceptor.preSend(notificationMessage, messageChannel)).isSameAs(notificationMessage);
         assertThat(interceptor.preSend(errorMessage, messageChannel)).isSameAs(errorMessage);
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("개인 큐 하위의 임의 경로 구독은 허용하지 않는다")
+    void subscribeUnknownPersonalDestination() {
+        Message<?> message = subscribeMessage("/user/queue/notifications/other", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
 
         verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
     }
@@ -417,5 +563,46 @@ class WebSocketAuthChannelInterceptorTest {
     private Authentication authenticatedPrincipal(Long userId) {
         when(userDetails.getUserId()).thenReturn(userId);
         return new UsernamePasswordAuthenticationToken(userDetails, null);
+    }
+
+    private Authentication authentication(Long userId) {
+        CustomUserDetails principal = org.mockito.Mockito.mock(CustomUserDetails.class);
+        when(principal.getUserId()).thenReturn(userId);
+        return new UsernamePasswordAuthenticationToken(principal, null);
+    }
+
+    private WebSocketAuthChannelInterceptor interceptorWithClock(Clock clock) {
+        return new WebSocketAuthChannelInterceptor(
+                jwtProvider,
+                userDetailsService,
+                channelRepository,
+                threadRepository,
+                workspaceMemberRepository,
+                clock
+        );
+    }
+
+    private static class MutableClock extends Clock {
+
+        private Instant instant = Instant.parse("2026-06-18T00:00:00Z");
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
     }
 }
