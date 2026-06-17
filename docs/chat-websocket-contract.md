@@ -1,12 +1,10 @@
 # Chat WebSocket Contract
 
-## 1. Purpose
+## Purpose
 
-CodeDock 채팅 기능에서 백엔드와 프론트엔드가 동일한 WebSocket/STOMP destination과 이벤트 응답 형식을 사용하기 위한 계약 문서입니다.
+CodeDock 채팅에서 백엔드와 프론트가 동일하게 사용하는 WebSocket/STOMP destination과 event envelope 계약을 정의한다.
 
-이 문서는 채널 메시지, 스레드 답글, typing, 개인 알림 기능의 WebSocket 통신 규칙을 정의합니다.
-
-## 2. WebSocket Endpoint
+## WebSocket Endpoint
 
 | Item | Value |
 | --- | --- |
@@ -15,15 +13,15 @@ CodeDock 채팅 기능에서 백엔드와 프론트엔드가 동일한 WebSocket
 | Subscribe prefix | `/topic`, `/queue` |
 | User destination prefix | `/user` |
 
-STOMP `CONNECT` 요청에는 JWT access token을 아래 형식으로 전달합니다.
+STOMP `CONNECT` 요청에는 JWT access token을 전달한다.
 
 ```http
 Authorization: Bearer {accessToken}
 ```
 
-백엔드는 CONNECT 시점의 JWT를 검증하고, 이후 메시지/답글/typing 요청의 작성자는 STOMP `Principal` 기준으로 식별합니다. 따라서 WebSocket 요청 body에 `workspaceMemberId`, `senderMemberId`, `userId`를 포함하지 않습니다.
+백엔드는 CONNECT 시점에 JWT를 검증하고, 이후 메시지/답글/typing 요청 작성자는 STOMP `Principal` 기준으로 판별한다. 따라서 WebSocket 요청 body에는 `workspaceMemberId`, `senderMemberId`, `userId`, `senderName`을 포함하지 않는다.
 
-## 3. STOMP Destinations
+## STOMP Destinations
 
 | Feature | Client Send | Client Subscribe |
 | --- | --- | --- |
@@ -32,9 +30,9 @@ Authorization: Bearer {accessToken}
 | Typing | `/app/channels/{channelId}/typing` | `/topic/channels/{channelId}/typing` |
 | Personal notification | - | `/user/queue/notifications` |
 
-## 4. Event Envelope
+## Event Envelope
 
-모든 WebSocket broadcast 응답은 동일한 envelope 형식을 사용합니다.
+모든 WebSocket broadcast 응답은 아래 형식을 사용한다.
 
 ```json
 {
@@ -43,7 +41,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-## 5. Event Types
+## Event Types
 
 | Type | Description |
 | --- | --- |
@@ -55,33 +53,25 @@ Authorization: Bearer {accessToken}
 | `TYPING` | 입력 중 상태 변경 |
 | `NOTIFICATION_CREATED` | 개인 알림 생성 |
 
-## 6. Channel Message
+## Channel Message
 
 ### Send
-
-Destination:
 
 ```text
 /app/channels/{channelId}/messages
 ```
 
-Request:
-
 ```json
 {
-  "content": "이번 PR 리뷰 부탁드립니다."
+  "content": "이번 PR 리뷰 부탁드립니다"
 }
 ```
 
 ### Subscribe
 
-Destination:
-
 ```text
 /topic/channels/{channelId}/events
 ```
-
-Response:
 
 ```json
 {
@@ -90,41 +80,35 @@ Response:
     "id": 10,
     "channelId": 1,
     "senderMemberId": 1,
-    "senderName": "김자바",
-    "content": "이번 PR 리뷰 부탁드립니다.",
+    "senderName": "김재준",
+    "content": "이번 PR 리뷰 부탁드립니다",
     "createdAt": "2026-06-08T10:30:00",
     "attachments": []
   }
 }
 ```
 
-## 7. Thread Reply
+REST 생성 fallback인 `POST /api/channels/{channelId}/messages`도 성공 시 같은 `MESSAGE_CREATED` event를 broadcast한다.
+
+## Thread Reply
 
 ### Send
-
-Destination:
 
 ```text
 /app/threads/{threadId}/replies
 ```
 
-Request:
-
 ```json
 {
-  "content": "이 부분은 rate limit 추가가 필요해 보여요."
+  "content": "이 부분은 rate limit 추가가 필요해 보여요"
 }
 ```
 
 ### Subscribe
 
-Destination:
-
 ```text
 /topic/threads/{threadId}/events
 ```
-
-Response:
 
 ```json
 {
@@ -133,41 +117,34 @@ Response:
     "id": 21,
     "threadId": 10,
     "senderMemberId": 1,
-    "senderName": "김자바",
-    "content": "이 부분은 rate limit 추가가 필요해 보여요.",
+    "senderName": "김재준",
+    "content": "이 부분은 rate limit 추가가 필요해 보여요",
     "createdAt": "2026-06-08T10:35:00"
   }
 }
 ```
 
-## 8. Typing
+REST 생성 fallback인 `POST /api/threads/{threadId}/replies`도 성공 시 같은 `THREAD_REPLY_CREATED` event를 broadcast한다.
+
+## Typing
 
 ### Send
-
-Destination:
 
 ```text
 /app/channels/{channelId}/typing
 ```
 
-Request:
-
 ```json
 {
-  "senderName": "김자바",
   "typing": true
 }
 ```
 
 ### Subscribe
 
-Destination:
-
 ```text
 /topic/channels/{channelId}/typing
 ```
-
-Response:
 
 ```json
 {
@@ -175,23 +152,72 @@ Response:
   "payload": {
     "channelId": 1,
     "workspaceMemberId": 1,
-    "senderName": "김자바",
+    "senderName": "김재준",
     "typing": true
   }
 }
 ```
 
-## 9. Personal Notification
+`workspaceMemberId`와 `senderName`은 클라이언트 요청값이 아니라 서버가 인증 사용자와 채널의 workspace context로 조회한 값이다.
 
-### Subscribe
+## Reaction
 
-Destination:
+리액션은 REST API로 토글하고, 변경 결과는 채널 event topic으로 전송한다.
 
-```text
-/user/queue/notifications
+```http
+POST /api/channels/{channelId}/reactions/toggle
+Authorization: Bearer {accessToken}
 ```
 
-Response:
+```json
+{
+  "targetType": "thread",
+  "targetId": 100,
+  "emoji": "like"
+}
+```
+
+`targetType`은 `thread` 또는 `thread_reply`만 허용한다. Oracle 문자셋 호환성을 위해 프론트는 raw emoji보다 `like`, `smile` 같은 reaction key 사용을 우선한다.
+
+```json
+{
+  "type": "REACTION_UPDATED",
+  "payload": {
+    "channelId": 1,
+    "workspaceMemberId": 10,
+    "targetType": "thread",
+    "targetId": 100,
+    "emoji": "like",
+    "reacted": true,
+    "count": 3
+  }
+}
+```
+
+초기 렌더링용 집계는 아래 API를 사용한다.
+
+```http
+GET /api/channels/{channelId}/reactions
+```
+
+## Bookmark
+
+현재 MVP는 채널 메시지(thread) 북마크만 지원한다. 답글 북마크는 `bookmarks.thread_reply_id` 스키마가 없어 제외한다.
+
+```http
+POST /api/channels/{channelId}/messages/{messageId}/bookmark
+GET /api/workspaces/{workspaceId}/bookmarks
+```
+
+## Mention And Notification
+
+멘션 토큰은 `@` 뒤에 한글, 영문, 숫자, `.`, `_`, `-`가 오는 형식을 지원한다.
+
+```text
+@김재준 @user.name @dev-1
+```
+
+메시지/답글 저장 후 멘션 대상이 있으면 `Mention`을 저장하고 개인 알림을 전송한다.
 
 ```json
 {
@@ -202,19 +228,22 @@ Response:
     "threadId": 10,
     "threadReplyId": null,
     "mentionedMemberId": 2,
-    "message": "김자바님이 회원님을 멘션했습니다.",
+    "message": "새 멘션이 도착했습니다.",
     "createdAt": "2026-06-08T10:40:00"
   }
 }
 ```
 
-## 10. Development Notes
+## Channel Policy
 
-- WebSocket 요청 사용자는 JWT 인증으로 식별합니다.
-- 메시지/답글/typing 요청 body에는 `workspaceMemberId`, `senderMemberId`, `userId`를 포함하지 않습니다.
-- 백엔드는 인증된 `userId`와 대상 채널 또는 스레드의 workspace context로 활성 `WorkspaceMember`를 조회합니다.
-- 채널 메시지는 `Thread`로 저장합니다.
-- 스레드 답글은 `ThreadReply`로 저장합니다.
-- 모든 broadcast 응답은 `type`, `payload` envelope 형식을 유지합니다.
-- 채널 이벤트 구독자는 `type` 값으로 UI 갱신 로직을 분기합니다.
-- Redis Pub/Sub은 이후 확장 범위입니다.
+| Type | Created By | GitHub Repository | Deletable |
+| --- | --- | --- | --- |
+| `general` | workspace 생성 | 없음 | false |
+| `custom` | 채널 생성 API | 없음 | true |
+| `repository` | GitHub repository 연동 | 있음 | false |
+
+## Notes
+
+- 모든 broadcast 응답은 `ChatEventResponse<T>` envelope를 사용한다.
+- WebSocket 메시지/답글/typing 요청은 인증 사용자 기준으로 workspace member를 조회한다.
+- Redis Pub/Sub은 아직 적용하지 않는다.
