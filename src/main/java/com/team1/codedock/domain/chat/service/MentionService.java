@@ -13,6 +13,7 @@ import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,7 @@ public class MentionService {
 
     private final MentionRepository mentionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
-    private final ChatNotificationService chatNotificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void createMentionsForThread(Thread thread, WorkspaceMember mentionedByMember, String content) {
@@ -52,7 +53,7 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        sendThreadMentionNotifications(workspace, thread, mentionedMembers);
+        publishThreadMentionNotifications(workspace, thread, mentionedMembers);
     }
 
     @Transactional
@@ -72,15 +73,15 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        sendThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
+        publishThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
     }
 
-    private void sendThreadMentionNotifications(
+    private void publishThreadMentionNotifications(
             Workspace workspace,
             Thread thread,
             List<WorkspaceMember> mentionedMembers
     ) {
-        mentionedMembers.forEach(mentionedMember -> sendMentionNotification(
+        mentionedMembers.forEach(mentionedMember -> publishMentionNotification(
                 mentionedMember,
                 ChatNotificationResponse.of(
                         workspace.getId(),
@@ -93,14 +94,14 @@ public class MentionService {
         ));
     }
 
-    private void sendThreadReplyMentionNotifications(
+    private void publishThreadReplyMentionNotifications(
             Workspace workspace,
             ThreadReply threadReply,
             List<WorkspaceMember> mentionedMembers
     ) {
         Thread thread = threadReply.getThread();
 
-        mentionedMembers.forEach(mentionedMember -> sendMentionNotification(
+        mentionedMembers.forEach(mentionedMember -> publishMentionNotification(
                 mentionedMember,
                 ChatNotificationResponse.of(
                         workspace.getId(),
@@ -113,14 +114,14 @@ public class MentionService {
         ));
     }
 
-    private void sendMentionNotification(
+    private void publishMentionNotification(
             WorkspaceMember mentionedMember,
             ChatNotificationResponse notification
     ) {
         User user = mentionedMember.getUser();
 
-        // WebSocket Principal 이름과 맞추기 위해 사용자 이메일을 user destination key로 사용함
-        chatNotificationService.sendNotification(user.getEmail(), notification);
+        // 트랜잭션이 커밋된 뒤 실제 WebSocket 알림을 보내도록 이벤트만 발행함
+        eventPublisher.publishEvent(new MentionNotificationEvent(user.getEmail(), notification));
     }
 
     @Transactional(readOnly = true)

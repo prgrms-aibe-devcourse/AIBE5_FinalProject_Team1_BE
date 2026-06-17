@@ -26,7 +26,13 @@ client.activate();
 
 REST API와 WebSocket 요청 모두 인증 사용자 기준으로 처리한다. 프론트는 `X-User-Id`, `workspaceMemberId`, `senderMemberId`, `userId`, `senderName`을 사용자 식별값으로 보내지 않는다.
 
-채널/스레드 topic 구독은 백엔드에서 workspace active member인지 검증한다. 권한이 없거나 payload 검증에 실패한 WebSocket 요청은 `/user/queue/errors`로 내려온다.
+채널/스레드 topic 구독은 백엔드에서 workspace active member인지 검증한다. payload 검증이나 handler 내부 비즈니스 오류는 `/user/queue/errors`로 내려온다.
+
+STOMP `SEND`는 WebSocket 세션 기준 10초에 20건까지만 허용된다. 초과 시 STOMP ERROR 또는 전송 실패로 거부될 수 있으므로, 프론트는 pending 메시지를 실패 처리하거나 재시도 안내를 보여준다.
+
+CONNECT, SUBSCRIBE, rate limit처럼 inbound interceptor에서 거부된 요청은 `/user/queue/errors`가 아니라 STOMP ERROR 또는 연결 거부로 처리될 수 있다.
+
+멘션 개인 알림은 메시지/답글 저장 트랜잭션이 커밋된 뒤 `/user/queue/notifications`로 전송된다.
 
 ## Destinations
 

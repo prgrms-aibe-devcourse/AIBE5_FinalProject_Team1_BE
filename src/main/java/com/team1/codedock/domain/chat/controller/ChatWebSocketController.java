@@ -87,13 +87,13 @@ public class ChatWebSocketController {
     }
 
     @MessageExceptionHandler(BusinessException.class)
-    @SendToUser("/queue/errors")
+    @SendToUser(value = "/queue/errors", broadcast = false)
     public ApiResponse<Void> handleBusinessException(BusinessException e) {
         return ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @MessageExceptionHandler(org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException.class)
-    @SendToUser("/queue/errors")
+    @SendToUser(value = "/queue/errors", broadcast = false)
     public ApiResponse<Void> handleValidationException() {
         return ApiResponse.fail(ErrorCode.INVALID_INPUT.getCode(), "WebSocket 요청 payload가 올바르지 않습니다.");
     }

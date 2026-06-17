@@ -21,6 +21,14 @@ Authorization: Bearer {accessToken}
 
 백엔드는 CONNECT 시점에 JWT를 검증하고, 이후 메시지/답글/typing 요청 작성자는 STOMP `Principal` 기준으로 판별한다. 따라서 WebSocket 요청 body에는 `workspaceMemberId`, `senderMemberId`, `userId`, `senderName`을 포함하지 않는다.
 
+## Runtime Guards
+
+- `/topic/channels/{channelId}/events`, `/topic/channels/{channelId}/typing`, `/topic/threads/{threadId}/events` 구독은 해당 workspace의 active member만 허용한다.
+- STOMP `SEND`는 WebSocket 세션 기준 10초에 20건까지만 허용한다.
+- `@MessageMapping` handler에서 발생한 요청 검증/비즈니스 오류는 `/user/queue/errors`로 현재 발신 세션에만 전달한다.
+- CONNECT, SUBSCRIBE, rate limit처럼 inbound interceptor에서 거부된 요청은 STOMP ERROR 또는 연결 거부로 처리될 수 있다.
+- 멘션 개인 알림은 메시지/답글 저장 트랜잭션이 커밋된 뒤 `/user/queue/notifications`로 전송한다.
+
 ## STOMP Destinations
 
 | Feature | Client Send | Client Subscribe |

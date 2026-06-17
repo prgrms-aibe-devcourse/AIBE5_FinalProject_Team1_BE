@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
@@ -33,8 +34,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,13 +49,13 @@ class MentionServiceTest {
     private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
-    private ChatNotificationService chatNotificationService;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private MentionService mentionService;
 
     @Test
-    @DisplayName("채널 메시지에서 워크스페이스 멤버 멘션을 저장하고 개인 알림을 보낸다")
+    @DisplayName("채널 메시지 멘션을 저장하고 커밋 후 알림 이벤트를 발행한다")
     void createMentionsForThread() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -83,17 +82,19 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).isRead()).isFalse();
         assertThat(savedMentions.get(1).getMentionedMember()).isEqualTo(bob);
 
-        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
-                ArgumentCaptor.forClass(ChatNotificationResponse.class);
-        verify(chatNotificationService, times(2))
-                .sendNotification(userKeyCaptor.capture(), notificationCaptor.capture());
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(eventCaptor.capture());
 
-        assertThat(userKeyCaptor.getAllValues()).containsExactly("alice@test.com", "bob@test.com");
-        assertThat(notificationCaptor.getAllValues())
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::userDestinationKey)
+                .containsExactly("alice@test.com", "bob@test.com");
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::notification)
                 .extracting(ChatNotificationResponse::mentionedMemberId)
                 .containsExactly(21L, 22L);
-        assertThat(notificationCaptor.getAllValues())
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::notification)
                 .allSatisfy(notification -> {
                     assertThat(notification.workspaceId()).isEqualTo(10L);
                     assertThat(notification.channelId()).isEqualTo(1L);
@@ -135,10 +136,11 @@ class MentionServiceTest {
                 .extracting(Mention::getMentionedMember)
                 .containsExactly(koreanMember, dottedMember, hyphenMember);
 
-        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(chatNotificationService, times(3))
-                .sendNotification(userKeyCaptor.capture(), any());
-        assertThat(userKeyCaptor.getAllValues())
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher, times(3)).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::userDestinationKey)
                 .containsExactly("kim@test.com", "user.name@test.com", "dev-1@test.com");
     }
 
@@ -154,11 +156,11 @@ class MentionServiceTest {
 
         verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
         verify(mentionRepository, never()).saveAll(any());
-        verify(chatNotificationService, never()).sendNotification(anyString(), any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
-    @DisplayName("답글 멘션을 저장하고 답글 개인 알림을 보낸다")
+    @DisplayName("답글 멘션을 저장하고 커밋 후 답글 알림 이벤트를 발행한다")
     void createMentionsForThreadReply() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -181,18 +183,18 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).getThreadReply()).isEqualTo(reply);
         assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
 
-        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
-                ArgumentCaptor.forClass(ChatNotificationResponse.class);
-        verify(chatNotificationService)
-                .sendNotification(eq("alice@test.com"), notificationCaptor.capture());
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
 
-        ChatNotificationResponse notification = notificationCaptor.getValue();
-        assertThat(notification.workspaceId()).isEqualTo(10L);
-        assertThat(notification.channelId()).isEqualTo(1L);
-        assertThat(notification.threadId()).isEqualTo(100L);
-        assertThat(notification.threadReplyId()).isEqualTo(200L);
-        assertThat(notification.mentionedMemberId()).isEqualTo(21L);
-        assertThat(notification.message()).isEqualTo("새 멘션 답글이 도착했습니다.");
+        MentionNotificationEvent event = eventCaptor.getValue();
+        assertThat(event.userDestinationKey()).isEqualTo("alice@test.com");
+        assertThat(event.notification().workspaceId()).isEqualTo(10L);
+        assertThat(event.notification().channelId()).isEqualTo(1L);
+        assertThat(event.notification().threadId()).isEqualTo(100L);
+        assertThat(event.notification().threadReplyId()).isEqualTo(200L);
+        assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
+        assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
     }
 
     @Test
