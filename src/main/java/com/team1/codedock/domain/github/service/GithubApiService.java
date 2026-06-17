@@ -96,6 +96,41 @@ public class GithubApiService {
                 .toList();
     }
 
+    public GithubRepoResponse getRepo(String owner, String repo, String token) {
+        RestClient client = githubClient(token);
+
+        GithubRepoApiItem item;
+        try {
+            item = client.get()
+                    .uri("/repos/{owner}/{repo}", owner, repo)
+                    .retrieve()
+                    .body(GithubRepoApiItem.class);
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
+        } catch (HttpClientErrorException e) {
+            log.warn("GitHub 레포 조회 4xx → {}/{}, status={}", owner, repo, e.getStatusCode());
+            throw new BusinessException(ErrorCode.GITHUB_NOT_CONNECTED);
+        } catch (Exception e) {
+            log.error("GitHub 레포 조회 실패 → {}/{}", owner, repo, e);
+            throw new BusinessException(ErrorCode.GITHUB_API_ERROR);
+        }
+
+        if (item == null) {
+            throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
+        }
+
+        return GithubRepoResponse.builder()
+                .id(item.id())
+                .name(item.name())
+                .fullName(item.fullName())
+                .owner(item.owner() != null ? item.owner().login() : "")
+                .isPrivate(item.isPrivate())
+                .language(item.language())
+                .htmlUrl(item.htmlUrl())
+                .defaultBranch(item.defaultBranch())
+                .build();
+    }
+
     public List<GithubCollaboratorResponse> getRepoCollaborators(Long currentUserId, String owner, String repo) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
