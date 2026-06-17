@@ -61,4 +61,16 @@ public class UserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         return UserResponse.from(user);
     }
+
+    public UserResponse disconnectGithub(Long currentUserId) {
+        User user = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (user.getPasswordHash() == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        if (user.isGithubConnected()) {
+            user.disconnectGithub();
+        }
+        return UserResponse.from(user);
+    }
 }

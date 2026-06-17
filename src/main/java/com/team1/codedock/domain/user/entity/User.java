@@ -164,6 +164,16 @@ public class User extends BaseEntity {
         this.displayName = displayName;
     }
 
+    public void disconnectGithub() {
+        this.githubId = null;
+        this.githubUsername = null;
+        this.githubEmail = null;
+        this.githubConnected = false;
+        this.githubConnectedAt = null;
+        this.githubAccessToken = null;
+        this.githubTokenExpiresAt = null;
+    }
+
     public void updateProfile(String displayName, String nickname, String developerType, String bio, String avatarUrl) {
         this.displayName = displayName;
         this.nickname = nickname;
