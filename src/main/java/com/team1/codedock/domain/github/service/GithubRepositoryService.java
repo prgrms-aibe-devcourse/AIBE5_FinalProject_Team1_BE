@@ -92,18 +92,18 @@ public class GithubRepositoryService {
         validateRepositoryManager(workspaceId, userId);
         Workspace workspace = findWorkspace(workspaceId);
 
-        String githubRepoId = normalizeRequired(request.githubRepoId(), "GitHub repository id is required.");
-        String owner = normalizeRequired(request.owner(), "GitHub repository owner is required.");
-        String name = normalizeRequired(request.name(), "GitHub repository name is required.");
+        String githubRepoId = normalizeRequired(request.githubRepoId(), "GitHub 레포지토리 ID는 필수입니다.");
+        String owner = normalizeRequired(request.owner(), "GitHub 레포지토리 소유자는 필수입니다.");
+        String name = normalizeRequired(request.name(), "GitHub 레포지토리 이름은 필수입니다.");
         validateRepositoryNameForChannel(name);
-        String fullName = normalizeRequired(request.fullName(), "GitHub repository full name is required.");
-        String url = normalizeRequired(request.url(), "GitHub repository url is required.");
+        String fullName = normalizeRequired(request.fullName(), "GitHub 레포지토리 전체 이름은 필수입니다.");
+        String url = normalizeRequired(request.url(), "GitHub 레포지토리 URL은 필수입니다.");
         String description = normalizeNullable(request.description());
         String defaultBranch = normalizeNullable(request.defaultBranch());
 
         return githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(workspaceId, githubRepoId)
                 .map(repository -> {
-                    // Same GitHub repo keeps one row per workspace and refreshes metadata.
+                    // 같은 GitHub 레포지토리는 워크스페이스마다 한 데이터만 유지하고 메타데이터만 갱신함.
                     repository.updateMetadata(owner, name, fullName, url, description, request.isPrivate(), defaultBranch);
                     return repository;
                 })
@@ -140,11 +140,11 @@ public class GithubRepositoryService {
     private Channel findOrCreateRepositoryChannel(GithubRepository githubRepository) {
         Long workspaceId = githubRepository.getWorkspace().getId();
 
-        // One linked GitHub repository must have exactly one repository channel.
+        // 연결된 GitHub 레포지토리 하나당 레포지토리 채널도 반드시 하나만 존재해야 함.
         return channelRepository.findRepositoryChannel(workspaceId, githubRepository.getId())
                 .orElseGet(() -> {
                     String channelName = resolveRepositoryChannelName(githubRepository);
-                    // Create only when the repository channel does not exist to prevent duplicates.
+                    // 레포지토리 채널이 없을 때만 생성해서 중복 채널을 방지함.
                     Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository, channelName);
                     return channelRepository.save(channel);
                 });
@@ -196,7 +196,7 @@ public class GithubRepositoryService {
         if (name.length() > Channel.MAX_NAME_LENGTH) {
             throw new BusinessException(
                     ErrorCode.INVALID_INPUT,
-                    "GitHub repository name must be " + Channel.MAX_NAME_LENGTH + " characters or less."
+                    "GitHub 레포지토리 이름은 " + Channel.MAX_NAME_LENGTH + "자 이하로 입력해주세요."
             );
         }
     }
@@ -224,7 +224,7 @@ public class GithubRepositoryService {
             }
         }
 
-        throw new BusinessException(ErrorCode.CONFLICT, "Repository channel name already exists in workspace.");
+        throw new BusinessException(ErrorCode.CONFLICT, "워크스페이스에 이미 같은 이름의 레포지토리 채널이 존재합니다.");
     }
 
     private boolean channelNameExists(Long workspaceId, String name) {

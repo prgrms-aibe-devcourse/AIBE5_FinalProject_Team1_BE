@@ -77,7 +77,7 @@ public class GithubRepository extends BaseEntity {
     @Column(name = "webhook_url")
     private String webhookUrl;
 
-    // TEXT[] -> CLOB JSON array
+    // TEXT[] 구조를 CLOB JSON 배열로 저장함.
     @Lob
     @Column(name = "webhook_events")
     private String webhookEvents;

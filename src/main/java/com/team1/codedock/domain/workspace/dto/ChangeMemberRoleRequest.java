@@ -11,10 +11,10 @@ import lombok.Setter;
 @NoArgsConstructor
 public class ChangeMemberRoleRequest {
 
-    @NotBlank
+    @NotBlank(message = "역할은 필수입니다.")
     @Pattern(
             regexp = "admin|editor|viewer",
-            message = "role must be one of: admin, editor, viewer"
+            message = "역할은 admin, editor, viewer 중 하나여야 합니다."
     )
     private String role;
 }

@@ -214,7 +214,7 @@ class ChannelCommandServiceTest {
         assertThatThrownBy(() ->
                 channelCommandService.createChannel(10L, 100L, new ChannelCreateRequest("team-chat", null)))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel name already exists");
+                .hasMessageContaining("이미 같은 이름의 채널");
 
         verify(channelRepository, never()).save(any(Channel.class));
     }
@@ -248,7 +248,7 @@ class ChannelCommandServiceTest {
         assertThatThrownBy(() ->
                 channelCommandService.updateChannel(10L, 2L, 100L, new ChannelUpdateRequest("general", null)))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel name already exists");
+                .hasMessageContaining("이미 같은 이름의 채널");
     }
 
     @Test
@@ -366,7 +366,7 @@ class ChannelCommandServiceTest {
 
         assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel with pull requests cannot be deleted");
+                .hasMessageContaining("Pull Request가 연결된 채널");
 
         verify(channelReadStatusRepository, never()).deleteAllByChannelId(2L);
         verify(channelRepository, never()).delete(any(Channel.class));
@@ -384,7 +384,7 @@ class ChannelCommandServiceTest {
 
         assertThatThrownBy(() -> channelCommandService.deleteChannel(10L, 2L, 100L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Channel with issues cannot be deleted");
+                .hasMessageContaining("Issue가 연결된 채널");
 
         verify(channelReadStatusRepository, never()).deleteAllByChannelId(2L);
         verify(channelRepository, never()).delete(any(Channel.class));

@@ -17,7 +17,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {
-        log.warn("BusinessException: {}", e.getMessage());
+        log.warn("비즈니스 예외 발생: {}", e.getMessage());
         return ResponseEntity
                 .status(e.getErrorCode().getStatus())
                 .body(ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage()));
@@ -35,7 +35,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Void>> handleConflict(OptimisticLockingFailureException e) {
-        log.warn("Optimistic lock conflict: {}", e.getMessage());
+        log.warn("낙관적 락 충돌 발생: {}", e.getMessage());
         return ResponseEntity
                 .status(ErrorCode.CONFLICT.getStatus())
                 .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));
@@ -43,7 +43,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
-        log.warn("Data integrity conflict: {}", e.getMessage());
+        log.warn("데이터 무결성 충돌 발생: {}", e.getMessage());
         return ResponseEntity
                 .status(ErrorCode.CONFLICT.getStatus())
                 .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));
@@ -51,7 +51,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        log.error("Unexpected error: ", e);
+        log.error("예상하지 못한 오류 발생: ", e);
         return ResponseEntity
                 .internalServerError()
                 .body(ApiResponse.fail(

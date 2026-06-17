@@ -269,7 +269,7 @@ public class WorkspaceService {
     public void leaveWorkspace(Long workspaceId, Long currentUserId) {
         WorkspaceMember membership = getMembership(workspaceId, currentUserId);   // 403s if not an active member
         if ("owner".equals(membership.getAuthority())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN);   // owner must transfer or delete the workspace
+            throw new BusinessException(ErrorCode.FORBIDDEN);   // owner는 워크스페이스를 위임하거나 삭제해야 함
         }
         membership.deactivate("left");
     }

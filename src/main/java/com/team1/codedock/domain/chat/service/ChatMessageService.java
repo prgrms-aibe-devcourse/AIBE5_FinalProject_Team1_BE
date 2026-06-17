@@ -158,7 +158,7 @@ public class ChatMessageService {
 
     private void validateContent(String content) {
         if (content == null || content.isBlank()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Message content must not be blank.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "메시지 내용은 필수입니다.");
         }
     }
 
@@ -210,7 +210,7 @@ public class ChatMessageService {
 
     private Thread findEditableChannelMessage(Channel channel, Long messageId, WorkspaceMember member) {
         Thread message = threadRepository.findById(messageId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Message not found."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
 
         validateMessageBelongsToChannel(channel, message);
         validateUserMessage(message);
@@ -220,13 +220,13 @@ public class ChatMessageService {
 
     private void validateMessageBelongsToChannel(Channel channel, Thread message) {
         if (!channel.getId().equals(message.getChannel().getId())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Message does not belong to the requested channel.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "요청한 채널에 속한 메시지가 아닙니다.");
         }
     }
 
     private void validateUserMessage(Thread message) {
         if (!Thread.TYPE_USER_MESSAGE.equals(message.getThreadType())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Only user messages can be updated or deleted.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "사용자 메시지만 수정하거나 삭제할 수 있습니다.");
         }
     }
 

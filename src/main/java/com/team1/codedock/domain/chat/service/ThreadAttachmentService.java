@@ -58,7 +58,7 @@ public class ThreadAttachmentService {
         validateMessageAuthor(thread, member);
 
         ThreadAttachment attachment = threadAttachmentRepository.findById(attachmentId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Attachment not found."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "첨부파일을 찾을 수 없습니다."));
         validateAttachmentBelongsToMessage(attachment, thread);
 
         threadAttachmentRepository.delete(attachment);
@@ -82,10 +82,10 @@ public class ThreadAttachmentService {
 
     private void validateAttachmentRequestList(List<ThreadAttachmentRequest> requests) {
         if (requests.size() > MAX_ATTACHMENTS_PER_REQUEST) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachments must be 10 or fewer.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "첨부파일은 한 번에 10개 이하로 추가할 수 있습니다.");
         }
         if (requests.stream().anyMatch(java.util.Objects::isNull)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment must not be null.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "첨부파일 정보는 비어 있을 수 없습니다.");
         }
     }
 
@@ -141,13 +141,13 @@ public class ThreadAttachmentService {
 
     private void validateAttachmentType(String attachmentType) {
         if (!ALLOWED_ATTACHMENT_TYPES.contains(attachmentType)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Unsupported attachment type.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "지원하지 않는 첨부파일 타입입니다.");
         }
     }
 
     private void validateAttachmentPayload(String attachmentType, ThreadAttachmentRequest request) {
         if (requiresUrl(attachmentType) && isBlank(request.url())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment url is required.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "첨부파일 URL은 필수입니다.");
         }
     }
 
@@ -163,17 +163,17 @@ public class ThreadAttachmentService {
         Thread thread = threadRepository.findById(messageId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.THREAD_NOT_FOUND));
         if (!Thread.TYPE_USER_MESSAGE.equals(thread.getThreadType())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Only user messages can have attachments.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "사용자 메시지에만 첨부파일을 추가할 수 있습니다.");
         }
         if (Thread.DELETED_MESSAGE_CONTENT.equals(thread.getContent())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Deleted message cannot have attachments.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "삭제된 메시지에는 첨부파일을 추가할 수 없습니다.");
         }
         return thread;
     }
 
     private void validateMessageBelongsToChannel(Thread thread, Long channelId) {
         if (!thread.getChannel().getId().equals(channelId)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Message does not belong to the requested channel.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "요청한 채널에 속한 메시지가 아닙니다.");
         }
     }
 
@@ -195,7 +195,7 @@ public class ThreadAttachmentService {
 
     private void validateAttachmentBelongsToMessage(ThreadAttachment attachment, Thread thread) {
         if (!thread.getId().equals(attachment.getThread().getId())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Attachment does not belong to the requested message.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "요청한 메시지에 속한 첨부파일이 아닙니다.");
         }
     }
 }

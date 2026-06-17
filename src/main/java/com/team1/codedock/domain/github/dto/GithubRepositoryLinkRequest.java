@@ -4,30 +4,30 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record GithubRepositoryLinkRequest(
-        @NotBlank(message = "GitHub repository id must not be blank.")
-        @Size(max = 100, message = "GitHub repository id must be 100 characters or less.")
+        @NotBlank(message = "GitHub 레포지토리 ID는 필수입니다.")
+        @Size(max = 100, message = "GitHub 레포지토리 ID는 100자 이하로 입력해주세요.")
         String githubRepoId,
 
-        @NotBlank(message = "GitHub repository owner must not be blank.")
-        @Size(max = 100, message = "GitHub repository owner must be 100 characters or less.")
+        @NotBlank(message = "GitHub 레포지토리 소유자는 필수입니다.")
+        @Size(max = 100, message = "GitHub 레포지토리 소유자는 100자 이하로 입력해주세요.")
         String owner,
 
-        @NotBlank(message = "GitHub repository name must not be blank.")
-        @Size(max = 120, message = "GitHub repository name must be 120 characters or less.")
+        @NotBlank(message = "GitHub 레포지토리 이름은 필수입니다.")
+        @Size(max = 120, message = "GitHub 레포지토리 이름은 120자 이하로 입력해주세요.")
         String name,
 
-        @NotBlank(message = "GitHub repository full name must not be blank.")
-        @Size(max = 255, message = "GitHub repository full name must be 255 characters or less.")
+        @NotBlank(message = "GitHub 레포지토리 전체 이름은 필수입니다.")
+        @Size(max = 255, message = "GitHub 레포지토리 전체 이름은 255자 이하로 입력해주세요.")
         String fullName,
 
-        @NotBlank(message = "GitHub repository url must not be blank.")
+        @NotBlank(message = "GitHub 레포지토리 URL은 필수입니다.")
         String url,
 
         String description,
 
         boolean isPrivate,
 
-        @Size(max = 255, message = "Default branch must be 255 characters or less.")
+        @Size(max = 255, message = "기본 브랜치 이름은 255자 이하로 입력해주세요.")
         String defaultBranch
 ) {
 }

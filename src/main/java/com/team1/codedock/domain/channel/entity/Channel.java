@@ -57,7 +57,7 @@ public class Channel extends BaseEntity {
         channel.name = DEFAULT_GENERAL_NAME;
         channel.channelType = TYPE_GENERAL;
         channel.isDeletable = false;
-        channel.description = "Default workspace channel";
+        channel.description = "기본 워크스페이스 채널";
         return channel;
     }
 
