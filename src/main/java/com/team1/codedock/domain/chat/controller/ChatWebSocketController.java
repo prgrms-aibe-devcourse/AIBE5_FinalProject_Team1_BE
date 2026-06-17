@@ -12,11 +12,14 @@ import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -81,6 +84,18 @@ public class ChatWebSocketController {
                 "/topic/channels/" + channelId + "/typing",
                 ChatEventResponse.of(ChatEventType.TYPING, response)
         );
+    }
+
+    @MessageExceptionHandler(BusinessException.class)
+    @SendToUser("/queue/errors")
+    public ApiResponse<Void> handleBusinessException(BusinessException e) {
+        return ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage());
+    }
+
+    @MessageExceptionHandler(org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException.class)
+    @SendToUser("/queue/errors")
+    public ApiResponse<Void> handleValidationException() {
+        return ApiResponse.fail(ErrorCode.INVALID_INPUT.getCode(), "WebSocket 요청 payload가 올바르지 않습니다.");
     }
 
     private Long getCurrentUserId(Principal principal) {

@@ -13,6 +13,7 @@ import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -193,6 +194,28 @@ class ChatWebSocketControllerTest {
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
         verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("WebSocket BusinessException은 사용자 에러 큐 응답 payload로 변환한다")
+    void handleBusinessException() {
+        BusinessException exception = new BusinessException(ErrorCode.FORBIDDEN, "WebSocket 구독 권한이 없습니다.");
+
+        ApiResponse<Void> response = chatWebSocketController.handleBusinessException(exception);
+
+        assertThat(response.isSuccess()).isFalse();
+        assertThat(response.getCode()).isEqualTo(ErrorCode.FORBIDDEN.getCode());
+        assertThat(response.getMessage()).isEqualTo("WebSocket 구독 권한이 없습니다.");
+    }
+
+    @Test
+    @DisplayName("WebSocket validation exception은 INVALID_INPUT 응답 payload로 변환한다")
+    void handleValidationException() {
+        ApiResponse<Void> response = chatWebSocketController.handleValidationException();
+
+        assertThat(response.isSuccess()).isFalse();
+        assertThat(response.getCode()).isEqualTo(ErrorCode.INVALID_INPUT.getCode());
+        assertThat(response.getMessage()).isEqualTo("WebSocket 요청 payload가 올바르지 않습니다.");
     }
 
     private void assertBroadcastEvent(

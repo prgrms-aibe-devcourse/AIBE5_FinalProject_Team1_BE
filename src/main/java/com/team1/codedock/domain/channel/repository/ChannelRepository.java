@@ -6,10 +6,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
     List<Channel> findAllByWorkspace_IdOrderByIdAsc(Long workspaceId);
+
+    @Query("SELECT c.workspace.id FROM Channel c WHERE c.id = :channelId")
+    Optional<Long> findWorkspaceIdById(@Param("channelId") Long channelId);
 
     @Query("SELECT COUNT(c) FROM Channel c WHERE c.workspace.id = :workspaceId AND LOWER(c.name) = LOWER(:name)")
     long countByWorkspaceIdAndNameIgnoreCase(@Param("workspaceId") Long workspaceId, @Param("name") String name);

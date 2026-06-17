@@ -29,6 +29,7 @@ Authorization: Bearer {accessToken}
 | Thread reply | `/app/threads/{threadId}/replies` | `/topic/threads/{threadId}/events` |
 | Typing | `/app/channels/{channelId}/typing` | `/topic/channels/{channelId}/typing` |
 | Personal notification | - | `/user/queue/notifications` |
+| Personal error | - | `/user/queue/errors` |
 
 ## Event Envelope
 
@@ -246,4 +247,6 @@ GET /api/workspaces/{workspaceId}/bookmarks
 
 - 모든 broadcast 응답은 `ChatEventResponse<T>` envelope를 사용한다.
 - WebSocket 메시지/답글/typing 요청은 인증 사용자 기준으로 workspace member를 조회한다.
+- `/topic/channels/{channelId}/events`, `/topic/channels/{channelId}/typing`, `/topic/threads/{threadId}/events` 구독은 해당 workspace active member만 허용한다.
+- WebSocket handler 예외는 `/user/queue/errors`로 `ApiResponse.fail(code, message)` 형태로 전달한다.
 - Redis Pub/Sub은 아직 적용하지 않는다.

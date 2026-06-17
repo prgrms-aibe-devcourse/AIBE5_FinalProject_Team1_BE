@@ -26,6 +26,8 @@ client.activate();
 
 REST API와 WebSocket 요청 모두 인증 사용자 기준으로 처리한다. 프론트는 `X-User-Id`, `workspaceMemberId`, `senderMemberId`, `userId`, `senderName`을 사용자 식별값으로 보내지 않는다.
 
+채널/스레드 topic 구독은 백엔드에서 workspace active member인지 검증한다. 권한이 없거나 payload 검증에 실패한 WebSocket 요청은 `/user/queue/errors`로 내려온다.
+
 ## Destinations
 
 | Feature | Send | Subscribe |
@@ -34,6 +36,7 @@ REST API와 WebSocket 요청 모두 인증 사용자 기준으로 처리한다. 
 | Thread reply | `/app/threads/{threadId}/replies` | `/topic/threads/{threadId}/events` |
 | Typing | `/app/channels/{channelId}/typing` | `/topic/channels/{channelId}/typing` |
 | Personal notification | - | `/user/queue/notifications` |
+| Personal error | - | `/user/queue/errors` |
 
 ## Event Envelope
 
@@ -270,6 +273,20 @@ type PersonalNotificationPayload = {
   message: string;
   createdAt: string;
 };
+```
+
+## Personal Error
+
+```ts
+client.subscribe("/user/queue/errors", (message) => {
+  const response = JSON.parse(message.body) as {
+    success: false;
+    code: string;
+    message: string;
+  };
+
+  // SEND 실패 사유를 사용자에게 표시하거나 pending 메시지를 실패 처리
+});
 ```
 
 ## Cleanup
