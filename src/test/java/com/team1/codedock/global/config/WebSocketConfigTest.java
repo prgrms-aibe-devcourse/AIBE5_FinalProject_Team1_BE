@@ -4,6 +4,7 @@ import com.team1.codedock.global.security.WebSocketAuthChannelInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.config.ChannelRegistration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -19,6 +20,12 @@ class WebSocketConfigTest {
 
     private final WebSocketAuthChannelInterceptor interceptor = mock(WebSocketAuthChannelInterceptor.class);
     private final WebSocketConfig webSocketConfig = new WebSocketConfig(interceptor);
+
+    @Test
+    @DisplayName("WebSocket 캐시 sweep을 위해 scheduling을 활성화한다")
+    void websocketConfigEnablesScheduling() {
+        assertThat(WebSocketConfig.class).hasAnnotation(EnableScheduling.class);
+    }
 
     @Test
     @DisplayName("WebSocket heartbeat scheduler는 복수 스레드로 동작한다")

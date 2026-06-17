@@ -19,6 +19,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.util.List;
 import java.util.Optional;
@@ -283,6 +285,23 @@ class WebSocketAuthChannelInterceptorTest {
                 .isInstanceOf(AccessDeniedException.class);
 
         interceptor.preSend(disconnectMessage, messageChannel);
+
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
+    }
+
+    @Test
+    @DisplayName("SessionDisconnectEvent는 비정상 종료 세션의 SEND rate limit 상태를 정리한다")
+    void sessionDisconnectEventClearsSendRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> sendMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(sendMessage, messageChannel);
+        }
+        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
+                .isInstanceOf(AccessDeniedException.class);
+
+        interceptor.handleSessionDisconnect(sessionDisconnectEvent("session-1"));
 
         assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
     }
@@ -571,6 +590,78 @@ class WebSocketAuthChannelInterceptorTest {
 
         verify(channelRepository, times(1)).findWorkspaceIdById(10L);
         verify(workspaceMemberRepository, times(3))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("SessionDisconnectEvent는 비정상 종료 세션의 구독 권한 캐시만 정리한다")
+    void sessionDisconnectEventClearsOnlyMatchingSessionSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> secondSessionMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-2");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        interceptor.handleSessionDisconnect(sessionDisconnectEvent("session-1"));
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(3))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("만료 캐시 sweep은 destination, 구독 권한, SEND rate limit 엔트리를 제거한다")
+    void sweepExpiredCacheEntriesRemovesExpiredCaches() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> sendMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
+
+        clock.advance(Duration.ofMillis(30_000));
+
+        assertThat(interceptor.sweepExpiredCacheEntries(clock.millis())).isEqualTo(3);
+        assertThat(interceptor.sweepExpiredCacheEntries(clock.millis())).isZero();
+    }
+
+    @Test
+    @DisplayName("만료 캐시 sweep은 아직 유효한 엔트리를 제거하지 않는다")
+    void sweepExpiredCacheEntriesKeepsFreshCaches() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> sendMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
+
+        clock.advance(Duration.ofMillis(9_999));
+
+        assertThat(interceptor.sweepExpiredCacheEntries(clock.millis())).isZero();
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(1))
                 .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
     }
 
@@ -926,6 +1017,11 @@ class WebSocketAuthChannelInterceptorTest {
         accessor.setLeaveMutable(true);
         accessor.setSessionId(sessionId);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static SessionDisconnectEvent sessionDisconnectEvent(String sessionId) {
+        Message<byte[]> message = MessageBuilder.withPayload(new byte[0]).build();
+        return new SessionDisconnectEvent(new Object(), message, sessionId, CloseStatus.SESSION_NOT_RELIABLE);
     }
 
     private Authentication authenticatedPrincipal(Long userId) {
