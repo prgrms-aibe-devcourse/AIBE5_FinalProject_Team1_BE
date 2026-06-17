@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -182,6 +183,86 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("같은 destination 반복 구독은 workspace 조회와 멤버십 검증 캐시를 사용한다")
+    void subscribeSameDestinationUsesCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(1))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("같은 세션의 같은 워크스페이스 구독은 멤버십 검증 캐시를 공유한다")
+    void subscribeSameWorkspaceUsesMembershipCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> secondMessage = subscribeMessage("/topic/channels/11/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(channelRepository.findWorkspaceIdById(11L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstMessage, messageChannel)).isSameAs(firstMessage);
+        assertThat(interceptor.preSend(secondMessage, messageChannel)).isSameAs(secondMessage);
+
+        verify(channelRepository).findWorkspaceIdById(10L);
+        verify(channelRepository).findWorkspaceIdById(11L);
+        verify(workspaceMemberRepository, times(1))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("구독 권한 실패 결과는 캐시하지 않는다")
+    void subscribeDeniedResultIsNotCached() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L, 1L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
+    @DisplayName("DISCONNECT 시 세션별 구독 권한 캐시를 정리한다")
+    void disconnectClearsSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+        Message<?> disconnectMessage = disconnectMessage("session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        interceptor.preSend(disconnectMessage, messageChannel);
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
     @DisplayName("개인 알림과 에러 큐 구독은 인증 사용자면 허용한다")
     void subscribePersonalDestinations() {
         Message<?> notificationMessage = subscribeMessage("/user/queue/notifications", authenticatedPrincipal(1L));
@@ -305,10 +386,15 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     private static Message<?> subscribeMessage(String destination, Authentication authentication) {
+        return subscribeMessage(destination, authentication, null);
+    }
+
+    private static Message<?> subscribeMessage(String destination, Authentication authentication, String sessionId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setLeaveMutable(true);
         accessor.setDestination(destination);
         accessor.setUser(authentication);
+        accessor.setSessionId(sessionId);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
