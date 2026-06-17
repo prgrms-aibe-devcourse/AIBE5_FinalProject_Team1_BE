@@ -2,6 +2,8 @@ package com.team1.codedock.domain.chat.controller;
 
 import com.team1.codedock.domain.chat.dto.MentionResponse;
 import com.team1.codedock.domain.chat.service.MentionService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -21,6 +23,7 @@ import org.springframework.web.filter.CharacterEncodingFilter;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -100,6 +103,21 @@ class MentionControllerTest {
                         .header("X-User-Id", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+
+        verify(mentionService).deleteMention(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention delete API returns forbidden response when service rejects ownership")
+    void deleteMentionForbidden() throws Exception {
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN))
+                .when(mentionService).deleteMention(300L, USER_ID);
+
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L)
+                        .header("X-User-Id", "999"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
 
         verify(mentionService).deleteMention(300L, USER_ID);
     }

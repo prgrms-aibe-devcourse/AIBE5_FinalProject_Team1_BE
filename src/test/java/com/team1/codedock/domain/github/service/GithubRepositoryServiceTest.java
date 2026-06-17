@@ -37,6 +37,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -116,6 +117,7 @@ class GithubRepositoryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
 
+        verifyNoInteractions(githubApiService);
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
         verify(channelRepository, never()).save(any(Channel.class));
     }
@@ -132,12 +134,13 @@ class GithubRepositoryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
 
+        verifyNoInteractions(githubApiService);
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
         verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
-    @DisplayName("이미 연결된 GitHub 레포지토리가 있으면 중복 연결을 거부한다")
+    @DisplayName("이미 연결된 GitHub 레포지토리가 있으면 GitHub API 호출과 채널 생성을 하지 않는다")
     void connectRepositoryAlreadyConnected() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
@@ -149,12 +152,13 @@ class GithubRepositoryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED);
 
+        verify(githubApiService, never()).getRepo(any(), any(), any());
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
         verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
-    @DisplayName("GitHub 토큰이 없으면 레포지토리 연결을 거부한다")
+    @DisplayName("GitHub 토큰이 없으면 GitHub API 호출과 채널 생성을 하지 않는다")
     void connectRepositoryWithoutGithubToken() {
         User user = mock(User.class);
         when(user.getGithubAccessToken()).thenReturn(null);
@@ -168,12 +172,13 @@ class GithubRepositoryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.GITHUB_NOT_CONNECTED);
 
+        verify(githubApiService, never()).getRepo(any(), any(), any());
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
         verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
-    @DisplayName("GitHub API에서 레포지토리를 찾지 못하면 예외가 발생한다")
+    @DisplayName("GitHub API에서 레포지토리를 찾지 못하면 저장과 채널 생성을 하지 않는다")
     void connectRepositoryWithMissingGithubRepository() {
         User user = mockGithubUser();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -315,21 +320,36 @@ class GithubRepositoryServiceTest {
     }
 
     @Test
+    @DisplayName("기존 GitHub repository에 채널만 없으면 repository row 중복 없이 채널만 생성한다")
+    void createRepositoryChannelForExistingRepositoryWithoutChannel() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = repository(workspace);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+
+        ChannelListResponse response =
+                githubRepositoryService.createRepositoryChannel(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        assertThat(response.id()).isEqualTo(40L);
+        assertThat(response.githubRepositoryId()).isEqualTo(30L);
+        assertThat(response.isDeletable()).isFalse();
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository).save(any(Channel.class));
+    }
+
+    @Test
     @DisplayName("이미 repository 채널이 있으면 새로 만들지 않고 기존 채널을 재사용한다")
     void createRepositoryChannelReusesExistingChannel() {
         Workspace workspace = workspace(10L);
-        GithubRepository repository = GithubRepository.create(
-                workspace,
-                "123456",
-                "team1",
-                "codedock",
-                "team1/codedock",
-                "https://github.com/team1/codedock",
-                "CodeDock repository",
-                true,
-                "main"
-        );
-        ReflectionTestUtils.setField(repository, "id", 30L);
+        GithubRepository repository = repository(workspace);
         Channel existingChannel = Channel.createRepository(workspace, repository);
         ReflectionTestUtils.setField(existingChannel, "id", 40L);
 
@@ -344,6 +364,88 @@ class GithubRepositoryServiceTest {
         assertThat(response.id()).isEqualTo(40L);
         assertThat(response.githubRepositoryId()).isEqualTo(30L);
         assertThat(response.channelType()).isEqualTo(Channel.TYPE_REPOSITORY);
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("viewer 권한은 repository 채널 생성 시 repository와 채널을 만들지 않는다")
+    void createRepositoryChannelByViewerDoesNotCreateAnything() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() ->
+                githubRepositoryService.createRepositoryChannel(10L, 100L, linkRequest("123456", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("선택 메타데이터가 공백이면 null로 정규화한다")
+    void linkRepositoryNormalizesBlankOptionalMetadata() {
+        Workspace workspace = workspace(10L);
+        GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                " ",
+                true,
+                " "
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.empty());
+        when(githubRepositoryRepository.save(any(GithubRepository.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        GithubRepository repository = githubRepositoryService.linkRepository(10L, 100L, request);
+
+        assertThat(repository.getDescription()).isNull();
+        assertThat(repository.getDefaultBranch()).isNull();
+    }
+
+    @Test
+    @DisplayName("필수 repository 메타데이터가 공백이면 저장하지 않는다")
+    void linkRepositoryRejectsBlankRequiredMetadata() {
+        Workspace workspace = workspace(10L);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L,
+                new GithubRepositoryLinkRequest("123456", " ", "codedock", "team1/codedock",
+                        "https://github.com/team1/codedock", null, true, "main")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L,
+                new GithubRepositoryLinkRequest("123456", "team1", " ", "team1/codedock",
+                        "https://github.com/team1/codedock", null, true, "main")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L,
+                new GithubRepositoryLinkRequest("123456", "team1", "codedock", " ",
+                        "https://github.com/team1/codedock", null, true, "main")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L,
+                new GithubRepositoryLinkRequest("123456", "team1", "codedock", "team1/codedock",
+                        " ", null, true, "main")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
         verify(channelRepository, never()).save(any(Channel.class));
     }
 
@@ -461,6 +563,22 @@ class GithubRepositoryServiceTest {
                 true,
                 "main"
         );
+    }
+
+    private GithubRepository repository(Workspace workspace) {
+        GithubRepository repository = GithubRepository.create(
+                workspace,
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "main"
+        );
+        ReflectionTestUtils.setField(repository, "id", 30L);
+        return repository;
     }
 
     private Workspace workspace(Long id) {

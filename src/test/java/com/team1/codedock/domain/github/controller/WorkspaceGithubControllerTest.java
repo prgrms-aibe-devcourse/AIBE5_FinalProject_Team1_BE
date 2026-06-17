@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -266,6 +267,56 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
+    }
+
+    @Test
+    @DisplayName("Repository channel create API rejects blank required repository metadata without calling service")
+    void createRepositoryChannelWithBlankRequiredMetadata() throws Exception {
+        GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
+                "123456",
+                " ",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "main"
+        );
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
+    }
+
+    @Test
+    @DisplayName("Repository channel create API rejects oversized default branch without calling service")
+    void createRepositoryChannelWithOversizedDefaultBranch() throws Exception {
+        GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "a".repeat(256)
+        );
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
     }
 
     private GithubRepositoryLinkRequest request() {

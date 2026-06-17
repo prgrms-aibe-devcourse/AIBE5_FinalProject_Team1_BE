@@ -318,6 +318,53 @@ class MentionServiceTest {
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
     }
 
+    @Test
+    @DisplayName("인증 사용자 없이 멘션 삭제 시 UNAUTHORIZED 예외가 발생하고 삭제하지 않는다")
+    void deleteMention_withoutUserDoesNotDelete() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(anyLong(), anyLong());
+        verify(mentionRepository, never()).findByIdAndMentionedMember_Id(anyLong(), anyLong());
+        verify(mentionRepository, never()).delete(any(Mention.class));
+    }
+
+    @Test
+    @DisplayName("워크스페이스 멤버가 아닌 사용자의 멘션 삭제 시 FORBIDDEN 예외가 발생하고 삭제하지 않는다")
+    void deleteMention_byNonWorkspaceMemberDoesNotDelete() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(mentionRepository, never()).findByIdAndMentionedMember_Id(anyLong(), anyLong());
+        verify(mentionRepository, never()).delete(any(Mention.class));
+    }
+
     private static List<Mention> toList(Iterable<Mention> mentions) {
         List<Mention> result = new ArrayList<>();
         mentions.forEach(result::add);
