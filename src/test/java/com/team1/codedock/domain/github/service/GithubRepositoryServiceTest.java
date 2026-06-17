@@ -3,6 +3,8 @@ package com.team1.codedock.domain.github.service;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
+import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
+import com.team1.codedock.domain.github.dto.GithubRepositoryResponse;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
 import com.team1.codedock.domain.user.entity.User;
@@ -10,8 +12,10 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,35 +38,311 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class GithubRepositoryServiceTest {
 
-    @Mock private UserRepository userRepository;
-    @Mock private WorkspaceMemberRepository workspaceMemberRepository;
-    @Mock private GithubRepositoryRepository githubRepositoryRepository;
-    @Mock private GithubApiService githubApiService;
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private WorkspaceRepository workspaceRepository;
+
+    @Mock
+    private WorkspaceMemberRepository workspaceMemberRepository;
+
+    @Mock
+    private GithubRepositoryRepository githubRepositoryRepository;
+
+    @Mock
+    private GithubApiService githubApiService;
 
     @InjectMocks
     private GithubRepositoryService githubRepositoryService;
 
-    private GithubConnectRequest request() {
-        GithubConnectRequest req = new GithubConnectRequest();
-        req.setOwner("octocat");
-        req.setRepo("hello-world");
-        return req;
+    @BeforeEach
+    void setUp() {
+        WorkspaceMember manager = workspaceMember("admin");
+        lenient().when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(manager));
     }
 
-    private User mockUser() {
+    @Test
+    @DisplayName("GitHub OAuth 토큰으로 레포지토리를 워크스페이스에 연결한다")
+    void connectRepository() {
+        User user = mockGithubUser();
+        WorkspaceMember member = mockWorkspaceMember();
+        GithubRepository savedRepository = mockSavedRepository();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
+        when(githubApiService.getRepo("octocat", "hello-world", "github-token")).thenReturn(githubRepoResponse());
+        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenReturn(savedRepository);
+
+        GithubConnectResponse response = githubRepositoryService.connectRepository(1L, 1L, connectRequest());
+
+        assertThat(response.getId()).isEqualTo(1L);
+        assertThat(response.getOwner()).isEqualTo("octocat");
+        assertThat(response.getName()).isEqualTo("hello-world");
+        assertThat(response.getFullName()).isEqualTo("octocat/hello-world");
+        assertThat(response.getDefaultBranch()).isEqualTo("main");
+        verify(githubRepositoryRepository).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub 연결 대상 유저가 없으면 예외가 발생한다")
+    void connectRepositoryWithoutUser() {
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, connectRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub 연결 대상 워크스페이스 멤버가 없으면 예외가 발생한다")
+    void connectRepositoryWithoutWorkspaceMember() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, connectRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("이미 연결된 GitHub 레포지토리가 있으면 중복 연결을 거부한다")
+    void connectRepositoryAlreadyConnected() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(mock(GithubRepository.class)));
+
+        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, connectRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub 토큰이 없으면 레포지토리 연결을 거부한다")
+    void connectRepositoryWithoutGithubToken() {
+        User user = mock(User.class);
+        when(user.getGithubAccessToken()).thenReturn(null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, connectRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.GITHUB_NOT_CONNECTED);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub API에서 레포지토리를 찾지 못하면 예외가 발생한다")
+    void connectRepositoryWithMissingGithubRepository() {
+        User user = mockGithubUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(mock(WorkspaceMember.class)));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
+        when(githubApiService.getRepo(any(), any(), any()))
+                .thenThrow(new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, connectRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.GITHUB_REPO_NOT_FOUND);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("관리자가 GitHub repository 링크를 새로 생성한다")
+    void linkRepositoryCreatesNewRepository() {
+        Workspace workspace = workspace(10L);
+        GithubRepositoryLinkRequest request = linkRequest(" 123456 ", " team1 ", " codedock ");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.empty());
+        when(githubRepositoryRepository.save(any(GithubRepository.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        GithubRepository repository = githubRepositoryService.linkRepository(10L, 100L, request);
+
+        assertThat(repository.getWorkspace()).isEqualTo(workspace);
+        assertThat(repository.getGithubRepoId()).isEqualTo("123456");
+        assertThat(repository.getOwner()).isEqualTo("team1");
+        assertThat(repository.getName()).isEqualTo("codedock");
+        assertThat(repository.getFullName()).isEqualTo("team1/codedock");
+        assertThat(repository.getUrl()).isEqualTo("https://github.com/team1/codedock");
+        assertThat(repository.isPrivate()).isTrue();
+        assertThat(repository.getDefaultBranch()).isEqualTo("main");
+        verify(githubRepositoryRepository).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("이미 연결된 GitHub repository는 중복 row를 만들지 않고 메타데이터만 갱신한다")
+    void linkRepositoryUpdatesExistingRepository() {
+        Workspace workspace = workspace(10L);
+        GithubRepository existing = GithubRepository.create(
+                workspace,
+                "123456",
+                "old-owner",
+                "old-name",
+                "old-owner/old-name",
+                "https://github.com/old-owner/old-name",
+                "Old description",
+                false,
+                "master"
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(existing));
+
+        GithubRepository repository = githubRepositoryService.linkRepository(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        assertThat(repository).isEqualTo(existing);
+        assertThat(repository.getOwner()).isEqualTo("team1");
+        assertThat(repository.getName()).isEqualTo("codedock");
+        assertThat(repository.getFullName()).isEqualTo("team1/codedock");
+        assertThat(repository.getUrl()).isEqualTo("https://github.com/team1/codedock");
+        assertThat(repository.getDescription()).isEqualTo("CodeDock repository");
+        assertThat(repository.isPrivate()).isTrue();
+        assertThat(repository.getDefaultBranch()).isEqualTo("main");
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub repository 링크 응답 DTO를 반환한다")
+    void linkRepositoryResponse() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = GithubRepository.create(
+                workspace,
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "main"
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(repository));
+
+        GithubRepositoryResponse response =
+                githubRepositoryService.linkRepositoryResponse(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        assertThat(response.workspaceId()).isEqualTo(10L);
+        assertThat(response.githubRepoId()).isEqualTo("123456");
+        assertThat(response.owner()).isEqualTo("team1");
+        assertThat(response.name()).isEqualTo("codedock");
+    }
+
+    @Test
+    @DisplayName("인증 사용자가 없으면 GitHub repository 링크를 거부한다")
+    void linkRepositoryWithoutUser() {
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, null, linkRequest("123456", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("워크스페이스 멤버가 아니면 GitHub repository 링크를 거부한다")
+    void linkRepositoryByNonWorkspaceMember() {
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L, linkRequest("123456", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("viewer 권한은 GitHub repository 링크를 거부한다")
+    void linkRepositoryByViewer() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L, linkRequest("123456", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("워크스페이스가 없으면 GitHub repository 링크를 거부한다")
+    void linkRepositoryWithMissingWorkspace() {
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L, linkRequest("123456", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("GitHub repository id가 비어 있으면 링크를 거부한다")
+    void linkRepositoryWithBlankGithubRepoId() {
+        Workspace workspace = workspace(10L);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+
+        assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, 100L, linkRequest(" ", "team1", "codedock")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+    }
+
+    private GithubConnectRequest connectRequest() {
+        GithubConnectRequest request = new GithubConnectRequest();
+        request.setOwner("octocat");
+        request.setRepo("hello-world");
+        return request;
+    }
+
+    private User mockGithubUser() {
         User user = mock(User.class);
         when(user.getGithubAccessToken()).thenReturn("github-token");
         return user;
     }
 
-    private WorkspaceMember mockMember() {
+    private WorkspaceMember mockWorkspaceMember() {
         Workspace workspace = mock(Workspace.class);
         WorkspaceMember member = mock(WorkspaceMember.class);
         when(member.getWorkspace()).thenReturn(workspace);
         return member;
     }
 
-    private GithubRepoResponse mockRepoInfo() {
+    private GithubRepoResponse githubRepoResponse() {
         return GithubRepoResponse.builder()
                 .id(12345L)
                 .owner("octocat")
@@ -73,7 +354,7 @@ class GithubRepositoryServiceTest {
                 .build();
     }
 
-    private GithubRepository mockSavedRepo() {
+    private GithubRepository mockSavedRepository() {
         GithubRepository saved = mock(GithubRepository.class);
         when(saved.getId()).thenReturn(1L);
         when(saved.getOwner()).thenReturn("octocat");
@@ -85,101 +366,28 @@ class GithubRepositoryServiceTest {
         return saved;
     }
 
-    // ── connectRepository() ───────────────────────────────────
-
-    @Test
-    @DisplayName("정상적으로 GitHub 레포지토리를 워크스페이스에 연결하고 응답을 반환한다")
-    void connectRepository_성공() {
-        User user = mockUser();
-        WorkspaceMember member = mockMember();
-
-        GithubRepository savedRepo = mockSavedRepo();
-
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
-        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
-        when(githubApiService.getRepo("octocat", "hello-world", "github-token")).thenReturn(mockRepoInfo());
-        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenReturn(savedRepo);
-
-        GithubConnectResponse response = githubRepositoryService.connectRepository(1L, 1L, request());
-
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getOwner()).isEqualTo("octocat");
-        assertThat(response.getName()).isEqualTo("hello-world");
-        assertThat(response.getFullName()).isEqualTo("octocat/hello-world");
-        assertThat(response.getDefaultBranch()).isEqualTo("main");
-        verify(githubRepositoryRepository).save(any(GithubRepository.class));
+    private GithubRepositoryLinkRequest linkRequest(String githubRepoId, String owner, String name) {
+        return new GithubRepositoryLinkRequest(
+                githubRepoId,
+                owner,
+                name,
+                owner.trim() + "/" + name.trim(),
+                "https://github.com/" + owner.trim() + "/" + name.trim(),
+                "CodeDock repository",
+                true,
+                "main"
+        );
     }
 
-    @Test
-    @DisplayName("유저를 찾을 수 없으면 예외가 발생한다")
-    void connectRepository_유저_없으면_예외() {
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, request()))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.USER_NOT_FOUND.getMessage());
-
-        verify(githubRepositoryRepository, never()).save(any());
+    private Workspace workspace(Long id) {
+        Workspace workspace = mock(Workspace.class);
+        lenient().when(workspace.getId()).thenReturn(id);
+        return workspace;
     }
 
-    @Test
-    @DisplayName("워크스페이스 멤버를 찾을 수 없으면 예외가 발생한다")
-    void connectRepository_멤버_없으면_예외() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
-        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, request()))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND.getMessage());
-
-        verify(githubRepositoryRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("이미 연결된 레포지토리가 있으면 예외가 발생한다")
-    void connectRepository_이미_연결된_레포_있으면_예외() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mock(User.class)));
-        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(mock(WorkspaceMember.class)));
-        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(mock(GithubRepository.class)));
-
-        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, request()))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED.getMessage());
-
-        verify(githubRepositoryRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("GitHub 토큰이 없으면 예외가 발생한다")
-    void connectRepository_GitHub_토큰_없으면_예외() {
-        User user = mock(User.class);
-        when(user.getGithubAccessToken()).thenReturn(null);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(mock(WorkspaceMember.class)));
-        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
-
-        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, request()))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.GITHUB_NOT_CONNECTED.getMessage());
-
-        verify(githubRepositoryRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("GitHub 레포지토리를 찾을 수 없으면 예외가 발생한다")
-    void connectRepository_GitHub_레포_없으면_예외() {
-        User user = mockUser();
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(mock(WorkspaceMember.class)));
-        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
-        when(githubApiService.getRepo(any(), any(), any()))
-                .thenThrow(new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
-
-        assertThatThrownBy(() -> githubRepositoryService.connectRepository(1L, 1L, request()))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.GITHUB_REPO_NOT_FOUND.getMessage());
-
-        verify(githubRepositoryRepository, never()).save(any());
+    private WorkspaceMember workspaceMember(String authority) {
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        lenient().when(member.getAuthority()).thenReturn(authority);
+        return member;
     }
 }
