@@ -228,7 +228,40 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-`targetType`은 `thread` 또는 `thread_reply`다. Oracle 문자셋 이슈를 피하려면 raw emoji보다 `like`, `smile` 같은 key를 우선 사용한다.
+`targetType`은 `thread` 또는 `thread_reply`다.
+
+`emoji` 필드는 실제 이모지가 아니라 API/DB에서 사용하는 reaction key다. Oracle 문자셋 이슈를 피하기 위해 요청/응답에는 key만 사용하고, 프론트는 화면 표시 시에만 key를 실제 이모지로 매핑한다.
+
+```ts
+const REACTION_EMOJI_MAP = {
+  like: "👍",
+  dislike: "👎",
+  heart: "❤️",
+  laugh: "😂",
+  smile: "😄",
+  surprised: "😮",
+  sad: "😢",
+  cry: "😭",
+  angry: "😡",
+  thinking: "🤔",
+  clap: "👏",
+  pray: "🙏",
+  eyes: "👀",
+  fire: "🔥",
+  rocket: "🚀",
+  party: "🎉",
+  check: "✅",
+  cross: "❌",
+  star: "⭐",
+  bulb: "💡",
+  bug: "🐛",
+  fix: "🔧",
+  memo: "📝",
+  coffee: "☕",
+} as const;
+```
+
+백엔드는 호환성을 위해 raw emoji가 들어와도 reaction key로 정규화해 응답한다. 허용되지 않은 값은 `INVALID_INPUT`으로 거부된다.
 
 ```ts
 type ReactionUpdatedPayload = {

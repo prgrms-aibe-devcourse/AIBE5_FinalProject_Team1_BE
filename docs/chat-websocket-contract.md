@@ -186,7 +186,38 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-`targetType`은 `thread` 또는 `thread_reply`만 허용한다. Oracle 문자셋 호환성을 위해 프론트는 raw emoji보다 `like`, `smile` 같은 reaction key 사용을 우선한다.
+`targetType`은 `thread` 또는 `thread_reply`만 허용한다.
+
+`emoji` 필드는 실제 이모지가 아니라 API/DB에서 사용하는 reaction key다. Oracle 문자셋 호환성을 위해 DB에는 raw emoji를 저장하지 않는다. 프론트는 화면 표시 시에만 reaction key를 실제 이모지로 매핑한다.
+
+| Reaction key | Display |
+| --- | --- |
+| `like` | 👍 |
+| `dislike` | 👎 |
+| `heart` | ❤️ |
+| `laugh` | 😂 |
+| `smile` | 😄 |
+| `surprised` | 😮 |
+| `sad` | 😢 |
+| `cry` | 😭 |
+| `angry` | 😡 |
+| `thinking` | 🤔 |
+| `clap` | 👏 |
+| `pray` | 🙏 |
+| `eyes` | 👀 |
+| `fire` | 🔥 |
+| `rocket` | 🚀 |
+| `party` | 🎉 |
+| `check` | ✅ |
+| `cross` | ❌ |
+| `star` | ⭐ |
+| `bulb` | 💡 |
+| `bug` | 🐛 |
+| `fix` | 🔧 |
+| `memo` | 📝 |
+| `coffee` | ☕ |
+
+백엔드는 호환성을 위해 raw emoji가 들어와도 위 reaction key로 정규화해서 응답한다. 허용되지 않은 값은 `INVALID_INPUT`으로 거부한다.
 
 ```json
 {
