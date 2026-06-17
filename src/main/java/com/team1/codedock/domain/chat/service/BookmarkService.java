@@ -27,13 +27,13 @@ public class BookmarkService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final BookmarkRepository bookmarkRepository;
 
-    // 이미 북마크가 있으면 삭제하고, 없으면 생성함
     @Transactional
     public BookmarkToggleResponse toggleMessageBookmark(Long channelId, Long messageId, Long userId) {
         Channel channel = findChannel(channelId);
         WorkspaceMember member = findActiveWorkspaceMember(channel.getWorkspace().getId(), userId);
         Thread message = findBookmarkableMessage(channel, messageId);
 
+        // 이미 북마크가 있으면 삭제하고, 없으면 생성함
         boolean bookmarked = bookmarkRepository
                 .findByWorkspaceMember_IdAndThread_Id(member.getId(), message.getId())
                 .map(bookmark -> {
@@ -48,9 +48,9 @@ public class BookmarkService {
         return BookmarkToggleResponse.of(channelId, messageId, member.getId(), bookmarked);
     }
 
-    // 현재 워크스페이스 멤버가 저장한 북마크만 조회함
     @Transactional(readOnly = true)
     public List<BookmarkResponse> getMyBookmarks(Long workspaceId, Long userId) {
+        // 현재 워크스페이스 멤버가 저장한 북마크만 조회함
         WorkspaceMember member = findActiveWorkspaceMember(workspaceId, userId);
 
         return bookmarkRepository.findAllByWorkspaceMember_IdOrderByCreatedAtDesc(member.getId()).stream()
@@ -63,7 +63,6 @@ public class BookmarkService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_NOT_FOUND));
     }
 
-    // 인증 사용자 기준으로 활성 워크스페이스 멤버 확인함
     private WorkspaceMember findActiveWorkspaceMember(Long workspaceId, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
@@ -88,8 +87,8 @@ public class BookmarkService {
         }
     }
 
-    // 현재 bookmarks 스키마는 일반 채널 메시지(thread) 북마크만 지원함
     private void validateUserMessage(Thread message) {
+        // 현재 bookmarks 스키마는 일반 채널 메시지(thread) 북마크만 지원함
         if (!Thread.TYPE_USER_MESSAGE.equals(message.getThreadType())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "사용자 메시지만 북마크할 수 있습니다.");
         }

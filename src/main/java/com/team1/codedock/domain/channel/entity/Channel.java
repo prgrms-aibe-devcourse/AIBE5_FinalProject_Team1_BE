@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 public class Channel extends BaseEntity {
 
     public static final String TYPE_GENERAL = "general";
+    public static final String TYPE_REPOSITORY = "repository";
     public static final String TYPE_CUSTOM = "custom";
     public static final String DEFAULT_GENERAL_NAME = "general";
 
@@ -64,6 +65,17 @@ public class Channel extends BaseEntity {
         channel.channelType = TYPE_CUSTOM;
         channel.isDeletable = true;
         channel.description = description;
+        return channel;
+    }
+
+    public static Channel createRepository(Workspace workspace, GithubRepository githubRepository) {
+        Channel channel = new Channel();
+        channel.workspace = workspace;
+        channel.githubRepository = githubRepository;
+        channel.name = githubRepository.getName();
+        channel.channelType = TYPE_REPOSITORY;
+        channel.isDeletable = false;
+        channel.description = githubRepository.getDescription();
         return channel;
     }
 

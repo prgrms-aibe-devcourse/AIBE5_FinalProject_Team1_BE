@@ -15,7 +15,10 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
     @Query("SELECT COUNT(t) FROM Thread t WHERE t.channel.id = :channelId")
     long countByChannelId(@Param("channelId") Long channelId);
 
-    // 채널 읽음 처리 기준으로 삼을 최신 사용자 메시지 조회함
+    @Query("SELECT t.channel.workspace.id FROM Thread t WHERE t.id = :threadId")
+    Optional<Long> findWorkspaceIdById(@Param("threadId") Long threadId);
+
+    // 채널 읽음 처리 기준으로 읽을 최신 사용자 메시지 조회함
     Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
 
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
@@ -43,7 +46,7 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             @Param("threadType") String threadType
     );
 
-    // 워크스페이스 멤버 기준으로 채널별 안 읽은 메시지 수 집계함
+    // 워크스페이스 멤버 기준으로 채널별 안 읽은 사용자 메시지 수 집계함
     // 읽음 상태가 없으면 해당 채널의 모든 사용자 메시지를 unread로 봄
     @Query("""
             select t.channel.id as channelId, count(t) as messageCount

@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
@@ -30,6 +31,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,13 +49,13 @@ class MentionServiceTest {
     private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
-    private ChatNotificationService chatNotificationService;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private MentionService mentionService;
 
     @Test
-    @DisplayName("Creates mentions for matching workspace members in a channel message")
+    @DisplayName("채널 메시지 멘션을 저장하고 커밋 후 알림 이벤트를 발행한다")
     void createMentionsForThread() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -78,17 +82,19 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).isRead()).isFalse();
         assertThat(savedMentions.get(1).getMentionedMember()).isEqualTo(bob);
 
-        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
-                ArgumentCaptor.forClass(ChatNotificationResponse.class);
-        verify(chatNotificationService, times(2))
-                .sendNotification(userKeyCaptor.capture(), notificationCaptor.capture());
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(eventCaptor.capture());
 
-        assertThat(userKeyCaptor.getAllValues()).containsExactly("alice@test.com", "bob@test.com");
-        assertThat(notificationCaptor.getAllValues())
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::userDestinationKey)
+                .containsExactly("alice@test.com", "bob@test.com");
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::notification)
                 .extracting(ChatNotificationResponse::mentionedMemberId)
                 .containsExactly(21L, 22L);
-        assertThat(notificationCaptor.getAllValues())
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::notification)
                 .allSatisfy(notification -> {
                     assertThat(notification.workspaceId()).isEqualTo(10L);
                     assertThat(notification.channelId()).isEqualTo(1L);
@@ -99,7 +105,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Parses Korean mentions while preserving existing mention formats")
+    @DisplayName("한글 멘션과 점/하이픈이 포함된 기존 멘션 형식을 함께 파싱한다")
     void createMentionsForThreadWithKoreanMentionNames() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -130,15 +136,16 @@ class MentionServiceTest {
                 .extracting(Mention::getMentionedMember)
                 .containsExactly(koreanMember, dottedMember, hyphenMember);
 
-        ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(chatNotificationService, times(3))
-                .sendNotification(userKeyCaptor.capture(), org.mockito.ArgumentMatchers.any());
-        assertThat(userKeyCaptor.getAllValues())
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher, times(3)).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getAllValues())
+                .extracting(MentionNotificationEvent::userDestinationKey)
                 .containsExactly("kim@test.com", "user.name@test.com", "dev-1@test.com");
     }
 
     @Test
-    @DisplayName("Does not query or save when content has no mention token")
+    @DisplayName("멘션 토큰이 없으면 조회와 저장을 생략한다")
     void createMentionsForThreadWithoutMentionToken() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -147,19 +154,13 @@ class MentionServiceTest {
 
         mentionService.createMentionsForThread(thread, sender, thread.getContent());
 
-        verify(workspaceMemberRepository, never()).findActiveMentionTargets(
-                org.mockito.ArgumentMatchers.anyLong(),
-                org.mockito.ArgumentMatchers.anyList()
-        );
-        verify(mentionRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
-        verify(chatNotificationService, never()).sendNotification(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any()
-        );
+        verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
+        verify(mentionRepository, never()).saveAll(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
-    @DisplayName("Creates mentions for matching workspace members in a thread reply")
+    @DisplayName("답글 멘션을 저장하고 커밋 후 답글 알림 이벤트를 발행한다")
     void createMentionsForThreadReply() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -182,22 +183,22 @@ class MentionServiceTest {
         assertThat(savedMentions.get(0).getThreadReply()).isEqualTo(reply);
         assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
 
-        ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
-                ArgumentCaptor.forClass(ChatNotificationResponse.class);
-        verify(chatNotificationService)
-                .sendNotification(org.mockito.ArgumentMatchers.eq("alice@test.com"), notificationCaptor.capture());
+        ArgumentCaptor<MentionNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(MentionNotificationEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
 
-        ChatNotificationResponse notification = notificationCaptor.getValue();
-        assertThat(notification.workspaceId()).isEqualTo(10L);
-        assertThat(notification.channelId()).isEqualTo(1L);
-        assertThat(notification.threadId()).isEqualTo(100L);
-        assertThat(notification.threadReplyId()).isEqualTo(200L);
-        assertThat(notification.mentionedMemberId()).isEqualTo(21L);
-        assertThat(notification.message()).isEqualTo("새 멘션 답글이 도착했습니다.");
+        MentionNotificationEvent event = eventCaptor.getValue();
+        assertThat(event.userDestinationKey()).isEqualTo("alice@test.com");
+        assertThat(event.notification().workspaceId()).isEqualTo(10L);
+        assertThat(event.notification().channelId()).isEqualTo(1L);
+        assertThat(event.notification().threadId()).isEqualTo(100L);
+        assertThat(event.notification().threadReplyId()).isEqualTo(200L);
+        assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
+        assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
     }
 
     @Test
-    @DisplayName("Returns my mentions in workspace")
+    @DisplayName("내 워크스페이스 멘션 목록을 조회한다")
     void getMyMentions() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -225,7 +226,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Marks my mention as read")
+    @DisplayName("내 멘션을 읽음 처리한다")
     void markMentionAsRead() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -248,7 +249,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Rejects mention list without user")
+    @DisplayName("사용자 없이 멘션 목록을 조회하면 거부한다")
     void getMyMentionsWithoutUser() {
         assertThatThrownBy(() -> mentionService.getMyMentions(10L, null))
                 .isInstanceOf(BusinessException.class)

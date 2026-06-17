@@ -1,5 +1,8 @@
 package com.team1.codedock.global.security;
 
+import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +21,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +39,15 @@ class WebSocketAuthChannelInterceptorTest {
 
     @Mock
     private CustomUserDetailsService userDetailsService;
+
+    @Mock
+    private ChannelRepository channelRepository;
+
+    @Mock
+    private ThreadRepository threadRepository;
+
+    @Mock
+    private WorkspaceMemberRepository workspaceMemberRepository;
 
     @Mock
     private CustomUserDetails userDetails;
@@ -71,14 +84,159 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
-    @DisplayName("CONNECT가 아니면 JWT 검증을 하지 않는다")
-    void preSendWithNonConnectMessage() {
-        Message<?> message = stompMessage(StompCommand.SUBSCRIBE, null);
+    @DisplayName("SEND 메시지는 인증 사용자 기준으로 rate limit 안에서 통과한다")
+    void preSendWithSendMessageWithinRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        verifyNoInteractions(jwtProvider, userDetailsService, channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("SEND 메시지가 세션별 허용량을 초과하면 거부한다")
+    void preSendWithExceededSendRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(message, messageChannel);
+        }
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    @Test
+    @DisplayName("DISCONNECT 시 세션별 SEND rate limit 상태를 정리한다")
+    void disconnectClearsSendRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> sendMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+        Message<?> disconnectMessage = disconnectMessage("session-1");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(sendMessage, messageChannel);
+        }
+        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
+                .isInstanceOf(AccessDeniedException.class);
+
+        interceptor.preSend(disconnectMessage, messageChannel);
+
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
+    }
+
+    @Test
+    @DisplayName("인증 Principal이 없는 SEND 메시지는 거부한다")
+    void preSendWithoutPrincipal() {
+        Message<?> message = sendMessage("/app/channels/10/messages", null, "session-1");
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("채널 이벤트 구독은 해당 워크스페이스 활성 멤버만 허용한다")
+    void subscribeChannelEventsWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
 
         Message<?> result = interceptor.preSend(message, messageChannel);
 
         assertThat(result).isSameAs(message);
-        verifyNoInteractions(jwtProvider, userDetailsService);
+    }
+
+    @Test
+    @DisplayName("채널 typing 구독도 해당 워크스페이스 활성 멤버만 허용한다")
+    void subscribeChannelTypingWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/channels/10/typing", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+    }
+
+    @Test
+    @DisplayName("스레드 이벤트 구독은 스레드가 속한 워크스페이스 활성 멤버만 허용한다")
+    void subscribeThreadEventsWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/threads/20/events", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+    }
+
+    @Test
+    @DisplayName("개인 알림과 에러 큐 구독은 인증 사용자면 허용한다")
+    void subscribePersonalDestinations() {
+        Message<?> notificationMessage = subscribeMessage("/user/queue/notifications", authenticatedPrincipal(1L));
+        Message<?> errorMessage = subscribeMessage("/user/queue/errors", authenticatedPrincipal(1L));
+
+        assertThat(interceptor.preSend(notificationMessage, messageChannel)).isSameAs(notificationMessage);
+        assertThat(interceptor.preSend(errorMessage, messageChannel)).isSameAs(errorMessage);
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("비소속 워크스페이스 채널 구독은 거부한다")
+    void subscribeChannelEventsWithoutWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 채널 구독은 거부한다")
+    void subscribeMissingChannel() {
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 topic 구독은 거부한다")
+    void subscribeUnknownDestination() {
+        Message<?> message = subscribeMessage("/topic/unknown", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+    }
+
+    @Test
+    @DisplayName("인증 Principal이 없는 구독은 거부한다")
+    void subscribeWithoutPrincipal() {
+        Message<?> message = subscribeMessage("/topic/channels/10/events", null);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
     }
 
     @Test
@@ -130,7 +288,7 @@ class WebSocketAuthChannelInterceptorTest {
 
         when(jwtProvider.validateAccessToken(token)).thenReturn(true);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
-        when(userDetailsService.loadUserById(userId)).thenThrow(new IllegalArgumentException("존재하지 않는 유저입니다."));
+        when(userDetailsService.loadUserById(userId)).thenThrow(new IllegalArgumentException("unknown user"));
 
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
@@ -144,5 +302,34 @@ class WebSocketAuthChannelInterceptorTest {
             accessor.setNativeHeader("Authorization", authorization);
         }
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> subscribeMessage(String destination, Authentication authentication) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination(destination);
+        accessor.setUser(authentication);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> sendMessage(String destination, Authentication authentication, String sessionId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setLeaveMutable(true);
+        accessor.setDestination(destination);
+        accessor.setUser(authentication);
+        accessor.setSessionId(sessionId);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> disconnectMessage(String sessionId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        accessor.setLeaveMutable(true);
+        accessor.setSessionId(sessionId);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Authentication authenticatedPrincipal(Long userId) {
+        when(userDetails.getUserId()).thenReturn(userId);
+        return new UsernamePasswordAuthenticationToken(userDetails, null);
     }
 }

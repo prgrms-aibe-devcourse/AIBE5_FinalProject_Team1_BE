@@ -12,11 +12,14 @@ import com.team1.codedock.domain.chat.service.ChatMessageService;
 import com.team1.codedock.domain.chat.service.ThreadReplyService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -37,7 +40,7 @@ public class ChatWebSocketController {
             Principal principal,
             @Valid ChannelMessageCreateRequest request
     ) {
-        // CONNECT 인증에서 세팅한 Principal 기준으로 메시지 작성자 식별함
+        // CONNECT 인증에서 설정된 Principal 기준으로 메시지 작성자 판별함
         Long userId = getCurrentUserId(principal);
         ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
@@ -73,7 +76,7 @@ public class ChatWebSocketController {
             Principal principal,
             @Valid TypingEventRequest request
     ) {
-        // typing 이벤트도 서버에서 현재 멤버를 찾아 payload에 담음
+        // typing 이벤트도 서버에서 현재 멤버를 찾아 payload를 만듦
         Long userId = getCurrentUserId(principal);
         TypingEventResponse response = chatMessageService.createTypingEventResponse(channelId, userId, request);
 
@@ -83,8 +86,20 @@ public class ChatWebSocketController {
         );
     }
 
+    @MessageExceptionHandler(BusinessException.class)
+    @SendToUser(value = "/queue/errors", broadcast = false)
+    public ApiResponse<Void> handleBusinessException(BusinessException e) {
+        return ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage());
+    }
+
+    @MessageExceptionHandler(org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException.class)
+    @SendToUser(value = "/queue/errors", broadcast = false)
+    public ApiResponse<Void> handleValidationException() {
+        return ApiResponse.fail(ErrorCode.INVALID_INPUT.getCode(), "WebSocket 요청 payload가 올바르지 않습니다.");
+    }
+
     private Long getCurrentUserId(Principal principal) {
-        // WebSocketAuthChannelInterceptor가 Authentication Principal을 심어둔 상태여야 함
+        // WebSocketAuthChannelInterceptor가 Authentication Principal을 넣은 상태여야 함
         if (principal instanceof Authentication authentication
                 && authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
             return userDetails.getUserId();

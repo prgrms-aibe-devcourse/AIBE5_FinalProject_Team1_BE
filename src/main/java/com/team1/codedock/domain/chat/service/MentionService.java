@@ -5,14 +5,15 @@ import com.team1.codedock.domain.chat.dto.MentionResponse;
 import com.team1.codedock.domain.chat.entity.Mention;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
-import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,10 +29,12 @@ import java.util.regex.Pattern;
 public class MentionService {
 
     private static final Pattern MENTION_PATTERN = Pattern.compile("@([\\p{L}\\p{N}._-]{1,100})");
+    private static final String THREAD_MENTION_MESSAGE = "새 멘션이 도착했습니다.";
+    private static final String THREAD_REPLY_MENTION_MESSAGE = "새 멘션 답글이 도착했습니다.";
 
     private final MentionRepository mentionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
-    private final ChatNotificationService chatNotificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void createMentionsForThread(Thread thread, WorkspaceMember mentionedByMember, String content) {
@@ -50,7 +53,7 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        sendThreadMentionNotifications(workspace, thread, mentionedMembers);
+        publishThreadMentionNotifications(workspace, thread, mentionedMembers);
     }
 
     @Transactional
@@ -70,15 +73,15 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        sendThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
+        publishThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
     }
 
-    private void sendThreadMentionNotifications(
+    private void publishThreadMentionNotifications(
             Workspace workspace,
             Thread thread,
             List<WorkspaceMember> mentionedMembers
     ) {
-        mentionedMembers.forEach(mentionedMember -> sendMentionNotification(
+        mentionedMembers.forEach(mentionedMember -> publishMentionNotification(
                 mentionedMember,
                 ChatNotificationResponse.of(
                         workspace.getId(),
@@ -86,19 +89,19 @@ public class MentionService {
                         thread.getId(),
                         null,
                         mentionedMember.getId(),
-                        "새 멘션이 도착했습니다."
+                        THREAD_MENTION_MESSAGE
                 )
         ));
     }
 
-    private void sendThreadReplyMentionNotifications(
+    private void publishThreadReplyMentionNotifications(
             Workspace workspace,
             ThreadReply threadReply,
             List<WorkspaceMember> mentionedMembers
     ) {
         Thread thread = threadReply.getThread();
 
-        mentionedMembers.forEach(mentionedMember -> sendMentionNotification(
+        mentionedMembers.forEach(mentionedMember -> publishMentionNotification(
                 mentionedMember,
                 ChatNotificationResponse.of(
                         workspace.getId(),
@@ -106,19 +109,19 @@ public class MentionService {
                         thread.getId(),
                         threadReply.getId(),
                         mentionedMember.getId(),
-                        "새 멘션 답글이 도착했습니다."
+                        THREAD_REPLY_MENTION_MESSAGE
                 )
         ));
     }
 
-    private void sendMentionNotification(
+    private void publishMentionNotification(
             WorkspaceMember mentionedMember,
             ChatNotificationResponse notification
     ) {
         User user = mentionedMember.getUser();
 
-        // 현재 WebSocket Principal 이름은 CustomUserDetails#getUsername()과 맞춰 이메일을 사용함
-        chatNotificationService.sendNotification(user.getEmail(), notification);
+        // 트랜잭션이 커밋된 뒤 실제 WebSocket 알림을 보내도록 이벤트만 발행함
+        eventPublisher.publishEvent(new MentionNotificationEvent(user.getEmail(), notification));
     }
 
     @Transactional(readOnly = true)
