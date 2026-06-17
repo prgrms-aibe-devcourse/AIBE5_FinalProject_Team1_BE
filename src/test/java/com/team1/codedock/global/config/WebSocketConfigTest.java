@@ -7,8 +7,10 @@ import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -41,6 +43,7 @@ class WebSocketConfigTest {
             assertThat(executor.getMaxPoolSize()).isEqualTo(16);
             assertThat(executor.getThreadNamePrefix()).isEqualTo("ws-inbound-");
             assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity()).isEqualTo(200);
+            assertThat(executor.getThreadPoolExecutor().getKeepAliveTime(TimeUnit.SECONDS)).isEqualTo(60);
         } finally {
             executor.shutdown();
         }
@@ -56,9 +59,22 @@ class WebSocketConfigTest {
             assertThat(executor.getMaxPoolSize()).isEqualTo(8);
             assertThat(executor.getThreadNamePrefix()).isEqualTo("ws-outbound-");
             assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity()).isEqualTo(200);
+            assertThat(executor.getThreadPoolExecutor().getKeepAliveTime(TimeUnit.SECONDS)).isEqualTo(60);
         } finally {
             executor.shutdown();
         }
+    }
+
+    @Test
+    @DisplayName("WebSocket transport 제한값을 명시적으로 설정한다")
+    void configureWebSocketTransport() {
+        TestWebSocketTransportRegistration registration = new TestWebSocketTransportRegistration();
+
+        webSocketConfig.configureWebSocketTransport(registration);
+
+        assertThat(registration.messageSizeLimit()).isEqualTo(64 * 1024);
+        assertThat(registration.sendBufferSizeLimit()).isEqualTo(512 * 1024);
+        assertThat(registration.sendTimeLimit()).isEqualTo(15_000);
     }
 
     @Test
@@ -91,6 +107,21 @@ class WebSocketConfigTest {
 
         List<ChannelInterceptor> configuredInterceptors() {
             return getInterceptors();
+        }
+    }
+
+    private static class TestWebSocketTransportRegistration extends WebSocketTransportRegistration {
+
+        Integer messageSizeLimit() {
+            return getMessageSizeLimit();
+        }
+
+        Integer sendBufferSizeLimit() {
+            return getSendBufferSizeLimit();
+        }
+
+        Integer sendTimeLimit() {
+            return getSendTimeLimit();
         }
     }
 }

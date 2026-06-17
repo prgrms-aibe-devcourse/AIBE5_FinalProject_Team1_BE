@@ -69,6 +69,28 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("STOMP 헤더가 아닌 메시지는 인증/인가 처리 없이 그대로 통과한다")
+    void preSendWithoutStompAccessorPassesThrough() {
+        Message<?> message = MessageBuilder.withPayload("plain-message").build();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+        verifyNoInteractions(jwtProvider, userDetailsService, channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("UNSUBSCRIBE 같은 비대상 command는 인증/인가 처리 없이 그대로 통과한다")
+    void preSendWithUnsubscribeCommandPassesThrough() {
+        Message<?> message = stompCommandMessage(StompCommand.UNSUBSCRIBE);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+        verifyNoInteractions(jwtProvider, userDetailsService, channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
     @DisplayName("CONNECT 요청에 유효한 JWT가 있으면 Principal을 설정한다")
     void preSendWithValidConnectToken() {
         String token = "valid-access-token";
@@ -114,6 +136,34 @@ class WebSocketAuthChannelInterceptorTest {
         verify(jwtProvider).validateAccessToken(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
+    @DisplayName("CONNECT 요청에 대소문자 Authorization 헤더가 모두 있으면 표준 Authorization 헤더를 우선한다")
+    void preSendPrefersStandardAuthorizationHeader() {
+        String standardToken = "standard-token";
+        String lowercaseToken = "lowercase-token";
+        Long userId = 1L;
+        Message<?> message = stompMessageWithHeaders(
+                StompCommand.CONNECT,
+                List.of(
+                        new NativeHeader("Authorization", "Bearer " + standardToken),
+                        new NativeHeader("authorization", "Bearer " + lowercaseToken)
+                )
+        );
+
+        when(jwtProvider.validateAccessToken(standardToken)).thenReturn(true);
+        when(jwtProvider.getUserId(standardToken)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(standardToken);
+        verify(jwtProvider, never()).validateAccessToken(lowercaseToken);
     }
 
     @Test
@@ -281,6 +331,39 @@ class WebSocketAuthChannelInterceptorTest {
         Message<?> result = interceptor.preSend(message, messageChannel);
 
         assertThat(result).isSameAs(message);
+    }
+
+    @Test
+    @DisplayName("스레드 이벤트 구독 대상 스레드가 없으면 거부한다")
+    void subscribeMissingThread() {
+        Message<?> message = subscribeMessage("/topic/threads/20/events", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verify(threadRepository).findWorkspaceIdById(20L);
+        verifyNoInteractions(channelRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("비소속 워크스페이스 스레드 이벤트 구독은 거부한다")
+    void subscribeThreadEventsWithoutWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/threads/20/events", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+
+        verify(threadRepository).findWorkspaceIdById(20L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository);
     }
 
     @Test
@@ -583,6 +666,39 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("존재하지 않는 채널 typing 구독은 거부한다")
+    void subscribeMissingChannelTyping() {
+        Message<?> message = subscribeMessage("/topic/channels/10/typing", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verify(channelRepository).findWorkspaceIdById(10L);
+        verifyNoInteractions(threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("비소속 워크스페이스 채널 typing 구독은 거부한다")
+    void subscribeChannelTypingWithoutWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/channels/10/typing", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+
+        verify(channelRepository).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(threadRepository);
+    }
+
+    @Test
     @DisplayName("허용되지 않은 topic 구독은 거부한다")
     void subscribeUnknownDestination() {
         Message<?> message = subscribeMessage("/topic/unknown", authenticatedPrincipal(1L));
@@ -683,6 +799,19 @@ class WebSocketAuthChannelInterceptorTest {
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
+    private static Message<?> stompMessageWithHeaders(StompCommand command, List<NativeHeader> nativeHeaders) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
+        accessor.setLeaveMutable(true);
+        nativeHeaders.forEach(header -> accessor.setNativeHeader(header.name(), header.value()));
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> stompCommandMessage(StompCommand command) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
+        accessor.setLeaveMutable(true);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
     private static Message<?> subscribeMessage(String destination, Authentication authentication) {
         return subscribeMessage(destination, authentication, null);
     }
@@ -732,6 +861,9 @@ class WebSocketAuthChannelInterceptorTest {
                 workspaceMemberRepository,
                 clock
         );
+    }
+
+    private record NativeHeader(String name, String value) {
     }
 
     private static class MutableClock extends Clock {
