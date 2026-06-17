@@ -214,6 +214,29 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("SEND rate limit은 윈도우 만료 직전에는 초기화하지 않는다")
+    void sendRateLimitDoesNotResetBeforeWindowExpires() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(message, messageChannel);
+        }
+
+        clock.advance(Duration.ofMillis(9_999));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+
+        clock.advance(Duration.ofMillis(1));
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+    }
+
+    @Test
     @DisplayName("SEND rate limit은 세션별로 분리한다")
     void sendRateLimitIsSeparatedBySession() {
         Authentication authentication = authenticatedPrincipal(1L);
@@ -289,6 +312,22 @@ class WebSocketAuthChannelInterceptorTest {
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("CustomUserDetails가 아닌 Authentication Principal의 SEND 메시지는 거부한다")
+    void preSendWithInvalidAuthenticationPrincipal() {
+        Message<?> message = sendMessage(
+                "/app/channels/10/messages",
+                new UsernamePasswordAuthenticationToken("tester", null),
+                "session-1"
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+
+        verifyNoInteractions(jwtProvider, userDetailsService, channelRepository, threadRepository, workspaceMemberRepository);
     }
 
     @Test
@@ -466,6 +505,27 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("구독 권한 캐시는 TTL 만료 직전에는 재검증하지 않는다")
+    void subscribeAuthorizationCacheDoesNotExpireBeforeTtl() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        clock.advance(Duration.ofMillis(29_999));
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(channelRepository, times(1)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(1))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
     @DisplayName("구독 권한 캐시 TTL 이후 멤버십이 사라지면 구독을 거부한다")
     void subscribeAuthorizationCacheDeniesAfterMembershipExpires() {
         MutableClock clock = new MutableClock();
@@ -613,6 +673,18 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("/user prefix가 없는 개인 에러 큐 구독은 허용하지 않는다")
+    void subscribeErrorQueueWithoutUserPrefix() {
+        Message<?> message = subscribeMessage("/queue/errors", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
     @DisplayName("공백 destination 구독은 거부한다")
     void subscribeBlankDestination() {
         Message<?> message = subscribeMessage(" ", authenticatedPrincipal(1L));
@@ -716,6 +788,21 @@ class WebSocketAuthChannelInterceptorTest {
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("CustomUserDetails가 아닌 Authentication Principal의 구독은 거부한다")
+    void subscribeWithInvalidAuthenticationPrincipal() {
+        Message<?> message = subscribeMessage(
+                "/topic/channels/10/events",
+                new UsernamePasswordAuthenticationToken("tester", null)
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+
+        verifyNoInteractions(jwtProvider, userDetailsService, channelRepository, threadRepository, workspaceMemberRepository);
     }
 
     @Test
