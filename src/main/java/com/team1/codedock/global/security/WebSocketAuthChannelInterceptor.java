@@ -276,7 +276,12 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
             throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
         }
-        return authorization.substring(BEARER_PREFIX.length());
+
+        String token = authorization.substring(BEARER_PREFIX.length());
+        if (!StringUtils.hasText(token)) {
+            throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
+        }
+        return token;
     }
 
     private String getAuthorizationHeader(StompHeaderAccessor accessor) {

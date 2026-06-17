@@ -94,6 +94,29 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("CONNECT 요청은 소문자 authorization 헤더도 인증 헤더로 처리한다")
+    void preSendWithLowercaseAuthorizationHeader() {
+        String token = "valid-access-token";
+        Long userId = 1L;
+        Message<?> message = stompMessage(StompCommand.CONNECT, "authorization", "Bearer " + token);
+
+        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.getUserId(token)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+
+        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).getUserId(token);
+        verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
     @DisplayName("SEND 메시지는 인증 사용자 기준으로 rate limit 안에서 통과한다")
     void preSendWithSendMessageWithinRateLimit() {
         Authentication authentication = authenticatedPrincipal(1L);
@@ -141,6 +164,39 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("SEND rate limit은 세션별로 분리한다")
+    void sendRateLimitIsSeparatedBySession() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+        Message<?> secondSessionMessage = sendMessage("/app/channels/10/messages", authentication, "session-2");
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(firstSessionMessage, messageChannel);
+        }
+
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+        assertThatThrownBy(() -> interceptor.preSend(firstSessionMessage, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    @Test
+    @DisplayName("세션 id가 없는 SEND rate limit은 사용자 기준 fallback 키로 분리한다")
+    void sendRateLimitWithoutSessionUsesUserFallback() {
+        Message<?> firstUserMessage = sendMessage("/app/channels/10/messages", authentication(1L), null);
+        Message<?> secondUserMessage = sendMessage("/app/channels/10/messages", authentication(2L), null);
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(firstUserMessage, messageChannel);
+        }
+
+        assertThat(interceptor.preSend(secondUserMessage, messageChannel)).isSameAs(secondUserMessage);
+        assertThatThrownBy(() -> interceptor.preSend(firstUserMessage, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    @Test
     @DisplayName("DISCONNECT 시 세션별 SEND rate limit 상태를 정리한다")
     void disconnectClearsSendRateLimit() {
         Authentication authentication = authenticatedPrincipal(1L);
@@ -156,6 +212,23 @@ class WebSocketAuthChannelInterceptorTest {
         interceptor.preSend(disconnectMessage, messageChannel);
 
         assertThat(interceptor.preSend(sendMessage, messageChannel)).isSameAs(sendMessage);
+    }
+
+    @Test
+    @DisplayName("세션 id가 없는 DISCONNECT는 사용자 fallback SEND rate limit을 정리하지 않는다")
+    void disconnectWithoutSessionDoesNotClearUserFallbackRateLimit() {
+        Message<?> sendMessage = sendMessage("/app/channels/10/messages", authentication(1L), null);
+        Message<?> disconnectMessage = disconnectMessage(null);
+
+        for (int i = 0; i < 20; i++) {
+            interceptor.preSend(sendMessage, messageChannel);
+        }
+
+        interceptor.preSend(disconnectMessage, messageChannel);
+
+        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
     }
 
     @Test
@@ -310,6 +383,30 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("구독 권한 캐시 TTL 이후 멤버십이 사라지면 구독을 거부한다")
+    void subscribeAuthorizationCacheDeniesAfterMembershipExpires() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/channels/10/events", authentication, "session-1");
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L, 0L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        clock.advance(Duration.ofMillis(30_000));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+
+        verify(channelRepository, times(2)).findWorkspaceIdById(10L);
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+    }
+
+    @Test
     @DisplayName("DISCONNECT는 해당 세션의 구독 권한 캐시만 정리한다")
     void disconnectClearsOnlyMatchingSessionSubscribeAuthorizationCache() {
         Authentication authentication = authenticatedPrincipal(1L);
@@ -409,6 +506,18 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("인증 Principal이 없는 개인 큐 구독은 거부한다")
+    void subscribePersonalDestinationWithoutPrincipal() {
+        Message<?> message = subscribeMessage("/user/queue/notifications", null);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
     @DisplayName("개인 큐 하위의 임의 경로 구독은 허용하지 않는다")
     void subscribeUnknownPersonalDestination() {
         Message<?> message = subscribeMessage("/user/queue/notifications/other", authenticatedPrincipal(1L));
@@ -416,6 +525,33 @@ class WebSocketAuthChannelInterceptorTest {
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("공백 destination 구독은 거부한다")
+    void subscribeBlankDestination() {
+        Message<?> message = subscribeMessage(" ", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 경로가 필요합니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("Long 범위를 넘는 destination id 구독은 거부한다")
+    void subscribeDestinationIdOverflow() {
+        Message<?> message = subscribeMessage(
+                "/topic/channels/999999999999999999999999/events",
+                authenticatedPrincipal(1L)
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 경로가 올바르지 않습니다.");
 
         verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
     }
@@ -491,6 +627,18 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("CONNECT 요청의 Bearer 토큰 본문이 비어 있으면 거부한다")
+    void preSendWithBlankBearerToken() {
+        Message<?> message = stompMessage(StompCommand.CONNECT, "Bearer ");
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 토큰이 필요합니다.");
+
+        verifyNoInteractions(jwtProvider, userDetailsService);
+    }
+
+    @Test
     @DisplayName("CONNECT 요청의 JWT가 유효하지 않으면 거부한다")
     void preSendWithInvalidAccessToken() {
         String token = "invalid-access-token";
@@ -523,10 +671,14 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     private static Message<?> stompMessage(StompCommand command, String authorization) {
+        return stompMessage(command, "Authorization", authorization);
+    }
+
+    private static Message<?> stompMessage(StompCommand command, String headerName, String authorization) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
         accessor.setLeaveMutable(true);
         if (authorization != null) {
-            accessor.setNativeHeader("Authorization", authorization);
+            accessor.setNativeHeader(headerName, authorization);
         }
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
