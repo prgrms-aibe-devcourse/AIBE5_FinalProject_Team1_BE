@@ -129,10 +129,10 @@ public class GithubRepositoryService {
     private Channel findOrCreateRepositoryChannel(GithubRepository githubRepository) {
         Long workspaceId = githubRepository.getWorkspace().getId();
 
-        // 연결된 GitHub 레포지토리 하나당 repository 채널은 반드시 하나만 유지함
+        // One linked GitHub repository must have exactly one repository channel.
         return channelRepository.findRepositoryChannel(workspaceId, githubRepository.getId())
                 .orElseGet(() -> {
-                    // 기존 채널이 없을 때만 생성해서 중복 repository 채널 생성을 막음
+                    // Create only when the repository channel does not exist to prevent duplicates.
                     Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository);
                     return channelRepository.save(channel);
                 });

@@ -31,7 +31,7 @@ public interface ChannelRepository extends JpaRepository<Channel, Long> {
             @Param("id") Long id
     );
 
-    // 연결된 GitHub 레포지토리 하나당 repository 채널 하나만 유지하기 위한 조회
+    // Finds the repository channel for one linked GitHub repository.
     @Query("""
             SELECT c
             FROM Channel c
