@@ -7,6 +7,7 @@ import lombok.Getter;
 @Builder
 public class GithubConnectResponse {
     private Long id;
+    private Long channelId;
     private String owner;
     private String name;
     private String fullName;

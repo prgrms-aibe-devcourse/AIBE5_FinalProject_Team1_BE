@@ -64,9 +64,11 @@ public class GithubRepositoryService {
                 repoInfo.isPrivate(),
                 repoInfo.getDefaultBranch()
         ));
+        Channel repositoryChannel = findOrCreateRepositoryChannel(saved);
 
         return GithubConnectResponse.builder()
                 .id(saved.getId())
+                .channelId(repositoryChannel.getId())
                 .owner(saved.getOwner())
                 .name(saved.getName())
                 .fullName(saved.getFullName())
@@ -121,10 +123,19 @@ public class GithubRepositoryService {
             GithubRepositoryLinkRequest request
     ) {
         GithubRepository githubRepository = linkRepository(workspaceId, userId, request);
+        return ChannelListResponse.from(findOrCreateRepositoryChannel(githubRepository));
+    }
 
-        // Repository channel is created from the linked GitHub repository metadata.
-        Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository);
-        return ChannelListResponse.from(channelRepository.save(channel));
+    private Channel findOrCreateRepositoryChannel(GithubRepository githubRepository) {
+        Long workspaceId = githubRepository.getWorkspace().getId();
+
+        // 연결된 GitHub 레포지토리 하나당 repository 채널은 반드시 하나만 유지함
+        return channelRepository.findRepositoryChannel(workspaceId, githubRepository.getId())
+                .orElseGet(() -> {
+                    // 기존 채널이 없을 때만 생성해서 중복 repository 채널 생성을 막음
+                    Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository);
+                    return channelRepository.save(channel);
+                });
     }
 
     private Workspace findWorkspace(Long workspaceId) {

@@ -71,27 +71,39 @@ class GithubRepositoryServiceTest {
     }
 
     @Test
-    @DisplayName("GitHub OAuth 토큰으로 레포지토리를 워크스페이스에 연결한다")
+    @DisplayName("GitHub OAuth 토큰으로 레포지토리를 연결하고 repository 채널을 생성한다")
     void connectRepository() {
+        Workspace workspace = workspace(1L);
         User user = mockGithubUser();
-        WorkspaceMember member = mockWorkspaceMember();
-        GithubRepository savedRepository = mockSavedRepository();
+        WorkspaceMember member = mockWorkspaceMember(workspace);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
                 .thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of());
         when(githubApiService.getRepo("octocat", "hello-world", "github-token")).thenReturn(githubRepoResponse());
-        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenReturn(savedRepository);
+        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenAnswer(invocation -> {
+            GithubRepository repository = invocation.getArgument(0);
+            ReflectionTestUtils.setField(repository, "id", 30L);
+            return repository;
+        });
+        when(channelRepository.findRepositoryChannel(1L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
 
         GithubConnectResponse response = githubRepositoryService.connectRepository(1L, 1L, connectRequest());
 
-        assertThat(response.getId()).isEqualTo(1L);
+        assertThat(response.getId()).isEqualTo(30L);
+        assertThat(response.getChannelId()).isEqualTo(40L);
         assertThat(response.getOwner()).isEqualTo("octocat");
         assertThat(response.getName()).isEqualTo("hello-world");
         assertThat(response.getFullName()).isEqualTo("octocat/hello-world");
         assertThat(response.getDefaultBranch()).isEqualTo("main");
         verify(githubRepositoryRepository).save(any(GithubRepository.class));
+        verify(channelRepository).save(any(Channel.class));
     }
 
     @Test
@@ -105,6 +117,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -120,6 +133,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -136,6 +150,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -154,6 +169,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.GITHUB_NOT_CONNECTED);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -173,6 +189,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.GITHUB_REPO_NOT_FOUND);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -198,6 +215,7 @@ class GithubRepositoryServiceTest {
         assertThat(repository.isPrivate()).isTrue();
         assertThat(repository.getDefaultBranch()).isEqualTo("main");
         verify(githubRepositoryRepository).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -231,6 +249,7 @@ class GithubRepositoryServiceTest {
         assertThat(repository.isPrivate()).isTrue();
         assertThat(repository.getDefaultBranch()).isEqualTo("main");
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -276,6 +295,7 @@ class GithubRepositoryServiceTest {
             ReflectionTestUtils.setField(repository, "id", 30L);
             return repository;
         });
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.empty());
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
             Channel channel = invocation.getArgument(0);
             ReflectionTestUtils.setField(channel, "id", 40L);
@@ -295,6 +315,39 @@ class GithubRepositoryServiceTest {
     }
 
     @Test
+    @DisplayName("이미 repository 채널이 있으면 새로 만들지 않고 기존 채널을 재사용한다")
+    void createRepositoryChannelReusesExistingChannel() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = GithubRepository.create(
+                workspace,
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "main"
+        );
+        ReflectionTestUtils.setField(repository, "id", 30L);
+        Channel existingChannel = Channel.createRepository(workspace, repository);
+        ReflectionTestUtils.setField(existingChannel, "id", 40L);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.of(existingChannel));
+
+        ChannelListResponse response =
+                githubRepositoryService.createRepositoryChannel(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        assertThat(response.id()).isEqualTo(40L);
+        assertThat(response.githubRepositoryId()).isEqualTo(30L);
+        assertThat(response.channelType()).isEqualTo(Channel.TYPE_REPOSITORY);
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    @Test
     @DisplayName("인증 사용자가 없으면 GitHub repository 링크를 거부한다")
     void linkRepositoryWithoutUser() {
         assertThatThrownBy(() -> githubRepositoryService.linkRepository(10L, null, linkRequest("123456", "team1", "codedock")))
@@ -303,6 +356,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -317,6 +371,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.FORBIDDEN);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -332,6 +387,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.FORBIDDEN);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -345,6 +401,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     @Test
@@ -359,6 +416,7 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.INVALID_INPUT);
 
         verify(githubRepositoryRepository, never()).save(any(GithubRepository.class));
+        verify(channelRepository, never()).save(any(Channel.class));
     }
 
     private GithubConnectRequest connectRequest() {
@@ -374,8 +432,7 @@ class GithubRepositoryServiceTest {
         return user;
     }
 
-    private WorkspaceMember mockWorkspaceMember() {
-        Workspace workspace = mock(Workspace.class);
+    private WorkspaceMember mockWorkspaceMember(Workspace workspace) {
         WorkspaceMember member = mock(WorkspaceMember.class);
         when(member.getWorkspace()).thenReturn(workspace);
         return member;
@@ -391,18 +448,6 @@ class GithubRepositoryServiceTest {
                 .isPrivate(false)
                 .defaultBranch("main")
                 .build();
-    }
-
-    private GithubRepository mockSavedRepository() {
-        GithubRepository saved = mock(GithubRepository.class);
-        when(saved.getId()).thenReturn(1L);
-        when(saved.getOwner()).thenReturn("octocat");
-        when(saved.getName()).thenReturn("hello-world");
-        when(saved.getFullName()).thenReturn("octocat/hello-world");
-        when(saved.getUrl()).thenReturn("https://github.com/octocat/hello-world");
-        when(saved.getDefaultBranch()).thenReturn("main");
-        when(saved.isPrivate()).thenReturn(false);
-        return saved;
     }
 
     private GithubRepositoryLinkRequest linkRequest(String githubRepoId, String owner, String name) {

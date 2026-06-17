@@ -77,6 +77,7 @@ class WorkspaceGithubControllerTest {
         request.setRepo("codedock");
         GithubConnectResponse response = GithubConnectResponse.builder()
                 .id(30L)
+                .channelId(40L)
                 .owner("team1")
                 .name("codedock")
                 .fullName("team1/codedock")
@@ -94,6 +95,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(30L))
+                .andExpect(jsonPath("$.data.channelId").value(40L))
                 .andExpect(jsonPath("$.data.fullName").value("team1/codedock"));
 
         verify(githubRepositoryService).connectRepository(eq(10L), eq(USER_ID), any(GithubConnectRequest.class));
