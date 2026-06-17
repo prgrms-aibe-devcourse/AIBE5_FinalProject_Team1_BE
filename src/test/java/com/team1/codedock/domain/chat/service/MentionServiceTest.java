@@ -105,6 +105,28 @@ class MentionServiceTest {
     }
 
     @Test
+    @DisplayName("영문 멘션은 소문자로 정규화하고 중복을 제거한다")
+    void createMentionsForThreadNormalizesEnglishMentionNames() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @Alice @ALICE");
+
+        when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("alice")))
+                .thenReturn(List.of(alice));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(1);
+        assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
+    }
+
+    @Test
     @DisplayName("한글 멘션과 점/하이픈이 포함된 기존 멘션 형식을 함께 파싱한다")
     void createMentionsForThreadWithKoreanMentionNames() {
         Workspace workspace = workspace(10L);
@@ -246,6 +268,42 @@ class MentionServiceTest {
 
         assertThat(response.read()).isTrue();
         assertThat(mention.isRead()).isTrue();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 멘션 읽음 처리는 NOT_FOUND 예외가 발생한다")
+    void markMentionAsRead_notFound() {
+        when(mentionRepository.findById(300L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.markMentionAsRead(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 멘션 읽음 처리는 FORBIDDEN 예외가 발생한다")
+    void markMentionAsRead_forbiddenWhenMentionBelongsToOtherMember() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        WorkspaceMember otherMember = workspaceMember(22L, workspace, user("bob", "Bob"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(otherMember));
+        when(mentionRepository.findByIdAndMentionedMember_Id(300L, 22L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.markMentionAsRead(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+        assertThat(mention.isRead()).isFalse();
     }
 
     @Test

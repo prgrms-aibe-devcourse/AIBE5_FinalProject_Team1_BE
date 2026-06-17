@@ -9,11 +9,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "channels")
+@Table(
+        name = "channels",
+        uniqueConstraints = @UniqueConstraint(name = "uq_channels", columnNames = {"workspace_id", "name"})
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Channel extends BaseEntity {
 
+    public static final int MAX_NAME_LENGTH = 120;
     public static final String TYPE_GENERAL = "general";
     public static final String TYPE_REPOSITORY = "repository";
     public static final String TYPE_CUSTOM = "custom";
@@ -69,10 +73,14 @@ public class Channel extends BaseEntity {
     }
 
     public static Channel createRepository(Workspace workspace, GithubRepository githubRepository) {
+        return createRepository(workspace, githubRepository, githubRepository.getName());
+    }
+
+    public static Channel createRepository(Workspace workspace, GithubRepository githubRepository, String name) {
         Channel channel = new Channel();
         channel.workspace = workspace;
         channel.githubRepository = githubRepository;
-        channel.name = githubRepository.getName();
+        channel.name = name;
         channel.channelType = TYPE_REPOSITORY;
         channel.isDeletable = false;
         channel.description = githubRepository.getDescription();

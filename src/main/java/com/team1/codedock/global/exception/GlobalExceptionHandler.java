@@ -2,6 +2,7 @@ package com.team1.codedock.global.exception;
 
 import com.team1.codedock.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -35,6 +36,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Void>> handleConflict(OptimisticLockingFailureException e) {
         log.warn("Optimistic lock conflict: {}", e.getMessage());
+        return ResponseEntity
+                .status(ErrorCode.CONFLICT.getStatus())
+                .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.warn("Data integrity conflict: {}", e.getMessage());
         return ResponseEntity
                 .status(ErrorCode.CONFLICT.getStatus())
                 .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));

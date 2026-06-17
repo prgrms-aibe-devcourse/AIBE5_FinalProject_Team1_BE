@@ -25,6 +25,8 @@ Backend behavior:
 - If the repository channel does not exist, the backend creates one.
 - Repository channels are created with `channelType = "repository"`.
 - Repository channels are created with `isDeletable = false`.
+- Repository channel names are based on the repository name. If the same channel name already exists in the workspace, the backend appends a safe suffix such as `-{owner}` or `-repo-{githubRepoId}`.
+- Repository channel names are limited to 120 characters because `channels.name` is `VARCHAR2(120)`.
 
 This rule prevents duplicate repository channels for the same GitHub repository.
 
@@ -62,7 +64,7 @@ Only workspace members with `owner` or `admin` authority can create or link repo
 | --- | --- | --- |
 | `githubRepoId` | Yes | GitHub repository id. Max 100 chars. |
 | `owner` | Yes | Repository owner login or organization name. Max 100 chars. |
-| `name` | Yes | Repository name. Max 150 chars. |
+| `name` | Yes | Repository name. Max 120 chars. |
 | `fullName` | Yes | Full repository name, usually `{owner}/{repo}`. Max 255 chars. |
 | `url` | Yes | GitHub repository HTML URL. |
 | `description` | No | Repository description. |
@@ -101,6 +103,7 @@ Status: `201 Created`
 | User is not `owner` or `admin` | `403 C003` |
 | Workspace does not exist | `404 W001` |
 | Request validation fails | `400 C001` |
+| Repository channel name cannot be made unique | `409 C006` |
 
 ## Existing GitHub Connect API
 
@@ -112,6 +115,10 @@ The existing GitHub connect API also creates or reuses the repository channel af
 POST /api/workspaces/{workspaceId}/github
 POST /api/v1/workspaces/{workspaceId}/github
 ```
+
+### Permission
+
+Only workspace members with `owner` or `admin` authority can connect a repository through this endpoint.
 
 ### Request Body
 

@@ -13,7 +13,7 @@ public record GithubRepositoryLinkRequest(
         String owner,
 
         @NotBlank(message = "GitHub repository name must not be blank.")
-        @Size(max = 150, message = "GitHub repository name must be 150 characters or less.")
+        @Size(max = 120, message = "GitHub repository name must be 120 characters or less.")
         String name,
 
         @NotBlank(message = "GitHub repository full name must not be blank.")

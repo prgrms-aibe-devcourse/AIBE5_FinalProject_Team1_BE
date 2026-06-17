@@ -41,11 +41,7 @@ public class GithubRepositoryService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        WorkspaceMember member = findActiveWorkspaceMember(workspaceId, userId);
-
-        if (!githubRepositoryRepository.findByWorkspaceId(workspaceId).isEmpty()) {
-            throw new BusinessException(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED);
-        }
+        WorkspaceMember member = validateRepositoryManager(workspaceId, userId);
 
         String token = user.getGithubAccessToken();
         if (token == null || token.isBlank()) {
@@ -53,17 +49,31 @@ public class GithubRepositoryService {
         }
 
         GithubRepoResponse repoInfo = githubApiService.getRepo(request.getOwner(), request.getRepo(), token);
-        GithubRepository saved = githubRepositoryRepository.save(GithubRepository.create(
-                member.getWorkspace(),
-                String.valueOf(repoInfo.getId()),
-                repoInfo.getOwner(),
-                repoInfo.getName(),
-                repoInfo.getFullName(),
-                repoInfo.getHtmlUrl(),
-                null,
-                repoInfo.isPrivate(),
-                repoInfo.getDefaultBranch()
-        ));
+        String githubRepoId = String.valueOf(repoInfo.getId());
+        GithubRepository saved = githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(workspaceId, githubRepoId)
+                .map(repository -> {
+                    repository.updateMetadata(
+                            repoInfo.getOwner(),
+                            repoInfo.getName(),
+                            repoInfo.getFullName(),
+                            repoInfo.getHtmlUrl(),
+                            null,
+                            repoInfo.isPrivate(),
+                            repoInfo.getDefaultBranch()
+                    );
+                    return repository;
+                })
+                .orElseGet(() -> githubRepositoryRepository.save(GithubRepository.create(
+                        member.getWorkspace(),
+                        githubRepoId,
+                        repoInfo.getOwner(),
+                        repoInfo.getName(),
+                        repoInfo.getFullName(),
+                        repoInfo.getHtmlUrl(),
+                        null,
+                        repoInfo.isPrivate(),
+                        repoInfo.getDefaultBranch()
+                )));
         Channel repositoryChannel = findOrCreateRepositoryChannel(saved);
 
         return GithubConnectResponse.builder()
@@ -85,6 +95,7 @@ public class GithubRepositoryService {
         String githubRepoId = normalizeRequired(request.githubRepoId(), "GitHub repository id is required.");
         String owner = normalizeRequired(request.owner(), "GitHub repository owner is required.");
         String name = normalizeRequired(request.name(), "GitHub repository name is required.");
+        validateRepositoryNameForChannel(name);
         String fullName = normalizeRequired(request.fullName(), "GitHub repository full name is required.");
         String url = normalizeRequired(request.url(), "GitHub repository url is required.");
         String description = normalizeNullable(request.description());
@@ -132,8 +143,9 @@ public class GithubRepositoryService {
         // One linked GitHub repository must have exactly one repository channel.
         return channelRepository.findRepositoryChannel(workspaceId, githubRepository.getId())
                 .orElseGet(() -> {
+                    String channelName = resolveRepositoryChannelName(githubRepository);
                     // Create only when the repository channel does not exist to prevent duplicates.
-                    Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository);
+                    Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository, channelName);
                     return channelRepository.save(channel);
                 });
     }
@@ -143,12 +155,7 @@ public class GithubRepositoryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
     }
 
-    private WorkspaceMember findActiveWorkspaceMember(Long workspaceId, Long userId) {
-        return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
-    }
-
-    private void validateRepositoryManager(Long workspaceId, Long userId) {
+    private WorkspaceMember validateRepositoryManager(Long workspaceId, Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
@@ -159,6 +166,8 @@ public class GithubRepositoryService {
         if (!canManageRepository(member.getAuthority())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
+
+        return member;
     }
 
     private boolean canManageRepository(String authority) {
@@ -181,5 +190,64 @@ public class GithubRepositoryService {
 
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private void validateRepositoryNameForChannel(String name) {
+        if (name.length() > Channel.MAX_NAME_LENGTH) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT,
+                    "GitHub repository name must be " + Channel.MAX_NAME_LENGTH + " characters or less."
+            );
+        }
+    }
+
+    private String resolveRepositoryChannelName(GithubRepository githubRepository) {
+        Long workspaceId = githubRepository.getWorkspace().getId();
+        String baseName = truncateChannelName(githubRepository.getName());
+        if (!channelNameExists(workspaceId, baseName)) {
+            return baseName;
+        }
+
+        String owner = normalizeNullable(githubRepository.getOwner());
+        if (owner != null) {
+            String ownerCandidate = appendChannelNameSuffix(baseName, "-" + owner);
+            if (!channelNameExists(workspaceId, ownerCandidate)) {
+                return ownerCandidate;
+            }
+        }
+
+        String repoId = normalizeNullable(githubRepository.getGithubRepoId());
+        if (repoId != null) {
+            String repoCandidate = appendChannelNameSuffix(baseName, "-repo-" + repoId);
+            if (!channelNameExists(workspaceId, repoCandidate)) {
+                return repoCandidate;
+            }
+        }
+
+        throw new BusinessException(ErrorCode.CONFLICT, "Repository channel name already exists in workspace.");
+    }
+
+    private boolean channelNameExists(Long workspaceId, String name) {
+        return channelRepository.countByWorkspaceIdAndNameIgnoreCase(workspaceId, name) > 0;
+    }
+
+    private String appendChannelNameSuffix(String baseName, String suffix) {
+        String normalizedSuffix = truncateChannelName(suffix);
+        int maxBaseLength = Channel.MAX_NAME_LENGTH - normalizedSuffix.length();
+        if (maxBaseLength <= 0) {
+            return normalizedSuffix;
+        }
+        return truncate(baseName, maxBaseLength) + normalizedSuffix;
+    }
+
+    private String truncateChannelName(String value) {
+        return truncate(value, Channel.MAX_NAME_LENGTH);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 }

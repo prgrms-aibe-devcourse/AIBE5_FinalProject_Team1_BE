@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -71,7 +72,7 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
-    @DisplayName("GitHub 레포지토리 연결 성공 시 연결 정보를 반환한다")
+    @DisplayName("GitHub 레포지토리 연결 성공 시 연결 정보와 channelId를 반환한다")
     void connectRepository() throws Exception {
         GithubConnectRequest request = new GithubConnectRequest();
         request.setOwner("team1");
@@ -103,6 +104,40 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
+    @DisplayName("GitHub 연결 요청 owner가 공백이면 서비스를 호출하지 않고 400을 반환한다")
+    void connectRepositoryWithBlankOwner() throws Exception {
+        GithubConnectRequest request = new GithubConnectRequest();
+        request.setOwner(" ");
+        request.setRepo("codedock");
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
+    }
+
+    @Test
+    @DisplayName("GitHub 연결 요청 repo가 공백이면 서비스를 호출하지 않고 400을 반환한다")
+    void connectRepositoryWithBlankRepo() throws Exception {
+        GithubConnectRequest request = new GithubConnectRequest();
+        request.setOwner("team1");
+        request.setRepo(" ");
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
+    }
+
+    @Test
     @DisplayName("GitHub 연결 대상 유저가 없으면 404를 반환한다")
     void connectRepositoryWithoutUser() throws Exception {
         when(githubRepositoryService.connectRepository(any(), any(), any()))
@@ -117,42 +152,32 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
-    @DisplayName("워크스페이스 멤버를 찾을 수 없으면 404를 반환한다")
-    void connectRepositoryWithoutWorkspaceMember() throws Exception {
+    @DisplayName("GitHub 연결 대상 워크스페이스 접근 권한이 없으면 403을 반환한다")
+    void connectRepositoryForbidden() throws Exception {
         when(githubRepositoryService.connectRepository(any(), any(), any()))
-                .thenThrow(new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
 
         mockMvc.perform(post("/api/v1/workspaces/1/github")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"owner\":\"octocat\",\"repo\":\"hello-world\"}"))
-                .andExpect(status().isNotFound())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("W002"));
-    }
-
-    @Test
-    @DisplayName("이미 연결된 레포지토리가 있으면 409를 반환한다")
-    void connectRepositoryAlreadyConnected() throws Exception {
-        when(githubRepositoryService.connectRepository(any(), any(), any()))
-                .thenThrow(new BusinessException(ErrorCode.GITHUB_REPO_ALREADY_CONNECTED));
-
-        mockMvc.perform(post("/api/v1/workspaces/1/github")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"owner\":\"octocat\",\"repo\":\"hello-world\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("G007"));
+                .andExpect(jsonPath("$.code").value("C003"));
     }
 
     @Test
     @DisplayName("GitHub 계정이 연결되지 않았으면 400을 반환한다")
     void connectRepositoryWithoutGithubToken() throws Exception {
-        when(githubRepositoryService.connectRepository(any(), any(), any()))
+        GithubConnectRequest request = new GithubConnectRequest();
+        request.setOwner("team1");
+        request.setRepo("codedock");
+
+        when(githubRepositoryService.connectRepository(eq(10L), eq(USER_ID), any(GithubConnectRequest.class)))
                 .thenThrow(new BusinessException(ErrorCode.GITHUB_NOT_CONNECTED));
 
-        mockMvc.perform(post("/api/v1/workspaces/1/github")
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"owner\":\"octocat\",\"repo\":\"hello-world\"}"))
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G005"));
@@ -170,15 +195,6 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G006"));
-    }
-
-    @Test
-    @DisplayName("GitHub 연결 요청 owner가 없으면 400을 반환한다")
-    void connectRepositoryWithBlankOwner() throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/1/github")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"owner\":\"\",\"repo\":\"hello-world\"}"))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -202,7 +218,6 @@ class WorkspaceGithubControllerTest {
         when(githubRepositoryService.createRepositoryChannel(eq(10L), eq(USER_ID), eq(request))).thenReturn(response);
 
         mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
-                        .header("X-User-Id", "999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -248,6 +263,51 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
+    @DisplayName("repository 채널 생성 권한이 없으면 403을 반환한다")
+    void createRepositoryChannelForbidden() throws Exception {
+        GithubRepositoryLinkRequest request = request();
+        when(githubRepositoryService.createRepositoryChannel(eq(10L), eq(USER_ID), eq(request)))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+    }
+
+    @Test
+    @DisplayName("repository 채널명 충돌을 해결할 수 없으면 409를 반환한다")
+    void createRepositoryChannelConflict() throws Exception {
+        GithubRepositoryLinkRequest request = request();
+        when(githubRepositoryService.createRepositoryChannel(eq(10L), eq(USER_ID), eq(request)))
+                .thenThrow(new BusinessException(ErrorCode.CONFLICT));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C006"));
+    }
+
+    @Test
+    @DisplayName("repository 채널 생성 중 DB unique 충돌이 발생하면 409를 반환한다")
+    void createRepositoryChannelDataIntegrityConflict() throws Exception {
+        GithubRepositoryLinkRequest request = request();
+        when(githubRepositoryService.createRepositoryChannel(eq(10L), eq(USER_ID), eq(request)))
+                .thenThrow(new DataIntegrityViolationException("unique constraint violation"));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C006"));
+    }
+
+    @Test
     @DisplayName("repository 채널 생성 요청의 GitHub repository id가 비어 있으면 400을 반환한다")
     void createRepositoryChannelWithBlankGithubRepoId() throws Exception {
         GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
@@ -272,7 +332,7 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
-    @DisplayName("Repository channel create API rejects blank required repository metadata without calling service")
+    @DisplayName("repository 채널 생성 요청 필수 메타데이터가 비어 있으면 400을 반환한다")
     void createRepositoryChannelWithBlankRequiredMetadata() throws Exception {
         GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
                 "123456",
@@ -296,7 +356,7 @@ class WorkspaceGithubControllerTest {
     }
 
     @Test
-    @DisplayName("Repository channel create API rejects oversized default branch without calling service")
+    @DisplayName("repository 채널 생성 요청 defaultBranch가 너무 길면 400을 반환한다")
     void createRepositoryChannelWithOversizedDefaultBranch() throws Exception {
         GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
                 "123456",
@@ -307,6 +367,30 @@ class WorkspaceGithubControllerTest {
                 "CodeDock repository",
                 true,
                 "a".repeat(256)
+        );
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(githubRepositoryService);
+    }
+
+    @Test
+    @DisplayName("repository 이름이 채널명 제한보다 길면 400을 반환한다")
+    void createRepositoryChannelWithOversizedName() throws Exception {
+        GithubRepositoryLinkRequest request = new GithubRepositoryLinkRequest(
+                "123456",
+                "team1",
+                "a".repeat(Channel.MAX_NAME_LENGTH + 1),
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock repository",
+                true,
+                "main"
         );
 
         mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)

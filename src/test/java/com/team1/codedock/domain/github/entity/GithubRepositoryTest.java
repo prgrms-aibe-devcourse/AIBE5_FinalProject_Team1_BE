@@ -71,5 +71,8 @@ class GithubRepositoryTest {
         assertThat(repository.getDescription()).isEqualTo("New description");
         assertThat(repository.isPrivate()).isFalse();
         assertThat(repository.getDefaultBranch()).isEqualTo("develop");
+        assertThat(repository.getWorkspace()).isEqualTo(workspace);
+        assertThat(repository.getGithubRepoId()).isEqualTo("123456");
+        assertThat(repository.isWebhookActive()).isFalse();
     }
 }

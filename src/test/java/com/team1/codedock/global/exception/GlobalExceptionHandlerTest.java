@@ -4,6 +4,7 @@ import com.team1.codedock.global.response.ApiResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -39,6 +40,11 @@ class GlobalExceptionHandlerTest {
         public ApiResponse<Void> throwUnhandledException() {
             throw new RuntimeException("예상치 못한 오류");
         }
+
+        @GetMapping("/test/data-integrity-exception")
+        public ApiResponse<Void> throwDataIntegrityException() {
+            throw new DataIntegrityViolationException("unique constraint violation");
+        }
     }
 
     @Test
@@ -60,5 +66,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C005"));
+    }
+
+    @Test
+    @DisplayName("DataIntegrityViolationException 발생 시 409 에러 응답을 반환한다")
+    void handleDataIntegrityViolationException() throws Exception {
+        mockMvc.perform(get("/test/data-integrity-exception")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C006"));
     }
 }
