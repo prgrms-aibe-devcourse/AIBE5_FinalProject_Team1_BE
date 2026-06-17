@@ -24,6 +24,7 @@ import java.util.List;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,6 +91,17 @@ class MentionControllerTest {
                 .andExpect(jsonPath("$.data.read").value(true));
 
         verify(mentionService).markMentionAsRead(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention delete API passes mention id and user id to service")
+    void deleteMention() throws Exception {
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L)
+                        .header("X-User-Id", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(mentionService).deleteMention(300L, USER_ID);
     }
 
     private MentionResponse response(boolean read) {

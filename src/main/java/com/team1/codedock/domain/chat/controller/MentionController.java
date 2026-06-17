@@ -5,6 +5,7 @@ import com.team1.codedock.domain.chat.service.MentionService;
 import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,5 +33,13 @@ public class MentionController {
             @PathVariable Long mentionId
     ) {
         return ApiResponse.ok(mentionService.markMentionAsRead(mentionId, SecurityUtils.getCurrentUserId()));
+    }
+
+    @DeleteMapping("/mentions/{mentionId}")
+    public ApiResponse<Void> deleteMention(
+            @PathVariable Long mentionId
+    ) {
+        mentionService.deleteMention(mentionId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
     }
 }
