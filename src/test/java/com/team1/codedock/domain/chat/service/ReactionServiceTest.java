@@ -22,6 +22,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Optional;
@@ -184,6 +186,172 @@ class ReactionServiceTest {
         assertThat(response.reacted()).isTrue();
         assertThat(response.count()).isEqualTo(1L);
         verify(reactionRepository).save(any(Reaction.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "like",
+            "dislike",
+            "heart",
+            "laugh",
+            "smile",
+            "surprised",
+            "sad",
+            "cry",
+            "angry",
+            "thinking",
+            "clap",
+            "pray",
+            "eyes",
+            "fire",
+            "rocket",
+            "party",
+            "check",
+            "cross",
+            "star",
+            "bulb",
+            "bug",
+            "fix",
+            "memo",
+            "coffee"
+    })
+    @DisplayName("프론트에서 사용하는 24개 리액션 key를 모두 허용한다")
+    void toggleReaction_acceptAllowedReactionKeys(String reactionKey) {
+        Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+        Long workspaceMemberId = 10L;
+        Long targetId = 100L;
+        ReactionToggleRequest request = new ReactionToggleRequest(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        );
+        WorkspaceMember workspaceMember = mock(WorkspaceMember.class);
+        stubThreadTarget(channelId, targetId, workspaceId);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember));
+        when(workspaceMember.getId()).thenReturn(workspaceMemberId);
+        when(reactionRepository.findByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMemberId,
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(Optional.empty());
+        when(reactionRepository.countByTargetTypeAndTargetIdAndEmoji(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(1L);
+
+        ReactionToggleResponse response = reactionService.toggleReaction(channelId, userId, request);
+
+        assertThat(response.emoji()).isEqualTo(reactionKey);
+
+        ArgumentCaptor<Reaction> reactionCaptor = ArgumentCaptor.forClass(Reaction.class);
+        verify(reactionRepository).save(reactionCaptor.capture());
+        assertThat(reactionCaptor.getValue().getEmoji()).isEqualTo(reactionKey);
+    }
+
+    @Test
+    @DisplayName("실제 이모지가 들어와도 reaction key로 정규화해 저장하고 응답한다")
+    void toggleReaction_normalizeRawEmojiToReactionKey() {
+        Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+        Long workspaceMemberId = 10L;
+        Long targetId = 100L;
+        String rawEmoji = "\uD83D\uDC4D";
+        String reactionKey = "like";
+        ReactionToggleRequest request = new ReactionToggleRequest(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                rawEmoji
+        );
+        WorkspaceMember workspaceMember = mock(WorkspaceMember.class);
+        stubThreadTarget(channelId, targetId, workspaceId);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember));
+        when(workspaceMember.getId()).thenReturn(workspaceMemberId);
+        when(reactionRepository.findByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMemberId,
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(Optional.empty());
+        when(reactionRepository.countByTargetTypeAndTargetIdAndEmoji(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(1L);
+
+        ReactionToggleResponse response = reactionService.toggleReaction(channelId, userId, request);
+
+        assertThat(response.emoji()).isEqualTo(reactionKey);
+
+        ArgumentCaptor<Reaction> reactionCaptor = ArgumentCaptor.forClass(Reaction.class);
+        verify(reactionRepository).save(reactionCaptor.capture());
+        assertThat(reactionCaptor.getValue().getEmoji()).isEqualTo(reactionKey);
+    }
+
+    @Test
+    @DisplayName("하트 이모지 variation selector가 포함되어도 heart key로 정규화한다")
+    void toggleReaction_normalizeHeartEmojiWithVariationSelector() {
+        Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+        Long workspaceMemberId = 10L;
+        Long targetId = 100L;
+        String rawEmoji = "\u2764\uFE0F";
+        String reactionKey = "heart";
+        ReactionToggleRequest request = new ReactionToggleRequest(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                rawEmoji
+        );
+        WorkspaceMember workspaceMember = mock(WorkspaceMember.class);
+        stubThreadTarget(channelId, targetId, workspaceId);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember));
+        when(workspaceMember.getId()).thenReturn(workspaceMemberId);
+        when(reactionRepository.findByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMemberId,
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(Optional.empty());
+        when(reactionRepository.countByTargetTypeAndTargetIdAndEmoji(
+                Reaction.TARGET_TYPE_THREAD,
+                targetId,
+                reactionKey
+        )).thenReturn(1L);
+
+        ReactionToggleResponse response = reactionService.toggleReaction(channelId, userId, request);
+
+        assertThat(response.emoji()).isEqualTo(reactionKey);
+
+        ArgumentCaptor<Reaction> reactionCaptor = ArgumentCaptor.forClass(Reaction.class);
+        verify(reactionRepository).save(reactionCaptor.capture());
+        assertThat(reactionCaptor.getValue().getEmoji()).isEqualTo(reactionKey);
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 리액션 값이면 INVALID_INPUT 예외가 발생한다")
+    void toggleReaction_invalidReactionKey() {
+        ReactionToggleRequest request = new ReactionToggleRequest(
+                Reaction.TARGET_TYPE_THREAD,
+                100L,
+                "unknown"
+        );
+
+        assertThatThrownBy(() -> reactionService.toggleReaction(1L, 30L, request))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+
+        verifyNoInteractions(threadRepository, workspaceMemberRepository, reactionRepository, entityManager);
     }
 
     @Test
