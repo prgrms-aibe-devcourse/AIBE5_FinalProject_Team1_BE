@@ -5,7 +5,12 @@ import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
+import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ChannelReadStatusRepository;
+import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.chat.repository.ReactionRepository;
+import com.team1.codedock.domain.chat.repository.ThreadAttachmentRepository;
+import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
@@ -30,6 +35,11 @@ public class ChannelCommandService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ThreadRepository threadRepository;
+    private final ThreadReplyRepository threadReplyRepository;
+    private final ThreadAttachmentRepository threadAttachmentRepository;
+    private final ReactionRepository reactionRepository;
+    private final BookmarkRepository bookmarkRepository;
+    private final MentionRepository mentionRepository;
     private final ChannelReadStatusRepository channelReadStatusRepository;
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final GithubIssueRepository githubIssueRepository;
@@ -65,8 +75,7 @@ public class ChannelCommandService {
         Channel channel = findWorkspaceChannel(workspaceId, channelId);
         validateDeletableChannel(channel);
         validateNoChannelReferences(channelId);
-        // read status는 사용자가 채널에 진입하면 생기는 파생 상태라 채널 삭제 시 함께 정리함
-        channelReadStatusRepository.deleteAllByChannel_Id(channelId);
+        deleteChannelChatData(channelId);
         channelRepository.delete(channel);
     }
 
@@ -107,13 +116,13 @@ public class ChannelCommandService {
     }
 
     private void validateNewChannelName(Long workspaceId, String name) {
-        if (channelRepository.existsByWorkspace_IdAndNameIgnoreCase(workspaceId, name)) {
+        if (channelRepository.countByWorkspaceIdAndNameIgnoreCase(workspaceId, name) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel name already exists in workspace.");
         }
     }
 
     private void validateUpdatedChannelName(Long workspaceId, Long channelId, String name) {
-        if (channelRepository.existsByWorkspace_IdAndNameIgnoreCaseAndIdNot(workspaceId, name, channelId)) {
+        if (channelRepository.countByWorkspaceIdAndNameIgnoreCaseAndIdNot(workspaceId, name, channelId) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel name already exists in workspace.");
         }
     }
@@ -131,14 +140,27 @@ public class ChannelCommandService {
     }
 
     private void validateNoChannelReferences(Long channelId) {
-        if (threadRepository.existsByChannel_Id(channelId)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with messages cannot be deleted.");
-        }
-        if (githubPullRequestRepository.existsByChannel_Id(channelId)) {
+        if (githubPullRequestRepository.countByChannelId(channelId) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with pull requests cannot be deleted.");
         }
-        if (githubIssueRepository.existsByChannel_Id(channelId)) {
+        if (githubIssueRepository.countByChannelId(channelId) > 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with issues cannot be deleted.");
         }
+    }
+
+    private void deleteChannelChatData(Long channelId) {
+        channelReadStatusRepository.clearLastReadThreadByThreadChannelId(channelId);
+        channelReadStatusRepository.deleteAllByChannelId(channelId);
+        reactionRepository.deleteAllThreadReplyReactionsByChannelId(channelId);
+        reactionRepository.deleteAllThreadReactionsByChannelId(channelId);
+        mentionRepository.deleteAllByThreadReplyChannelId(channelId);
+        mentionRepository.deleteAllByThreadChannelId(channelId);
+        bookmarkRepository.deleteAllByThreadChannelId(channelId);
+        threadAttachmentRepository.deleteAllByThreadChannelId(channelId);
+        threadReplyRepository.clearPullRequestReviewReferencesByThreadChannelId(channelId);
+        threadReplyRepository.clearPullRequestReviewCommentReferencesByThreadChannelId(channelId);
+        threadReplyRepository.deleteAllByThreadChannelId(channelId);
+        threadRepository.clearReplyToByChannelId(channelId);
+        threadRepository.deleteAllByChannelId(channelId);
     }
 }

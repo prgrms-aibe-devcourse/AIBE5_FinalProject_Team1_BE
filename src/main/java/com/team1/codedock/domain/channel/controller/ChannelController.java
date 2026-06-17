@@ -24,7 +24,10 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/workspaces/{workspaceId}/channels")
+@RequestMapping({
+        "/api/workspaces/{workspaceId}/channels",
+        "/api/v1/workspaces/{workspaceId}/channels"
+})
 public class ChannelController {
 
     private final ChannelQueryService channelQueryService;

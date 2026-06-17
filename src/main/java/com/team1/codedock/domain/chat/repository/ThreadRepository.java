@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.repository;
 import com.team1.codedock.domain.chat.entity.Thread;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,7 +12,8 @@ import java.util.Optional;
 
 public interface ThreadRepository extends JpaRepository<Thread, Long> {
 
-    boolean existsByChannel_Id(Long channelId);
+    @Query("SELECT COUNT(t) FROM Thread t WHERE t.channel.id = :channelId")
+    long countByChannelId(@Param("channelId") Long channelId);
 
     // 채널 읽음 처리 기준으로 삼을 최신 사용자 메시지 조회함
     Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
@@ -84,4 +86,20 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             @Param("channelIds") List<Long> channelIds,
             @Param("threadType") String threadType
     );
+
+    @Modifying
+    @Query(value = """
+            UPDATE threads
+            SET reply_to_id = NULL
+            WHERE reply_to_id IN (
+                SELECT id
+                FROM threads
+                WHERE channel_id = :channelId
+            )
+            """, nativeQuery = true)
+    void clearReplyToByChannelId(@Param("channelId") Long channelId);
+
+    @Modifying
+    @Query(value = "DELETE FROM threads WHERE channel_id = :channelId", nativeQuery = true)
+    void deleteAllByChannelId(@Param("channelId") Long channelId);
 }
