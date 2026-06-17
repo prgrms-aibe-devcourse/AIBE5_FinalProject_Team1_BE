@@ -109,14 +109,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
-        Optional<Long> workspaceId = resolveWorkspaceId(destination);
-        if (workspaceId.isEmpty()) {
-            denySubscribe(userId, destination, "허용되지 않은 WebSocket 구독 경로입니다.");
-        }
-
-        if (workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId.get(), userId) <= 0) {
-            denySubscribe(userId, destination, "WebSocket 구독 권한이 없습니다.");
-        }
+        SubscriptionAuthorizationTarget target = resolveSubscriptionTarget(userId, destination);
+        authorizeWorkspaceSubscription(userId, destination, target.workspaceId());
     }
 
     private void enforceSendRateLimit(StompHeaderAccessor accessor) {
@@ -155,6 +149,20 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private void denySubscribe(Long userId, String destination, String message) {
         log.warn("WebSocket SUBSCRIBE denied. userId={}, destination={}, reason={}", userId, destination, message);
         throw new AccessDeniedException(message);
+    }
+
+    private SubscriptionAuthorizationTarget resolveSubscriptionTarget(Long userId, String destination) {
+        Optional<Long> workspaceId = resolveWorkspaceId(destination);
+        if (workspaceId.isEmpty()) {
+            denySubscribe(userId, destination, "허용되지 않은 WebSocket 구독 경로입니다.");
+        }
+        return new SubscriptionAuthorizationTarget(workspaceId.orElseThrow());
+    }
+
+    private void authorizeWorkspaceSubscription(Long userId, String destination, Long workspaceId) {
+        if (workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId) <= 0) {
+            denySubscribe(userId, destination, "WebSocket 구독 권한이 없습니다.");
+        }
     }
 
     private Optional<Long> resolveWorkspaceId(String destination) {
@@ -235,5 +243,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             consumed++;
             return true;
         }
+    }
+
+    private record SubscriptionAuthorizationTarget(Long workspaceId) {
     }
 }
