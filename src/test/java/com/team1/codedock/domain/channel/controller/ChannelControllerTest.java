@@ -197,4 +197,14 @@ class ChannelControllerTest {
 
         verify(channelCommandService).deleteChannel(10L, 2L, USER_ID);
     }
+
+    @Test
+    @DisplayName("Channel delete API supports v1 workspace path")
+    void deleteChannelWithV1Path() throws Exception {
+        mockMvc.perform(delete("/api/v1/workspaces/{workspaceId}/channels/{channelId}", 10L, 2L)
+                        .header("X-User-Id", "999"))
+                .andExpect(status().isNoContent());
+
+        verify(channelCommandService).deleteChannel(10L, 2L, USER_ID);
+    }
 }

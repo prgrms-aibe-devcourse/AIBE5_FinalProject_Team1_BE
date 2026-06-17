@@ -2,6 +2,8 @@ package com.team1.codedock.domain.pr.repository;
 
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -9,5 +11,6 @@ public interface GithubPullRequestRepository extends JpaRepository<GithubPullReq
 
     Optional<GithubPullRequest> findByIdAndRepository_Workspace_Id(Long id, Long workspaceId);
 
-    boolean existsByChannel_Id(Long channelId);
+    @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.channel.id = :channelId")
+    long countByChannelId(@Param("channelId") Long channelId);
 }
