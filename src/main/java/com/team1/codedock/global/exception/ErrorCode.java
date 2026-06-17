@@ -49,6 +49,7 @@ public enum ErrorCode {
     GITHUB_ISSUE_NOT_FOUND(HttpStatus.NOT_FOUND, "G004", "GitHub 이슈를 찾을 수 없습니다."),
     GITHUB_NOT_CONNECTED(HttpStatus.BAD_REQUEST, "G005", "GitHub 계정이 연결되지 않았습니다."),
     GITHUB_API_ERROR(HttpStatus.BAD_GATEWAY, "G006", "GitHub API 호출에 실패했습니다."),
+    GITHUB_REPO_ALREADY_CONNECTED(HttpStatus.CONFLICT, "G007", "이미 연결된 GitHub 레포지토리가 있습니다."),
 
     // ERD
     ERD_NOT_FOUND(HttpStatus.NOT_FOUND, "E001", "ERD를 찾을 수 없습니다."),

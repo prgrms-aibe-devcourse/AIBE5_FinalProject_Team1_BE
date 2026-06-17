@@ -76,4 +76,28 @@ public class GithubRepository extends BaseEntity {
 
     @Column(name = "webhook_last_status", length = 50)
     private String webhookLastStatus;
+
+    public static GithubRepository create(
+            Workspace workspace,
+            String githubRepoId,
+            String owner,
+            String name,
+            String fullName,
+            String url,
+            String description,
+            boolean isPrivate,
+            String defaultBranch) {
+        GithubRepository repo = new GithubRepository();
+        repo.workspace = workspace;
+        repo.githubRepoId = githubRepoId;
+        repo.owner = owner;
+        repo.name = name;
+        repo.fullName = fullName;
+        repo.url = url;
+        repo.description = description;
+        repo.isPrivate = isPrivate;
+        repo.defaultBranch = defaultBranch;
+        repo.webhookActive = false;
+        return repo;
+    }
 }
