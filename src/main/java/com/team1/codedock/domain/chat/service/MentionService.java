@@ -5,8 +5,8 @@ import com.team1.codedock.domain.chat.dto.MentionResponse;
 import com.team1.codedock.domain.chat.entity.Mention;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
-import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -28,6 +28,8 @@ import java.util.regex.Pattern;
 public class MentionService {
 
     private static final Pattern MENTION_PATTERN = Pattern.compile("@([\\p{L}\\p{N}._-]{1,100})");
+    private static final String THREAD_MENTION_MESSAGE = "새 멘션이 도착했습니다.";
+    private static final String THREAD_REPLY_MENTION_MESSAGE = "새 멘션 답글이 도착했습니다.";
 
     private final MentionRepository mentionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -86,7 +88,7 @@ public class MentionService {
                         thread.getId(),
                         null,
                         mentionedMember.getId(),
-                        "새 멘션이 도착했습니다."
+                        THREAD_MENTION_MESSAGE
                 )
         ));
     }
@@ -106,7 +108,7 @@ public class MentionService {
                         thread.getId(),
                         threadReply.getId(),
                         mentionedMember.getId(),
-                        "새 멘션 답글이 도착했습니다."
+                        THREAD_REPLY_MENTION_MESSAGE
                 )
         ));
     }
@@ -117,7 +119,7 @@ public class MentionService {
     ) {
         User user = mentionedMember.getUser();
 
-        // 현재 WebSocket Principal 이름은 CustomUserDetails#getUsername()과 맞춰 이메일을 사용함
+        // WebSocket Principal 이름과 맞추기 위해 사용자 이메일을 user destination key로 사용함
         chatNotificationService.sendNotification(user.getEmail(), notification);
     }
 

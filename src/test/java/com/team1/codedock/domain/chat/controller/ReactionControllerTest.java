@@ -94,7 +94,7 @@ class ReactionControllerTest {
     }
 
     @Test
-    @DisplayName("인증 사용자가 없으면 리액션 토글 요청을 UNAUTHORIZED로 차단한다")
+    @DisplayName("인증 사용자가 없으면 리액션 토글을 거부한다")
     void toggleReaction_unauthorizedWhenUserIsNotAuthenticated() {
         Long channelId = 1L;
         ReactionToggleRequest request = new ReactionToggleRequest(
@@ -111,23 +111,29 @@ class ReactionControllerTest {
     }
 
     @Test
-    @DisplayName("채널 리액션 집계 목록을 조회한다")
+    @DisplayName("채널의 메시지와 답글 리액션 집계 목록을 조회한다")
     void getReactionSummaries() {
         Long channelId = 1L;
-        ReactionSummaryResponse summary = new ReactionSummaryResponse(
+        ReactionSummaryResponse threadSummary = new ReactionSummaryResponse(
                 Reaction.TARGET_TYPE_THREAD,
                 100L,
                 "like",
                 3L
         );
+        ReactionSummaryResponse replySummary = new ReactionSummaryResponse(
+                Reaction.TARGET_TYPE_THREAD_REPLY,
+                200L,
+                "smile",
+                2L
+        );
 
-        when(reactionService.getReactionSummaries(channelId)).thenReturn(List.of(summary));
+        when(reactionService.getReactionSummaries(channelId)).thenReturn(List.of(threadSummary, replySummary));
 
         ApiResponse<List<ReactionSummaryResponse>> apiResponse =
                 reactionController.getReactionSummaries(channelId);
 
         assertThat(apiResponse.isSuccess()).isTrue();
-        assertThat(apiResponse.getData()).containsExactly(summary);
+        assertThat(apiResponse.getData()).containsExactly(threadSummary, replySummary);
         verify(reactionService).getReactionSummaries(channelId);
     }
 

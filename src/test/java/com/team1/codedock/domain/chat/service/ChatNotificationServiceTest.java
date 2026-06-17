@@ -32,7 +32,7 @@ class ChatNotificationServiceTest {
     private ChatNotificationService chatNotificationService;
 
     @Test
-    @DisplayName("Sends personal notification with NOTIFICATION_CREATED envelope")
+    @DisplayName("개인 알림을 NOTIFICATION_CREATED envelope로 전송한다")
     void sendNotification() {
         String userDestinationKey = "tester@example.com";
         ChatNotificationResponse notification = notification();
@@ -53,7 +53,7 @@ class ChatNotificationServiceTest {
     }
 
     @Test
-    @DisplayName("Rejects personal notification without user destination key")
+    @DisplayName("알림 대상 사용자 키가 없으면 거부한다")
     void sendNotificationWithoutUserDestinationKey() {
         ChatNotificationResponse notification = notification();
 
@@ -70,7 +70,7 @@ class ChatNotificationServiceTest {
     }
 
     @Test
-    @DisplayName("Rejects personal notification without payload")
+    @DisplayName("알림 payload가 없으면 거부한다")
     void sendNotificationWithoutPayload() {
         assertThatThrownBy(() -> chatNotificationService.sendNotification("tester@example.com", null))
                 .isInstanceOf(BusinessException.class)

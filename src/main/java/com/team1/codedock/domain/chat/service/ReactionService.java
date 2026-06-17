@@ -58,7 +58,7 @@ public class ReactionService {
 
     @Transactional(readOnly = true)
     public List<ReactionSummaryResponse> getReactionSummaries(Long channelId) {
-        // 프론트 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 두 집계를 합침
+        // 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 집계함
         List<ReactionSummaryResponse> summaries = new ArrayList<>();
         summaries.addAll(reactionRepository.findThreadReactionSummariesByChannelId(channelId));
         summaries.addAll(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId));

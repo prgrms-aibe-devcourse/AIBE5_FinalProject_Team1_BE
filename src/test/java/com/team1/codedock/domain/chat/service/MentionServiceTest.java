@@ -30,6 +30,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,7 +56,7 @@ class MentionServiceTest {
     private MentionService mentionService;
 
     @Test
-    @DisplayName("Creates mentions for matching workspace members in a channel message")
+    @DisplayName("채널 메시지에서 워크스페이스 멤버 멘션을 저장하고 개인 알림을 보낸다")
     void createMentionsForThread() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -99,7 +104,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Parses Korean mentions while preserving existing mention formats")
+    @DisplayName("한글 멘션과 점/하이픈이 포함된 기존 멘션 형식을 함께 파싱한다")
     void createMentionsForThreadWithKoreanMentionNames() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -132,13 +137,13 @@ class MentionServiceTest {
 
         ArgumentCaptor<String> userKeyCaptor = ArgumentCaptor.forClass(String.class);
         verify(chatNotificationService, times(3))
-                .sendNotification(userKeyCaptor.capture(), org.mockito.ArgumentMatchers.any());
+                .sendNotification(userKeyCaptor.capture(), any());
         assertThat(userKeyCaptor.getAllValues())
                 .containsExactly("kim@test.com", "user.name@test.com", "dev-1@test.com");
     }
 
     @Test
-    @DisplayName("Does not query or save when content has no mention token")
+    @DisplayName("멘션 토큰이 없으면 조회와 저장을 생략한다")
     void createMentionsForThreadWithoutMentionToken() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -147,19 +152,13 @@ class MentionServiceTest {
 
         mentionService.createMentionsForThread(thread, sender, thread.getContent());
 
-        verify(workspaceMemberRepository, never()).findActiveMentionTargets(
-                org.mockito.ArgumentMatchers.anyLong(),
-                org.mockito.ArgumentMatchers.anyList()
-        );
-        verify(mentionRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
-        verify(chatNotificationService, never()).sendNotification(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any()
-        );
+        verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
+        verify(mentionRepository, never()).saveAll(any());
+        verify(chatNotificationService, never()).sendNotification(anyString(), any());
     }
 
     @Test
-    @DisplayName("Creates mentions for matching workspace members in a thread reply")
+    @DisplayName("답글 멘션을 저장하고 답글 개인 알림을 보낸다")
     void createMentionsForThreadReply() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -185,7 +184,7 @@ class MentionServiceTest {
         ArgumentCaptor<ChatNotificationResponse> notificationCaptor =
                 ArgumentCaptor.forClass(ChatNotificationResponse.class);
         verify(chatNotificationService)
-                .sendNotification(org.mockito.ArgumentMatchers.eq("alice@test.com"), notificationCaptor.capture());
+                .sendNotification(eq("alice@test.com"), notificationCaptor.capture());
 
         ChatNotificationResponse notification = notificationCaptor.getValue();
         assertThat(notification.workspaceId()).isEqualTo(10L);
@@ -197,7 +196,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Returns my mentions in workspace")
+    @DisplayName("내 워크스페이스 멘션 목록을 조회한다")
     void getMyMentions() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -225,7 +224,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Marks my mention as read")
+    @DisplayName("내 멘션을 읽음 처리한다")
     void markMentionAsRead() {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
@@ -248,7 +247,7 @@ class MentionServiceTest {
     }
 
     @Test
-    @DisplayName("Rejects mention list without user")
+    @DisplayName("사용자 없이 멘션 목록을 조회하면 거부한다")
     void getMyMentionsWithoutUser() {
         assertThatThrownBy(() -> mentionService.getMyMentions(10L, null))
                 .isInstanceOf(BusinessException.class)
