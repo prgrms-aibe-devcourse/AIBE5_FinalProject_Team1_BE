@@ -1,5 +1,8 @@
 package com.team1.codedock.domain.github.service;
 
+import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
@@ -31,6 +34,7 @@ public class GithubRepositoryService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final GithubRepositoryRepository githubRepositoryRepository;
+    private final ChannelRepository channelRepository;
     private final GithubApiService githubApiService;
 
     public GithubConnectResponse connectRepository(Long workspaceId, Long userId, GithubConnectRequest request) {
@@ -109,6 +113,18 @@ public class GithubRepositoryService {
             GithubRepositoryLinkRequest request
     ) {
         return GithubRepositoryResponse.from(linkRepository(workspaceId, userId, request));
+    }
+
+    public ChannelListResponse createRepositoryChannel(
+            Long workspaceId,
+            Long userId,
+            GithubRepositoryLinkRequest request
+    ) {
+        GithubRepository githubRepository = linkRepository(workspaceId, userId, request);
+
+        // Repository channel is created from the linked GitHub repository metadata.
+        Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository);
+        return ChannelListResponse.from(channelRepository.save(channel));
     }
 
     private Workspace findWorkspace(Long workspaceId) {

@@ -1,5 +1,8 @@
 package com.team1.codedock.domain.github.service;
 
+import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +53,9 @@ class GithubRepositoryServiceTest {
 
     @Mock
     private GithubRepositoryRepository githubRepositoryRepository;
+
+    @Mock
+    private ChannelRepository channelRepository;
 
     @Mock
     private GithubApiService githubApiService;
@@ -253,6 +260,38 @@ class GithubRepositoryServiceTest {
         assertThat(response.githubRepoId()).isEqualTo("123456");
         assertThat(response.owner()).isEqualTo("team1");
         assertThat(response.name()).isEqualTo("codedock");
+    }
+
+    @Test
+    @DisplayName("연결된 GitHub repository 기준으로 repository 채널을 생성한다")
+    void createRepositoryChannel() {
+        Workspace workspace = workspace(10L);
+        GithubRepositoryLinkRequest request = linkRequest("123456", "team1", "codedock");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.empty());
+        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenAnswer(invocation -> {
+            GithubRepository repository = invocation.getArgument(0);
+            ReflectionTestUtils.setField(repository, "id", 30L);
+            return repository;
+        });
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+
+        ChannelListResponse response = githubRepositoryService.createRepositoryChannel(10L, 100L, request);
+
+        assertThat(response.id()).isEqualTo(40L);
+        assertThat(response.workspaceId()).isEqualTo(10L);
+        assertThat(response.githubRepositoryId()).isEqualTo(30L);
+        assertThat(response.name()).isEqualTo("codedock");
+        assertThat(response.channelType()).isEqualTo(Channel.TYPE_REPOSITORY);
+        assertThat(response.isDeletable()).isFalse();
+        assertThat(response.description()).isEqualTo("CodeDock repository");
+        verify(channelRepository).save(any(Channel.class));
     }
 
     @Test
