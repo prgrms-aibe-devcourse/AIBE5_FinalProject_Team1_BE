@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -22,6 +23,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static final int MESSAGE_SIZE_LIMIT_BYTES = 64 * 1024;
     private static final int SEND_BUFFER_SIZE_LIMIT_BYTES = 512 * 1024;
     private static final int SEND_TIME_LIMIT_MS = 15_000;
+    private static final int HEARTBEAT_SCHEDULER_POOL_SIZE = 4;
+    private static final int INBOUND_CORE_POOL_SIZE = 8;
+    private static final int INBOUND_MAX_POOL_SIZE = 16;
+    private static final int OUTBOUND_CORE_POOL_SIZE = 4;
+    private static final int OUTBOUND_MAX_POOL_SIZE = 8;
+    private static final int WEBSOCKET_QUEUE_CAPACITY = 200;
+    private static final int WEBSOCKET_THREAD_KEEP_ALIVE_SECONDS = 60;
+    private static final int WEBSOCKET_AWAIT_TERMINATION_SECONDS = 5;
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
 
@@ -36,7 +45,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.taskExecutor(webSocketInboundTaskExecutor());
         registration.interceptors(webSocketAuthChannelInterceptor);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.taskExecutor(webSocketOutboundTaskExecutor());
     }
 
     @Override
@@ -58,9 +73,42 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Bean
     public ThreadPoolTaskScheduler webSocketMessageBrokerTaskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(1);
+        scheduler.setPoolSize(HEARTBEAT_SCHEDULER_POOL_SIZE);
         scheduler.setThreadNamePrefix("ws-heartbeat-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(false);
+        scheduler.setAwaitTerminationSeconds(WEBSOCKET_AWAIT_TERMINATION_SECONDS);
         scheduler.initialize();
         return scheduler;
+    }
+
+    @Bean
+    public ThreadPoolTaskExecutor webSocketInboundTaskExecutor() {
+        return webSocketTaskExecutor(
+                "ws-inbound-",
+                INBOUND_CORE_POOL_SIZE,
+                INBOUND_MAX_POOL_SIZE
+        );
+    }
+
+    @Bean
+    public ThreadPoolTaskExecutor webSocketOutboundTaskExecutor() {
+        return webSocketTaskExecutor(
+                "ws-outbound-",
+                OUTBOUND_CORE_POOL_SIZE,
+                OUTBOUND_MAX_POOL_SIZE
+        );
+    }
+
+    private ThreadPoolTaskExecutor webSocketTaskExecutor(String threadNamePrefix, int corePoolSize, int maxPoolSize) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix(threadNamePrefix);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(WEBSOCKET_QUEUE_CAPACITY);
+        executor.setKeepAliveSeconds(WEBSOCKET_THREAD_KEEP_ALIVE_SECONDS);
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.setAwaitTerminationSeconds(WEBSOCKET_AWAIT_TERMINATION_SECONDS);
+        executor.initialize();
+        return executor;
     }
 }
