@@ -22,6 +22,7 @@ public class UserResponse {
     private String githubUsername;
     private String githubEmail;
     private LocalDateTime githubConnectedAt;
+    private boolean hasPassword;
 
     public static UserResponse from(User user) {
         return UserResponse.builder()
@@ -37,6 +38,7 @@ public class UserResponse {
                 .githubUsername(user.getGithubUsername())
                 .githubEmail(user.getGithubEmail())
                 .githubConnectedAt(user.getGithubConnectedAt())
+                .hasPassword(user.getPasswordHash() != null)
                 .build();
     }
 }
