@@ -10,8 +10,10 @@ import com.team1.codedock.domain.chat.repository.MentionRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +53,9 @@ class MentionServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private WorkspaceEventService workspaceEventService;
 
     @InjectMocks
     private MentionService mentionService;
@@ -103,6 +108,8 @@ class MentionServiceTest {
                     assertThat(notification.threadReplyId()).isNull();
                     assertThat(notification.message()).isEqualTo("새 멘션이 도착했습니다.");
                 });
+        verify(workspaceEventService).recordEvent(
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none");
     }
 
     @Test
@@ -180,6 +187,7 @@ class MentionServiceTest {
         verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
         verify(mentionRepository, never()).saveAll(any());
         verify(eventPublisher, never()).publishEvent(any());
+        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -218,6 +226,8 @@ class MentionServiceTest {
         assertThat(event.notification().threadReplyId()).isEqualTo(200L);
         assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
         assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
+        verify(workspaceEventService).recordEvent(
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice");
     }
 
     @Test
