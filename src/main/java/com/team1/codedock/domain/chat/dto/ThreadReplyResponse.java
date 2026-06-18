@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.dto;
 
 import com.team1.codedock.domain.chat.entity.ThreadReply;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 
@@ -24,7 +25,7 @@ public record ThreadReplyResponse(
                 reply.getThread().getId(),
                 sender.getId(),
                 resolveSenderName(user),
-                reply.getContent(),
+                ChatContentEmojiCodec.decode(reply.getContent()),
                 reply.getCreatedAt()
         );
     }

@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -43,7 +44,7 @@ public class ThreadReplyService {
         // 요청 body가 아니라 인증 userId로 답글 작성 멤버 확인함
         WorkspaceMember member = findActiveWorkspaceMember(thread, userId);
 
-        ThreadReply reply = ThreadReply.create(thread, member, request.content());
+        ThreadReply reply = ThreadReply.create(thread, member, ChatContentEmojiCodec.encode(request.content()));
         ThreadReply savedReply = threadReplyRepository.save(reply);
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
         return ThreadReplyResponse.from(savedReply);
@@ -62,7 +63,7 @@ public class ThreadReplyService {
         ThreadReply reply = findEditableReply(thread, replyId, member);
         validateReplyNotDeleted(reply);
 
-        reply.updateContent(request.content());
+        reply.updateContent(ChatContentEmojiCodec.encode(request.content()));
         return ThreadReplyResponse.from(reply);
     }
 
