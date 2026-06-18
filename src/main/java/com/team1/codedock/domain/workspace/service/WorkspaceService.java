@@ -336,6 +336,7 @@ public class WorkspaceService {
         nq("DELETE FROM threads WHERE channel_id IN " + channelIds, workspaceId);
 
         // 워크스페이스 직접 참조 테이블
+        nq("DELETE FROM workspace_events WHERE workspace_id = :wid", workspaceId);
         nq("DELETE FROM activity_logs WHERE workspace_id = :wid", workspaceId);
         nq("DELETE FROM channels WHERE workspace_id = :wid", workspaceId);
         nq("DELETE FROM github_repositories WHERE workspace_id = :wid", workspaceId);
