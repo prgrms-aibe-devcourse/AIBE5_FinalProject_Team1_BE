@@ -120,7 +120,9 @@ public class WorkspaceService {
         preferencesRepository.save(prefs);
 
         java.util.Map<String, Object> event = new java.util.HashMap<>();
+        event.put("workspaceId", workspaceId);
         event.put("memberId", membership.getId());
+        event.put("workspaceMemberId", membership.getId());
         event.put("userId", currentUserId);
         event.put("username", membership.getUser().getUsername());
         event.put("presence", presence);

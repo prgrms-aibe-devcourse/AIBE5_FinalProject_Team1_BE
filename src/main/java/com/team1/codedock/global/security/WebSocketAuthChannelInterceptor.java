@@ -51,6 +51,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Pattern.compile("^/app/channels/\\d+/typing$");
     private static final Pattern THREAD_EVENTS_DESTINATION =
             Pattern.compile("^/topic/threads/(\\d+)/events$");
+    private static final Pattern WORKSPACE_PRESENCE_DESTINATION =
+            Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
 
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
@@ -303,6 +305,12 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     }
 
     private Optional<Long> resolveWorkspaceId(String destination) {
+        Matcher workspacePresenceMatcher = WORKSPACE_PRESENCE_DESTINATION.matcher(destination);
+        if (workspacePresenceMatcher.matches()) {
+            // presence는 destination에 workspaceId가 직접 들어있어 멤버십 검증으로 구독 권한을 판단함.
+            return Optional.of(parseId(workspacePresenceMatcher.group(1)));
+        }
+
         Matcher channelEventsMatcher = CHANNEL_EVENTS_DESTINATION.matcher(destination);
         if (channelEventsMatcher.matches()) {
             return channelRepository.findWorkspaceIdById(parseId(channelEventsMatcher.group(1)));

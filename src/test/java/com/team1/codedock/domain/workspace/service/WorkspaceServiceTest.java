@@ -8,6 +8,7 @@ import com.team1.codedock.domain.workspace.dto.WorkspaceCreateRequest;
 import com.team1.codedock.domain.workspace.entity.Invitation;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMemberPreferences;
 import com.team1.codedock.domain.workspace.repository.InvitationRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberPreferencesRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -26,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +35,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -144,6 +148,117 @@ class WorkspaceServiceTest {
     }
 
     @Test
+    @DisplayName("기존 presence 설정이 있으면 값을 갱신하고 워크스페이스 presence 토픽으로 전파한다")
+    void updatePresenceWithExistingPreferencesBroadcastsEvent() {
+        Workspace workspace = workspace(10L);
+        User user = user(100L, "member@test.com");
+        WorkspaceMember member = workspaceMember(5L, workspace, user, "editor");
+        WorkspaceMemberPreferences preferences = WorkspaceMemberPreferences.create(member);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.of(member));
+        when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.of(preferences));
+
+        workspaceService.updatePresence(10L, "busy", 100L);
+
+        assertThat(preferences.getPresence()).isEqualTo("busy");
+        verify(preferencesRepository).save(preferences);
+        assertPresenceBroadcast("/topic/workspaces/10/presence", 10L, member, user, "busy");
+    }
+
+    @Test
+    @DisplayName("presence 설정이 없으면 새로 생성한 뒤 워크스페이스 presence 토픽으로 전파한다")
+    void updatePresenceWithoutPreferencesCreatesPreferencesAndBroadcastsEvent() {
+        Workspace workspace = workspace(10L);
+        User user = user(100L, "member@test.com");
+        WorkspaceMember member = workspaceMember(5L, workspace, user, "viewer");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.of(member));
+        when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.empty());
+
+        workspaceService.updatePresence(10L, "away", 100L);
+
+        ArgumentCaptor<WorkspaceMemberPreferences> preferencesCaptor =
+                ArgumentCaptor.forClass(WorkspaceMemberPreferences.class);
+        verify(preferencesRepository).save(preferencesCaptor.capture());
+        WorkspaceMemberPreferences savedPreferences = preferencesCaptor.getValue();
+
+        assertThat(savedPreferences.getWorkspaceMember()).isSameAs(member);
+        assertThat(savedPreferences.getPresence()).isEqualTo("away");
+        assertPresenceBroadcast("/topic/workspaces/10/presence", 10L, member, user, "away");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 워크스페이스의 presence 변경은 저장과 전파를 하지 않는다")
+    void updatePresenceWithMissingWorkspaceDoesNotSaveOrBroadcast() {
+        when(workspaceRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workspaceService.updatePresence(404L, "busy", 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
+
+        verifyNoInteractions(userRepository, workspaceMemberRepository, preferencesRepository, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 사용자의 presence 변경은 저장과 전파를 하지 않는다")
+    void updatePresenceWithMissingUserDoesNotSaveOrBroadcast() {
+        Workspace workspace = workspace(10L);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workspaceService.updatePresence(10L, "busy", 404L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+        verifyNoInteractions(workspaceMemberRepository, preferencesRepository, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("워크스페이스 멤버가 아닌 사용자의 presence 변경은 저장과 전파를 하지 않는다")
+    void updatePresenceWithoutMembershipDoesNotSaveOrBroadcast() {
+        Workspace workspace = workspace(10L);
+        User user = user(100L, "member@test.com");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workspaceService.updatePresence(10L, "busy", 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verifyNoInteractions(preferencesRepository, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("비활성 워크스페이스 멤버의 presence 변경은 저장과 전파를 하지 않는다")
+    void updatePresenceWithInactiveMembershipDoesNotSaveOrBroadcast() {
+        Workspace workspace = workspace(10L);
+        User user = user(100L, "member@test.com");
+        WorkspaceMember member = workspaceMember(5L, workspace, user, "viewer");
+        member.deactivate("left");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> workspaceService.updatePresence(10L, "busy", 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verifyNoInteractions(preferencesRepository, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("초대 수락: invitedEmail이 사용자의 기본 email과 일치하면 수락한다")
     void acceptInvite_matchByEmail_success() {
         User user = user(1L, "a@x.com", null);
@@ -250,6 +365,31 @@ class WorkspaceServiceTest {
         WorkspaceMember member = WorkspaceMember.create(workspace, user, authority);
         ReflectionTestUtils.setField(member, "id", id);
         return member;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertPresenceBroadcast(
+            String expectedDestination,
+            Long expectedWorkspaceId,
+            WorkspaceMember member,
+            User user,
+            String expectedPresence
+    ) {
+        ArgumentCaptor<String> destinationCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+
+        verify(messagingTemplate).convertAndSend(destinationCaptor.capture(), payloadCaptor.capture());
+
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertThat(destinationCaptor.getValue()).isEqualTo(expectedDestination);
+        assertThat(payload)
+                .containsEntry("workspaceId", expectedWorkspaceId)
+                .containsEntry("memberId", member.getId())
+                .containsEntry("workspaceMemberId", member.getId())
+                .containsEntry("userId", user.getId())
+                .containsEntry("username", user.getUsername())
+                .containsEntry("presence", expectedPresence);
+        verifyNoMoreInteractions(messagingTemplate);
     }
 
     private static Invitation pendingInvitation(String invitedEmail) {
