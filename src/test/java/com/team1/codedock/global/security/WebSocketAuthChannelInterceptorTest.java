@@ -191,9 +191,168 @@ class WebSocketAuthChannelInterceptorTest {
             interceptor.preSend(message, messageChannel);
         }
 
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("typing SEND는 일반 메시지 rate limit에서 제외한다")
+    void typingSendMessageIsExcludedFromGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> typingMessage = sendMessage("/app/channels/10/typing", authentication, "session-1");
+        Message<?> normalMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+
+        for (int i = 0; i < 50; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+
+        // typing 폭주는 일반 메시지 예산을 소모하지 않아 실제 메시지 전송은 계속 가능함.
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+    }
+
+    @Test
+    @DisplayName("typing SEND도 인증 Principal이 없으면 거부한다")
+    void typingSendWithoutPrincipalIsRejected() {
+        Message<?> message = sendMessage("/app/channels/10/typing", null, "session-1");
+
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+                .hasMessage("WebSocket 인증 사용자가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("typing과 비슷하지만 다른 SEND 경로는 일반 rate limit을 적용한다")
+    void typingLikeSendDestinationUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/typing-extra", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("일반 SEND 예산이 소진되어도 typing SEND는 drop하지 않는다")
+    void typingSendPassesEvenWhenGeneralRateLimitIsExhausted() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> normalMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+        Message<?> typingMessage = sendMessage("/app/channels/10/typing", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+        }
+
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isNull();
+
+        // 일반 메시지 제한에 걸린 세션이어도 typing 상태 이벤트는 연결 종료 없이 계속 흘려보냄.
+        for (int i = 0; i < 10; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+    }
+
+    @Test
+    @DisplayName("세션 id가 없는 typing SEND도 사용자 fallback rate limit 예산을 소모하지 않는다")
+    void typingSendWithoutSessionDoesNotConsumeUserFallbackRateLimit() {
+        Authentication authentication = authentication(1L);
+        Message<?> typingMessage = sendMessage("/app/channels/10/typing", authentication, null);
+        Message<?> normalMessage = sendMessage("/app/channels/10/messages", authentication, null);
+
+        for (int i = 0; i < 50; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+    }
+
+    @Test
+    @DisplayName("숫자가 아닌 channelId의 typing SEND 경로는 일반 rate limit을 적용한다")
+    void typingSendDestinationWithNonNumericChannelIdUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/not-number/typing", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("typing SEND 경로에 trailing slash가 붙으면 일반 rate limit을 적용한다")
+    void typingSendDestinationWithTrailingSlashUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/channels/10/typing/", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("typing SEND가 중간에 섞여도 일반 메시지 rate limit 카운트를 증가시키지 않는다")
+    void typingSendBetweenNormalMessagesDoesNotConsumeGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> normalMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+        Message<?> typingMessage = sendMessage("/app/channels/10/typing", authentication, "session-1");
+
+        for (int i = 0; i < 19; i++) {
+            assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+
+        // typing이 일반 메시지 예산을 먹었다면 여기서 drop되므로, 20번째 일반 메시지까지 통과하는지 확인함.
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("typing SEND만 반복하면 rate limit 캐시 엔트리를 만들지 않는다")
+    void typingOnlySendDoesNotCreateRateLimitCacheEntry() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> typingMessage = sendMessage("/app/channels/10/typing", authentication, "session-1");
+
+        for (int i = 0; i < 100; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+
+        clock.advance(Duration.ofMillis(30_000));
+
+        // typing은 rate limit window를 만들지 않으므로 sweep 대상도 없어야 함.
+        assertThat(interceptor.sweepExpiredCacheEntries(clock.millis())).isZero();
+    }
+
+    @Test
+    @DisplayName("스레드 답글 SEND는 일반 메시지와 동일하게 rate limit을 적용한다")
+    void threadReplySendUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/threads/10/replies", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("채널 메시지와 스레드 답글 SEND는 같은 세션 rate limit 예산을 공유한다")
+    void channelMessageAndThreadReplyShareSessionRateLimitBudget() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> channelMessage = sendMessage("/app/channels/10/messages", authentication, "session-1");
+        Message<?> threadReply = sendMessage("/app/threads/20/replies", authentication, "session-1");
+
+        for (int i = 0; i < 10; i++) {
+            assertThat(interceptor.preSend(channelMessage, messageChannel)).isSameAs(channelMessage);
+            assertThat(interceptor.preSend(threadReply, messageChannel)).isSameAs(threadReply);
+        }
+
+        assertThat(interceptor.preSend(channelMessage, messageChannel)).isNull();
+        assertThat(interceptor.preSend(threadReply, messageChannel)).isNull();
     }
 
     @Test
@@ -207,8 +366,7 @@ class WebSocketAuthChannelInterceptorTest {
         for (int i = 0; i < 20; i++) {
             interceptor.preSend(message, messageChannel);
         }
-        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
 
         clock.advance(Duration.ofMillis(10_000));
 
@@ -229,9 +387,7 @@ class WebSocketAuthChannelInterceptorTest {
 
         clock.advance(Duration.ofMillis(9_999));
 
-        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
 
         clock.advance(Duration.ofMillis(1));
 
@@ -250,9 +406,7 @@ class WebSocketAuthChannelInterceptorTest {
         }
 
         assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
-        assertThatThrownBy(() -> interceptor.preSend(firstSessionMessage, messageChannel))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isNull();
     }
 
     @Test
@@ -266,9 +420,7 @@ class WebSocketAuthChannelInterceptorTest {
         }
 
         assertThat(interceptor.preSend(secondUserMessage, messageChannel)).isSameAs(secondUserMessage);
-        assertThatThrownBy(() -> interceptor.preSend(firstUserMessage, messageChannel))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        assertThat(interceptor.preSend(firstUserMessage, messageChannel)).isNull();
     }
 
     @Test
@@ -281,8 +433,7 @@ class WebSocketAuthChannelInterceptorTest {
         for (int i = 0; i < 20; i++) {
             interceptor.preSend(sendMessage, messageChannel);
         }
-        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isNull();
 
         interceptor.preSend(disconnectMessage, messageChannel);
 
@@ -298,8 +449,7 @@ class WebSocketAuthChannelInterceptorTest {
         for (int i = 0; i < 20; i++) {
             interceptor.preSend(sendMessage, messageChannel);
         }
-        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isNull();
 
         interceptor.handleSessionDisconnect(sessionDisconnectEvent("session-1"));
 
@@ -318,9 +468,7 @@ class WebSocketAuthChannelInterceptorTest {
 
         interceptor.preSend(disconnectMessage, messageChannel);
 
-        assertThatThrownBy(() -> interceptor.preSend(sendMessage, messageChannel))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        assertThat(interceptor.preSend(sendMessage, messageChannel)).isNull();
     }
 
     @Test
