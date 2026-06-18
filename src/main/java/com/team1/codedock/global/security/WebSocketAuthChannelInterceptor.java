@@ -3,31 +3,34 @@ package com.team1.codedock.global.security;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.security.Principal;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
@@ -37,6 +40,9 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private static final String PERSONAL_ERROR_DESTINATION = "/user/queue/errors";
     private static final int SEND_RATE_LIMIT_CAPACITY = 20;
     private static final long SEND_RATE_LIMIT_WINDOW_MILLIS = 10_000L;
+    private static final long SUBSCRIBE_AUTH_CACHE_TTL_MILLIS = 30_000L;
+    private static final long CACHE_SWEEP_INTERVAL_MILLIS = 60_000L;
+    private static final String SESSION_CACHE_KEY_PREFIX = "session:";
     private static final Pattern CHANNEL_EVENTS_DESTINATION =
             Pattern.compile("^/topic/channels/(\\d+)/events$");
     private static final Pattern CHANNEL_TYPING_DESTINATION =
@@ -50,7 +56,43 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final ThreadRepository threadRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ConcurrentMap<String, SendRateLimitWindow> sendRateLimitWindows = new ConcurrentHashMap<>();
-    private final Clock clock = Clock.systemUTC();
+    private final ConcurrentMap<String, SubscriptionWorkspaceCacheEntry> subscriptionWorkspaceCache = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, SubscribeAuthorizationCacheEntry> subscribeAuthorizationCache = new ConcurrentHashMap<>();
+    private final Clock clock;
+
+    @Autowired
+    public WebSocketAuthChannelInterceptor(
+            JwtProvider jwtProvider,
+            CustomUserDetailsService userDetailsService,
+            ChannelRepository channelRepository,
+            ThreadRepository threadRepository,
+            WorkspaceMemberRepository workspaceMemberRepository
+    ) {
+        this(
+                jwtProvider,
+                userDetailsService,
+                channelRepository,
+                threadRepository,
+                workspaceMemberRepository,
+                Clock.systemUTC()
+        );
+    }
+
+    WebSocketAuthChannelInterceptor(
+            JwtProvider jwtProvider,
+            CustomUserDetailsService userDetailsService,
+            ChannelRepository channelRepository,
+            ThreadRepository threadRepository,
+            WorkspaceMemberRepository workspaceMemberRepository,
+            Clock clock
+    ) {
+        this.jwtProvider = jwtProvider;
+        this.userDetailsService = userDetailsService;
+        this.channelRepository = channelRepository;
+        this.threadRepository = threadRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.clock = clock;
+    }
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -75,7 +117,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
 
         if (accessor.getCommand() == StompCommand.DISCONNECT) {
-            clearRateLimit(accessor);
+            clearSessionState(accessor);
         }
 
         return message;
@@ -109,14 +151,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
-        Optional<Long> workspaceId = resolveWorkspaceId(destination);
-        if (workspaceId.isEmpty()) {
-            denySubscribe(userId, destination, "허용되지 않은 WebSocket 구독 경로입니다.");
-        }
-
-        if (workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId.get(), userId) <= 0) {
-            denySubscribe(userId, destination, "WebSocket 구독 권한이 없습니다.");
-        }
+        SubscriptionAuthorizationTarget target = resolveSubscriptionTarget(userId, destination);
+        authorizeWorkspaceSubscription(userId, destination, target.workspaceId(), accessor.getSessionId());
     }
 
     private void enforceSendRateLimit(StompHeaderAccessor accessor) {
@@ -137,11 +173,60 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
     }
 
-    private void clearRateLimit(StompHeaderAccessor accessor) {
+    private void clearSessionState(StompHeaderAccessor accessor) {
         String sessionId = accessor.getSessionId();
+        clearSessionState(sessionId);
+    }
+
+    @EventListener
+    public void handleSessionDisconnect(SessionDisconnectEvent event) {
+        clearSessionState(event.getSessionId());
+    }
+
+    @Scheduled(fixedDelay = CACHE_SWEEP_INTERVAL_MILLIS)
+    void sweepExpiredCacheEntries() {
+        int removedCount = sweepExpiredCacheEntries(clock.millis());
+        if (removedCount > 0) {
+            log.debug("Expired WebSocket cache entries swept. removedCount={}", removedCount);
+        }
+    }
+
+    void clearSessionState(String sessionId) {
         if (StringUtils.hasText(sessionId)) {
             sendRateLimitWindows.remove(sessionId);
+            subscribeAuthorizationCache.keySet().removeIf(key -> key.startsWith(sessionCacheKeyPrefix(sessionId)));
         }
+    }
+
+    int sweepExpiredCacheEntries(long now) {
+        AtomicInteger removedCount = new AtomicInteger();
+
+        // destination -> workspace 캐시는 세션과 무관하므로 주기적으로 만료 엔트리 제거함
+        subscriptionWorkspaceCache.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().isExpired(now);
+            if (expired) {
+                removedCount.incrementAndGet();
+            }
+            return expired;
+        });
+
+        subscribeAuthorizationCache.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().isExpired(now);
+            if (expired) {
+                removedCount.incrementAndGet();
+            }
+            return expired;
+        });
+
+        sendRateLimitWindows.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().isExpired(now);
+            if (expired) {
+                removedCount.incrementAndGet();
+            }
+            return expired;
+        });
+
+        return removedCount.get();
     }
 
     private String rateLimitKey(StompHeaderAccessor accessor, Long userId) {
@@ -155,6 +240,53 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private void denySubscribe(Long userId, String destination, String message) {
         log.warn("WebSocket SUBSCRIBE denied. userId={}, destination={}, reason={}", userId, destination, message);
         throw new AccessDeniedException(message);
+    }
+
+    private SubscriptionAuthorizationTarget resolveSubscriptionTarget(Long userId, String destination) {
+        long now = clock.millis();
+        SubscriptionWorkspaceCacheEntry cached = subscriptionWorkspaceCache.get(destination);
+        if (cached != null && !cached.isExpired(now)) {
+            return new SubscriptionAuthorizationTarget(cached.workspaceId());
+        }
+
+        Optional<Long> workspaceId = resolveWorkspaceId(destination);
+        if (workspaceId.isEmpty()) {
+            denySubscribe(userId, destination, "허용되지 않은 WebSocket 구독 경로입니다.");
+        }
+
+        Long resolvedWorkspaceId = workspaceId.orElseThrow();
+        subscriptionWorkspaceCache.put(
+                destination,
+                new SubscriptionWorkspaceCacheEntry(resolvedWorkspaceId, now + SUBSCRIBE_AUTH_CACHE_TTL_MILLIS)
+        );
+        return new SubscriptionAuthorizationTarget(resolvedWorkspaceId);
+    }
+
+    private void authorizeWorkspaceSubscription(Long userId, String destination, Long workspaceId, String sessionId) {
+        String cacheKey = subscribeAuthorizationCacheKey(sessionId, userId, workspaceId);
+        long now = clock.millis();
+        SubscribeAuthorizationCacheEntry cached = subscribeAuthorizationCache.get(cacheKey);
+        if (cached != null && !cached.isExpired(now)) {
+            return;
+        }
+
+        if (workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId) <= 0) {
+            subscribeAuthorizationCache.remove(cacheKey);
+            denySubscribe(userId, destination, "WebSocket 구독 권한이 없습니다.");
+        }
+
+        subscribeAuthorizationCache.put(cacheKey, new SubscribeAuthorizationCacheEntry(now + SUBSCRIBE_AUTH_CACHE_TTL_MILLIS));
+    }
+
+    private String subscribeAuthorizationCacheKey(String sessionId, Long userId, Long workspaceId) {
+        if (StringUtils.hasText(sessionId)) {
+            return sessionCacheKeyPrefix(sessionId) + "user:" + userId + ":workspace:" + workspaceId;
+        }
+        return "user:" + userId + ":workspace:" + workspaceId;
+    }
+
+    private String sessionCacheKeyPrefix(String sessionId) {
+        return SESSION_CACHE_KEY_PREFIX + sessionId + ":";
     }
 
     private Optional<Long> resolveWorkspaceId(String destination) {
@@ -197,7 +329,12 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
             throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
         }
-        return authorization.substring(BEARER_PREFIX.length());
+
+        String token = authorization.substring(BEARER_PREFIX.length());
+        if (!StringUtils.hasText(token)) {
+            throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
+        }
+        return token;
     }
 
     private String getAuthorizationHeader(StompHeaderAccessor accessor) {
@@ -234,6 +371,27 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
             consumed++;
             return true;
+        }
+
+        synchronized boolean isExpired(long now) {
+            return windowStartedAt > 0L && now - windowStartedAt >= SEND_RATE_LIMIT_WINDOW_MILLIS;
+        }
+    }
+
+    private record SubscriptionAuthorizationTarget(Long workspaceId) {
+    }
+
+    private record SubscriptionWorkspaceCacheEntry(Long workspaceId, long expiresAt) {
+
+        boolean isExpired(long now) {
+            return now >= expiresAt;
+        }
+    }
+
+    private record SubscribeAuthorizationCacheEntry(long expiresAt) {
+
+        boolean isExpired(long now) {
+            return now >= expiresAt;
         }
     }
 }

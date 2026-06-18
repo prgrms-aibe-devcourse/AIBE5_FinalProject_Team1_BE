@@ -22,9 +22,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import java.lang.reflect.Method;
 import java.security.Principal;
 import java.time.LocalDateTime;
 
@@ -34,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -77,6 +81,26 @@ class ChatWebSocketControllerTest {
                 ChatEventType.MESSAGE_CREATED,
                 response
         );
+    }
+
+    @Test
+    @DisplayName("Channel message WebSocket send는 서비스 실패 시 broadcast하지 않는다")
+    void createChannelMessageDoesNotBroadcastWhenServiceFails() {
+        Long channelId = 1L;
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        when(chatMessageService.createChannelMessage(channelId, userId, request))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "채널 접근 권한이 없습니다."));
+
+        assertThatThrownBy(() -> chatWebSocketController.createChannelMessage(channelId, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(chatMessageService).createChannelMessage(channelId, userId, request);
+        verifyNoInteractions(threadReplyService, messagingTemplate);
     }
 
     @Test
@@ -150,11 +174,60 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Thread reply WebSocket send는 서비스 실패 시 broadcast하지 않는다")
+    void createThreadReplyDoesNotBroadcastWhenServiceFails() {
+        Long threadId = 1L;
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
+        ThreadReplyCreateRequest serviceRequest = new ThreadReplyCreateRequest("reply");
+
+        when(threadReplyService.createReply(eq(threadId), eq(userId), eq(serviceRequest)))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "스레드를 찾을 수 없습니다."));
+
+        assertThatThrownBy(() -> chatWebSocketController.createThreadReply(threadId, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
+
+        verify(threadReplyService).createReply(threadId, userId, serviceRequest);
+        verifyNoInteractions(chatMessageService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Thread reply WebSocket send rejects missing Principal")
     void createThreadReplyWithoutPrincipal() {
         ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
 
         assertThatThrownBy(() -> chatWebSocketController.createThreadReply(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Thread reply WebSocket send rejects non-authentication Principal")
+    void createThreadReplyWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
+
+        assertThatThrownBy(() -> chatWebSocketController.createThreadReply(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Thread reply WebSocket send rejects Principal without CustomUserDetails")
+    void createThreadReplyWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        ThreadReplyWebSocketCreateRequest request = new ThreadReplyWebSocketCreateRequest("reply");
+
+        assertThatThrownBy(() -> chatWebSocketController.createThreadReply(1L, principal, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
@@ -184,11 +257,59 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("Typing WebSocket send는 서비스 실패 시 broadcast하지 않는다")
+    void sendTypingEventDoesNotBroadcastWhenServiceFails() {
+        Long channelId = 1L;
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        when(chatMessageService.createTypingEventResponse(channelId, userId, request))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "채널 접근 권한이 없습니다."));
+
+        assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(channelId, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(chatMessageService).createTypingEventResponse(channelId, userId, request);
+        verifyNoInteractions(threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("Typing WebSocket send rejects missing Principal")
     void sendTypingEventWithoutPrincipal() {
         TypingEventRequest request = new TypingEventRequest(true);
 
         assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Typing WebSocket send rejects non-authentication Principal")
+    void sendTypingEventWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("Typing WebSocket send rejects Principal without CustomUserDetails")
+    void sendTypingEventWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, principal, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
@@ -218,6 +339,37 @@ class ChatWebSocketControllerTest {
         assertThat(response.getMessage()).isEqualTo("WebSocket 요청 payload가 올바르지 않습니다.");
     }
 
+    @Test
+    @DisplayName("WebSocket BusinessException handler는 발신 세션의 에러 큐로만 응답한다")
+    void businessExceptionHandlerSendsToCurrentSessionOnly() throws NoSuchMethodException {
+        Method method = ChatWebSocketController.class.getDeclaredMethod("handleBusinessException", BusinessException.class);
+
+        SendToUser sendToUser = method.getAnnotation(SendToUser.class);
+        MessageExceptionHandler exceptionHandler = method.getAnnotation(MessageExceptionHandler.class);
+
+        assertThat(sendToUser).isNotNull();
+        assertThat(sendToUser.value()).containsExactly("/queue/errors");
+        assertThat(sendToUser.broadcast()).isFalse();
+        assertThat(exceptionHandler).isNotNull();
+        assertThat(exceptionHandler.value()).containsExactly(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("WebSocket validation handler는 발신 세션의 에러 큐로만 응답한다")
+    void validationExceptionHandlerSendsToCurrentSessionOnly() throws NoSuchMethodException {
+        Method method = ChatWebSocketController.class.getDeclaredMethod("handleValidationException");
+
+        SendToUser sendToUser = method.getAnnotation(SendToUser.class);
+        MessageExceptionHandler exceptionHandler = method.getAnnotation(MessageExceptionHandler.class);
+
+        assertThat(sendToUser).isNotNull();
+        assertThat(sendToUser.value()).containsExactly("/queue/errors");
+        assertThat(sendToUser.broadcast()).isFalse();
+        assertThat(exceptionHandler).isNotNull();
+        assertThat(exceptionHandler.value())
+                .containsExactly(org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException.class);
+    }
+
     private void assertBroadcastEvent(
             String destination,
             ChatEventType expectedType,
@@ -231,6 +383,7 @@ class ChatWebSocketControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(expectedType);
         assertThat(event.payload()).isEqualTo(expectedPayload);
+        verifyNoMoreInteractions(messagingTemplate);
     }
 
     private static Principal principal(Long userId) {
