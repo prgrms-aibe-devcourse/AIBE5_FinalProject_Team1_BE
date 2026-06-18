@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.chat.dto;
 
 import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 
@@ -41,7 +42,7 @@ public record ChannelMessageResponse(
                 thread.getChannel().getId(),
                 sender.getId(),
                 resolveSenderName(user),
-                thread.getContent(),
+                ChatContentEmojiCodec.decode(thread.getContent()),
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments
         );

@@ -10,6 +10,7 @@ import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -81,7 +82,7 @@ public class ChatMessageService {
         WorkspaceMember member = findActiveWorkspaceMember(channel, userId);
         Thread message = findEditableChannelMessage(channel, messageId, member);
 
-        message.updateContent(request.content());
+        message.updateContent(ChatContentEmojiCodec.encode(request.content()));
         return responseWithAttachments(message);
     }
 
@@ -108,11 +109,12 @@ public class ChatMessageService {
     }
 
     private Thread saveChannelMessageEntity(Channel channel, WorkspaceMember sender, String content) {
+        String encodedContent = ChatContentEmojiCodec.encode(content);
         Thread thread =
                 Thread.createChannelMessage(
                         channel,
                         sender,
-                        content
+                        encodedContent
                 );
 
         Thread savedThread = threadRepository.save(thread);
