@@ -157,8 +157,9 @@ class ChatMessageServiceTest {
                 "image/png",
                 100L
         );
+        String content = "첨부 확인 👍📝";
         ChannelMessageRestCreateRequest request =
-                new ChannelMessageRestCreateRequest("hello", List.of(attachmentRequest));
+                new ChannelMessageRestCreateRequest(content, List.of(attachmentRequest));
         ThreadAttachmentResponse attachmentResponse = new ThreadAttachmentResponse(
                 1L,
                 "image",
@@ -190,7 +191,11 @@ class ChatMessageServiceTest {
         ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
         assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.content()).isEqualTo(content);
         assertThat(response.attachments()).containsExactly(attachmentResponse);
+        ArgumentCaptor<Thread> threadCaptor = ArgumentCaptor.forClass(Thread.class);
+        verify(threadRepository).save(threadCaptor.capture());
+        assertThat(threadCaptor.getValue().getContent()).isEqualTo("첨부 확인 [[emoji:like]][[emoji:memo]]");
         verify(threadAttachmentService).saveAttachments(
                 org.mockito.ArgumentMatchers.any(Thread.class),
                 org.mockito.ArgumentMatchers.eq(List.of(attachmentRequest))
