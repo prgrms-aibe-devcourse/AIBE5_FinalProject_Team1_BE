@@ -127,6 +127,7 @@ class ChatMessageServiceTest {
         verify(threadRepository).save(threadCaptor.capture());
         String storedContent = threadCaptor.getValue().getContent();
         assertThat(storedContent).isNotEqualTo(content);
+        assertThat(storedContent).isEqualTo("배포 완료 [[emoji:like]][[emoji:fire]]");
         assertThat(storedContent).doesNotContain("👍", "🔥");
         assertThat(ChatContentEmojiCodec.decode(storedContent)).isEqualTo(content);
         verify(mentionService).createMentionsForThread(
@@ -518,7 +519,7 @@ class ChatMessageServiceTest {
         Channel channel = channel(channelId, workspace);
         WorkspaceMember member = workspaceMember(memberId, workspace, true, user("tester", "tester"));
         Thread message = thread(messageId, channel, member, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
-        String content = "수정 완료 😀";
+        String content = "수정 완료 😄";
         ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest(content);
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
@@ -531,7 +532,8 @@ class ChatMessageServiceTest {
         assertThat(response.id()).isEqualTo(messageId);
         assertThat(response.content()).isEqualTo(content);
         assertThat(message.getContent()).isNotEqualTo(content);
-        assertThat(message.getContent()).doesNotContain("😀");
+        assertThat(message.getContent()).isEqualTo("수정 완료 [[emoji:smile]]");
+        assertThat(message.getContent()).doesNotContain("😄");
         assertThat(ChatContentEmojiCodec.decode(message.getContent())).isEqualTo(content);
     }
 

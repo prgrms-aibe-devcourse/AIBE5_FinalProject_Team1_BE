@@ -109,9 +109,14 @@ REST 생성 fallback인 `POST /api/channels/{channelId}/messages`도 성공 시 
 }
 ```
 
-백엔드는 Oracle 문자셋 호환성을 위해 이모지가 포함된 본문을 내부 안전 문자열로 인코딩해 저장한다. 프론트가 받는 REST/WebSocket 응답의 `content`는 다시 원문 이모지로 복원된다.
+백엔드는 Oracle 문자셋 호환성을 위해 리액션 팔레트 24개 이모지를 같은 key 기반 내부 토큰으로 변환해 저장한다.
 
-리액션의 `emoji` 필드는 `like`, `fire` 같은 reaction key를 사용하지만, 메시지/답글 본문 `content`는 key 매핑을 하지 않는다.
+```text
+배포 완료 👍🔥
+-> 배포 완료 [[emoji:like]][[emoji:fire]]
+```
+
+프론트가 받는 REST/WebSocket 응답의 `content`는 다시 원문 이모지로 복원된다. 본문 이모지 key는 리액션의 `emoji` 필드와 같은 key set을 사용한다.
 
 ## Thread Reply
 
@@ -149,7 +154,7 @@ REST 생성 fallback인 `POST /api/channels/{channelId}/messages`도 성공 시 
 
 REST 생성 fallback인 `POST /api/threads/{threadId}/replies`도 성공 시 같은 `THREAD_REPLY_CREATED` event를 broadcast한다.
 
-답글 본문 `content`도 채널 메시지와 동일하게 실제 이모지를 요청하고, 백엔드가 저장 시 내부 인코딩한 뒤 응답에서 원문으로 복원한다.
+답글 본문 `content`도 채널 메시지와 동일하게 실제 이모지를 요청하고, 백엔드가 저장 시 리액션 key 기반 토큰으로 변환한 뒤 응답에서 원문으로 복원한다.
 
 ## Typing
 

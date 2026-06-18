@@ -148,6 +148,7 @@ class ThreadReplyServiceTest {
         verify(threadReplyRepository).save(replyCaptor.capture());
         String storedContent = replyCaptor.getValue().getContent();
         assertThat(storedContent).isNotEqualTo(content);
+        assertThat(storedContent).isEqualTo("확인했습니다 [[emoji:like]][[emoji:fire]]");
         assertThat(storedContent).doesNotContain("👍", "🔥");
         assertThat(ChatContentEmojiCodec.decode(storedContent)).isEqualTo(content);
         verify(mentionService).createMentionsForThreadReply(
@@ -231,7 +232,7 @@ class ThreadReplyServiceTest {
         Long userId = 3L;
         Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
         WorkspaceMember member = workspaceMember(20L, user("tester", "테스터"));
-        String content = "목록 답글 😀";
+        String content = "목록 답글 😄";
         ThreadReply reply = reply(
                 100L,
                 thread,
@@ -283,7 +284,7 @@ class ThreadReplyServiceTest {
         Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
         WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
         ThreadReply reply = reply(100L, thread, member, "old reply", LocalDateTime.of(2026, 6, 9, 10, 0));
-        String content = "수정 답글 👨‍💻";
+        String content = "수정 답글 🔧";
 
         when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
@@ -296,7 +297,8 @@ class ThreadReplyServiceTest {
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.content()).isEqualTo(content);
         assertThat(reply.getContent()).isNotEqualTo(content);
-        assertThat(reply.getContent()).doesNotContain("👨");
+        assertThat(reply.getContent()).isEqualTo("수정 답글 [[emoji:fix]]");
+        assertThat(reply.getContent()).doesNotContain("🔧");
         assertThat(ChatContentEmojiCodec.decode(reply.getContent())).isEqualTo(content);
     }
 

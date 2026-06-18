@@ -17,45 +17,51 @@ class ChatContentEmojiCodecTest {
     }
 
     @Test
-    @DisplayName("이모지가 있으면 DB 안전 토큰으로 인코딩하고 원문으로 디코딩한다")
+    @DisplayName("리액션 팔레트 이모지는 같은 key 토큰으로 인코딩하고 원문으로 디코딩한다")
     void encodeAndDecodeEmojiContent() {
         String content = "배포 완료 👍🔥";
 
         String encoded = ChatContentEmojiCodec.encode(content);
 
         assertThat(encoded).isNotEqualTo(content);
-        assertThat(encoded).startsWith("[[CODEDOCK_EMOJI_CONTENT_V1:");
-        assertThat(encoded).endsWith("]]");
+        assertThat(encoded).isEqualTo("배포 완료 [[emoji:like]][[emoji:fire]]");
         assertThat(encoded).doesNotContain("👍", "🔥");
         assertThat(ChatContentEmojiCodec.decode(encoded)).isEqualTo(content);
     }
 
     @Test
-    @DisplayName("조합형 이모지도 통째로 보존한다")
-    void encodeAndDecodeComposedEmojiContent() {
-        String content = "개발자 👨‍💻 손 👍🏽 국기 🇰🇷 키캡 1️⃣";
+    @DisplayName("리액션 팔레트 24개 이모지를 모두 같은 key 토큰으로 인코딩한다")
+    void encodeAndDecodeAllReactionPaletteEmojis() {
+        String content = "👍 👎 ❤️ 😂 😄 😮 😢 😭 😡 🤔 👏 🙏 👀 🔥 🚀 🎉 ✅ ❌ ⭐ 💡 🐛 🔧 📝 ☕";
 
         String encoded = ChatContentEmojiCodec.encode(content);
 
-        assertThat(encoded).isNotEqualTo(content);
+        assertThat(encoded).isEqualTo(
+                "[[emoji:like]] [[emoji:dislike]] [[emoji:heart]] [[emoji:laugh]] [[emoji:smile]] "
+                        + "[[emoji:surprised]] [[emoji:sad]] [[emoji:cry]] [[emoji:angry]] "
+                        + "[[emoji:thinking]] [[emoji:clap]] [[emoji:pray]] [[emoji:eyes]] "
+                        + "[[emoji:fire]] [[emoji:rocket]] [[emoji:party]] [[emoji:check]] "
+                        + "[[emoji:cross]] [[emoji:star]] [[emoji:bulb]] [[emoji:bug]] "
+                        + "[[emoji:fix]] [[emoji:memo]] [[emoji:coffee]]"
+        );
         assertThat(ChatContentEmojiCodec.decode(encoded)).isEqualTo(content);
     }
 
     @Test
-    @DisplayName("기존 토큰 prefix로 시작하는 일반 메시지는 한 번 더 감싸서 오인 디코딩을 막는다")
-    void encodeTextStartingWithTokenPrefix() {
-        String content = "[[CODEDOCK_EMOJI_CONTENT_V1:not-base64]]";
+    @DisplayName("variation selector가 없는 heart와 coffee도 같은 key 토큰으로 인코딩한다")
+    void encodeEmojiWithoutVariationSelector() {
+        String content = "하트 ❤ 커피 ☕";
 
         String encoded = ChatContentEmojiCodec.encode(content);
 
-        assertThat(encoded).isNotEqualTo(content);
-        assertThat(ChatContentEmojiCodec.decode(encoded)).isEqualTo(content);
+        assertThat(encoded).isEqualTo("하트 [[emoji:heart]] 커피 [[emoji:coffee]]");
+        assertThat(ChatContentEmojiCodec.decode(encoded)).isEqualTo("하트 ❤️ 커피 ☕");
     }
 
     @Test
-    @DisplayName("잘못된 토큰은 원문 그대로 반환한다")
-    void decodeInvalidTokenAsIs() {
-        String content = "[[CODEDOCK_EMOJI_CONTENT_V1:not-base64]]";
+    @DisplayName("지원하지 않는 토큰은 원문 그대로 반환한다")
+    void decodeUnknownTokenAsIs() {
+        String content = "[[emoji:unknown]]";
 
         assertThat(ChatContentEmojiCodec.decode(content)).isEqualTo(content);
     }
