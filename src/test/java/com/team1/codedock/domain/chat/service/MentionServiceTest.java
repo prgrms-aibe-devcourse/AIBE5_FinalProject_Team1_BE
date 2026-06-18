@@ -105,6 +105,28 @@ class MentionServiceTest {
     }
 
     @Test
+    @DisplayName("영문 멘션은 소문자로 정규화하고 중복을 제거한다")
+    void createMentionsForThreadNormalizesEnglishMentionNames() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @Alice @ALICE");
+
+        when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("alice")))
+                .thenReturn(List.of(alice));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        ArgumentCaptor<Iterable<Mention>> captor = ArgumentCaptor.forClass(Iterable.class);
+        verify(mentionRepository).saveAll(captor.capture());
+        List<Mention> savedMentions = toList(captor.getValue());
+
+        assertThat(savedMentions).hasSize(1);
+        assertThat(savedMentions.get(0).getMentionedMember()).isEqualTo(alice);
+    }
+
+    @Test
     @DisplayName("한글 멘션과 점/하이픈이 포함된 기존 멘션 형식을 함께 파싱한다")
     void createMentionsForThreadWithKoreanMentionNames() {
         Workspace workspace = workspace(10L);
@@ -249,12 +271,156 @@ class MentionServiceTest {
     }
 
     @Test
+    @DisplayName("존재하지 않는 멘션 읽음 처리는 NOT_FOUND 예외가 발생한다")
+    void markMentionAsRead_notFound() {
+        when(mentionRepository.findById(300L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.markMentionAsRead(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 멘션 읽음 처리는 FORBIDDEN 예외가 발생한다")
+    void markMentionAsRead_forbiddenWhenMentionBelongsToOtherMember() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        WorkspaceMember otherMember = workspaceMember(22L, workspace, user("bob", "Bob"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(otherMember));
+        when(mentionRepository.findByIdAndMentionedMember_Id(300L, 22L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.markMentionAsRead(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+        assertThat(mention.isRead()).isFalse();
+    }
+
+    @Test
+    @DisplayName("내 멘션을 삭제한다")
+    void deleteMention() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(mentioned));
+        when(mentionRepository.findByIdAndMentionedMember_Id(300L, 21L))
+                .thenReturn(Optional.of(mention));
+
+        mentionService.deleteMention(300L, 30L);
+
+        verify(mentionRepository).delete(mention);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 멘션 삭제는 NOT_FOUND 예외가 발생한다")
+    void deleteMention_notFound() {
+        when(mentionRepository.findById(300L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
+
+        verify(mentionRepository, never()).delete(any(Mention.class));
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 멘션 삭제는 FORBIDDEN 예외가 발생한다")
+    void deleteMention_forbiddenWhenMentionBelongsToOtherMember() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        WorkspaceMember otherMember = workspaceMember(22L, workspace, user("bob", "Bob"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(otherMember));
+        when(mentionRepository.findByIdAndMentionedMember_Id(300L, 22L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(mentionRepository, never()).delete(any(Mention.class));
+    }
+
+    @Test
     @DisplayName("사용자 없이 멘션 목록을 조회하면 거부한다")
     void getMyMentionsWithoutUser() {
         assertThatThrownBy(() -> mentionService.getMyMentions(10L, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("인증 사용자 없이 멘션 삭제 시 UNAUTHORIZED 예외가 발생하고 삭제하지 않는다")
+    void deleteMention_withoutUserDoesNotDelete() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(anyLong(), anyLong());
+        verify(mentionRepository, never()).findByIdAndMentionedMember_Id(anyLong(), anyLong());
+        verify(mentionRepository, never()).delete(any(Mention.class));
+    }
+
+    @Test
+    @DisplayName("워크스페이스 멤버가 아닌 사용자의 멘션 삭제 시 FORBIDDEN 예외가 발생하고 삭제하지 않는다")
+    void deleteMention_byNonWorkspaceMemberDoesNotDelete() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 300L);
+
+        when(mentionRepository.findById(300L)).thenReturn(Optional.of(mention));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mentionService.deleteMention(300L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(mentionRepository, never()).findByIdAndMentionedMember_Id(anyLong(), anyLong());
+        verify(mentionRepository, never()).delete(any(Mention.class));
     }
 
     private static List<Mention> toList(Iterable<Mention> mentions) {

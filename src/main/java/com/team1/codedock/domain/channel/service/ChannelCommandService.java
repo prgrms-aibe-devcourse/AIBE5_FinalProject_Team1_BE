@@ -117,34 +117,34 @@ public class ChannelCommandService {
 
     private void validateNewChannelName(Long workspaceId, String name) {
         if (channelRepository.countByWorkspaceIdAndNameIgnoreCase(workspaceId, name) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel name already exists in workspace.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "워크스페이스에 이미 같은 이름의 채널이 존재합니다.");
         }
     }
 
     private void validateUpdatedChannelName(Long workspaceId, Long channelId, String name) {
         if (channelRepository.countByWorkspaceIdAndNameIgnoreCaseAndIdNot(workspaceId, name, channelId) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel name already exists in workspace.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "워크스페이스에 이미 같은 이름의 채널이 존재합니다.");
         }
     }
 
     private void validateEditableChannel(Channel channel) {
         if (!channel.isDeletable()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel cannot be modified.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "수정할 수 없는 채널입니다.");
         }
     }
 
     private void validateDeletableChannel(Channel channel) {
         if (!channel.isDeletable()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel cannot be deleted.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "삭제할 수 없는 채널입니다.");
         }
     }
 
     private void validateNoChannelReferences(Long channelId) {
         if (githubPullRequestRepository.countByChannelId(channelId) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with pull requests cannot be deleted.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Pull Request가 연결된 채널은 삭제할 수 없습니다.");
         }
         if (githubIssueRepository.countByChannelId(channelId) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Channel with issues cannot be deleted.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Issue가 연결된 채널은 삭제할 수 없습니다.");
         }
     }
 

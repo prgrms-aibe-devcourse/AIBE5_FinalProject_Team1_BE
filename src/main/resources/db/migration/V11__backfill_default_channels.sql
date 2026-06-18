@@ -18,7 +18,7 @@ SELECT
     'general',
     'general',
     0,
-    'Default workspace channel',
+    '기본 워크스페이스 채널',
     SYSTIMESTAMP,
     SYSTIMESTAMP
 FROM workspaces w

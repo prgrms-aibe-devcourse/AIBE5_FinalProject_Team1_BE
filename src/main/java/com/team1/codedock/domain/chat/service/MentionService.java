@@ -137,14 +137,17 @@ public class MentionService {
 
     @Transactional
     public MentionResponse markMentionAsRead(Long mentionId, Long userId) {
-        Mention mention = mentionRepository.findById(mentionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "멘션을 찾을 수 없습니다."));
-        WorkspaceMember member = findActiveWorkspaceMember(mention.getWorkspace().getId(), userId);
-
-        Mention myMention = mentionRepository.findByIdAndMentionedMember_Id(mentionId, member.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+        Mention myMention = findMyMention(mentionId, userId);
         myMention.markAsRead();
         return MentionResponse.from(myMention);
+    }
+
+    @Transactional
+    public void deleteMention(Long mentionId, Long userId) {
+        Mention myMention = findMyMention(mentionId, userId);
+
+        // 멘션 목록에서 본인이 받은 멘션만 제거함
+        mentionRepository.delete(myMention);
     }
 
     private List<WorkspaceMember> findMentionedMembers(Long workspaceId, String content) {
@@ -176,6 +179,15 @@ public class MentionService {
         }
 
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
+    private Mention findMyMention(Long mentionId, Long userId) {
+        Mention mention = mentionRepository.findById(mentionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "멘션을 찾을 수 없습니다."));
+        WorkspaceMember member = findActiveWorkspaceMember(mention.getWorkspace().getId(), userId);
+
+        return mentionRepository.findByIdAndMentionedMember_Id(mentionId, member.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 }

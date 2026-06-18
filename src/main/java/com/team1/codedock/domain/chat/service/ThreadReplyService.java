@@ -78,7 +78,7 @@ public class ThreadReplyService {
 
     private void validateContent(String content) {
         if (content == null || content.isBlank()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Reply content must not be blank.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "답글 내용은 필수입니다.");
         }
     }
 
@@ -107,7 +107,7 @@ public class ThreadReplyService {
 
     private ThreadReply findEditableReply(Thread thread, Long replyId, WorkspaceMember member) {
         ThreadReply reply = threadReplyRepository.findById(replyId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Reply not found."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "답글을 찾을 수 없습니다."));
 
         validateReplyBelongsToThread(thread, reply);
         validateReplyAuthor(reply, member);
@@ -116,7 +116,7 @@ public class ThreadReplyService {
 
     private void validateReplyBelongsToThread(Thread thread, ThreadReply reply) {
         if (!thread.getId().equals(reply.getThread().getId())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Reply does not belong to the requested thread.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "요청한 스레드에 속한 답글이 아닙니다.");
         }
     }
 
@@ -128,7 +128,7 @@ public class ThreadReplyService {
 
     private void validateReplyNotDeleted(ThreadReply reply) {
         if (reply.isDeleted()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "Deleted reply cannot be modified.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "삭제된 답글은 수정할 수 없습니다.");
         }
     }
 }

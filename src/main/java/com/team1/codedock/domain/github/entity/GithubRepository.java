@@ -2,7 +2,18 @@ package com.team1.codedock.domain.github.entity;
 
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.global.entity.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.SequenceGenerator;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,7 +21,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "github_repositories")
+@Table(
+        name = "github_repositories",
+        uniqueConstraints = @UniqueConstraint(name = "uq_github_repos", columnNames = {"workspace_id", "github_repo_id"})
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class GithubRepository extends BaseEntity {
@@ -63,7 +77,7 @@ public class GithubRepository extends BaseEntity {
     @Column(name = "webhook_url")
     private String webhookUrl;
 
-    // TEXT[] -> CLOB (JSON 배열로 저장)
+    // TEXT[] 구조를 CLOB JSON 배열로 저장함.
     @Lob
     @Column(name = "webhook_events")
     private String webhookEvents;
@@ -86,18 +100,37 @@ public class GithubRepository extends BaseEntity {
             String url,
             String description,
             boolean isPrivate,
-            String defaultBranch) {
-        GithubRepository repo = new GithubRepository();
-        repo.workspace = workspace;
-        repo.githubRepoId = githubRepoId;
-        repo.owner = owner;
-        repo.name = name;
-        repo.fullName = fullName;
-        repo.url = url;
-        repo.description = description;
-        repo.isPrivate = isPrivate;
-        repo.defaultBranch = defaultBranch;
-        repo.webhookActive = false;
-        return repo;
+            String defaultBranch
+    ) {
+        GithubRepository repository = new GithubRepository();
+        repository.workspace = workspace;
+        repository.githubRepoId = githubRepoId;
+        repository.owner = owner;
+        repository.name = name;
+        repository.fullName = fullName;
+        repository.url = url;
+        repository.description = description;
+        repository.isPrivate = isPrivate;
+        repository.defaultBranch = defaultBranch;
+        repository.webhookActive = false;
+        return repository;
+    }
+
+    public void updateMetadata(
+            String owner,
+            String name,
+            String fullName,
+            String url,
+            String description,
+            boolean isPrivate,
+            String defaultBranch
+    ) {
+        this.owner = owner;
+        this.name = name;
+        this.fullName = fullName;
+        this.url = url;
+        this.description = description;
+        this.isPrivate = isPrivate;
+        this.defaultBranch = defaultBranch;
     }
 }

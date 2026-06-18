@@ -2,6 +2,8 @@ package com.team1.codedock.domain.chat.controller;
 
 import com.team1.codedock.domain.chat.dto.MentionResponse;
 import com.team1.codedock.domain.chat.service.MentionService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -21,9 +23,11 @@ import org.springframework.web.filter.CharacterEncodingFilter;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -64,8 +68,7 @@ class MentionControllerTest {
         MentionResponse response = response(false);
         when(mentionService.getMyMentions(10L, USER_ID)).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/workspaces/{workspaceId}/mentions", 10L)
-                        .header("X-User-Id", "999"))
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/mentions", 10L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(300L))
@@ -82,14 +85,79 @@ class MentionControllerTest {
         MentionResponse response = response(true);
         when(mentionService.markMentionAsRead(300L, USER_ID)).thenReturn(response);
 
-        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L)
-                        .header("X-User-Id", "999"))
+        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(300L))
                 .andExpect(jsonPath("$.data.read").value(true));
 
         verify(mentionService).markMentionAsRead(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention read API returns forbidden response when service rejects ownership")
+    void markMentionAsReadForbidden() throws Exception {
+        when(mentionService.markMentionAsRead(300L, USER_ID))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+
+        verify(mentionService).markMentionAsRead(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention read API returns not found response when mention does not exist")
+    void markMentionAsReadNotFound() throws Exception {
+        when(mentionService.markMentionAsRead(300L, USER_ID))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+        mockMvc.perform(patch("/api/mentions/{mentionId}/read", 300L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C004"));
+
+        verify(mentionService).markMentionAsRead(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention delete API passes mention id and user id to service")
+    void deleteMention() throws Exception {
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(mentionService).deleteMention(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention delete API returns forbidden response when service rejects ownership")
+    void deleteMentionForbidden() throws Exception {
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN))
+                .when(mentionService).deleteMention(300L, USER_ID);
+
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+
+        verify(mentionService).deleteMention(300L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("Mention delete API returns not found response when mention does not exist")
+    void deleteMentionNotFound() throws Exception {
+        doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+                .when(mentionService).deleteMention(300L, USER_ID);
+
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C004"));
+
+        verify(mentionService).deleteMention(300L, USER_ID);
     }
 
     private MentionResponse response(boolean read) {

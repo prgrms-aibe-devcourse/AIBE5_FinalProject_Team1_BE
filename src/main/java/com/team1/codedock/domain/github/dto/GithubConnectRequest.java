@@ -10,9 +10,9 @@ import lombok.Setter;
 @NoArgsConstructor
 public class GithubConnectRequest {
 
-    @NotBlank
+    @NotBlank(message = "GitHub 레포지토리 소유자는 필수입니다.")
     private String owner;
 
-    @NotBlank
+    @NotBlank(message = "GitHub 레포지토리 이름은 필수입니다.")
     private String repo;
 }

@@ -10,31 +10,69 @@ import static org.mockito.Mockito.mock;
 class GithubRepositoryTest {
 
     @Test
-    @DisplayName("create()로 GithubRepository를 생성하면 모든 필드가 정상적으로 설정된다")
-    void create_성공_모든_필드_설정() {
+    @DisplayName("create()로 GithubRepository를 생성하면 모든 필드가 설정된다")
+    void createGithubRepository() {
         Workspace workspace = mock(Workspace.class);
 
-        GithubRepository repo = GithubRepository.create(
+        GithubRepository repository = GithubRepository.create(
                 workspace,
-                "12345",
-                "octocat",
-                "hello-world",
-                "octocat/hello-world",
-                "https://github.com/octocat/hello-world",
-                "Hello World repo",
-                false,
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "CodeDock backend",
+                true,
                 "main"
         );
 
-        assertThat(repo.getWorkspace()).isEqualTo(workspace);
-        assertThat(repo.getGithubRepoId()).isEqualTo("12345");
-        assertThat(repo.getOwner()).isEqualTo("octocat");
-        assertThat(repo.getName()).isEqualTo("hello-world");
-        assertThat(repo.getFullName()).isEqualTo("octocat/hello-world");
-        assertThat(repo.getUrl()).isEqualTo("https://github.com/octocat/hello-world");
-        assertThat(repo.getDescription()).isEqualTo("Hello World repo");
-        assertThat(repo.isPrivate()).isFalse();
-        assertThat(repo.getDefaultBranch()).isEqualTo("main");
-        assertThat(repo.isWebhookActive()).isFalse();
+        assertThat(repository.getWorkspace()).isEqualTo(workspace);
+        assertThat(repository.getGithubRepoId()).isEqualTo("123456");
+        assertThat(repository.getOwner()).isEqualTo("team1");
+        assertThat(repository.getName()).isEqualTo("codedock");
+        assertThat(repository.getFullName()).isEqualTo("team1/codedock");
+        assertThat(repository.getUrl()).isEqualTo("https://github.com/team1/codedock");
+        assertThat(repository.getDescription()).isEqualTo("CodeDock backend");
+        assertThat(repository.isPrivate()).isTrue();
+        assertThat(repository.getDefaultBranch()).isEqualTo("main");
+        assertThat(repository.isWebhookActive()).isFalse();
+    }
+
+    @Test
+    @DisplayName("updateMetadata()로 GitHub repository 메타데이터를 갱신한다")
+    void updateMetadata() {
+        Workspace workspace = mock(Workspace.class);
+        GithubRepository repository = GithubRepository.create(
+                workspace,
+                "123456",
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "Old description",
+                true,
+                "main"
+        );
+
+        repository.updateMetadata(
+                "team-one",
+                "codedock-be",
+                "team-one/codedock-be",
+                "https://github.com/team-one/codedock-be",
+                "New description",
+                false,
+                "develop"
+        );
+
+        assertThat(repository.getOwner()).isEqualTo("team-one");
+        assertThat(repository.getName()).isEqualTo("codedock-be");
+        assertThat(repository.getFullName()).isEqualTo("team-one/codedock-be");
+        assertThat(repository.getUrl()).isEqualTo("https://github.com/team-one/codedock-be");
+        assertThat(repository.getDescription()).isEqualTo("New description");
+        assertThat(repository.isPrivate()).isFalse();
+        assertThat(repository.getDefaultBranch()).isEqualTo("develop");
+        assertThat(repository.getWorkspace()).isEqualTo(workspace);
+        assertThat(repository.getGithubRepoId()).isEqualTo("123456");
+        assertThat(repository.isWebhookActive()).isFalse();
     }
 }
