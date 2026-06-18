@@ -19,6 +19,7 @@ public class WorkspaceResponse {
     private int memberCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime lastActivityAt;
     private String logoUrl;
 
     public static WorkspaceResponse from(Workspace workspace, WorkspaceMember myMembership, int memberCount) {
@@ -31,6 +32,7 @@ public class WorkspaceResponse {
                 .memberCount(memberCount)
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
+                .lastActivityAt(workspace.getLastActivityAt())
                 .build();
     }
 
@@ -44,6 +46,7 @@ public class WorkspaceResponse {
                 .memberCount(memberCount)
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
+                .lastActivityAt(workspace.getLastActivityAt())
                 .logoUrl(workspace.getLogoUrl())
                 .build();
     }

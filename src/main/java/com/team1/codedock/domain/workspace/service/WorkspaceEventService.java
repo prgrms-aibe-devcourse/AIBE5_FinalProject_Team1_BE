@@ -2,6 +2,7 @@ package com.team1.codedock.domain.workspace.service;
 
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
+import com.team1.codedock.domain.workspace.dto.WorkspaceEventResponse;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -38,7 +39,7 @@ public class WorkspaceEventService {
     }
 
     @Transactional(readOnly = true)
-    public List<WorkspaceEvent> getEventsForUser(Long userId) {
+    public List<WorkspaceEventResponse> getEventsForUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         List<Long> workspaceIds = workspaceMemberRepository.findAllByUser(user).stream()
@@ -48,6 +49,8 @@ public class WorkspaceEventService {
         if (workspaceIds.isEmpty()) {
             return List.of();
         }
-        return workspaceEventRepository.findAllByWorkspace_IdInOrderByCreatedAtDesc(workspaceIds);
+        return workspaceEventRepository.findAllByWorkspace_IdInOrderByCreatedAtDesc(workspaceIds).stream()
+                .map(WorkspaceEventResponse::from)
+                .toList();
     }
 }
