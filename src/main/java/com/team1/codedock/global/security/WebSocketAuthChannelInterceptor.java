@@ -47,6 +47,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Pattern.compile("^/topic/channels/(\\d+)/events$");
     private static final Pattern CHANNEL_TYPING_DESTINATION =
             Pattern.compile("^/topic/channels/(\\d+)/typing$");
+    private static final Pattern CHANNEL_TYPING_SEND_DESTINATION =
+            Pattern.compile("^/app/channels/\\d+/typing$");
     private static final Pattern THREAD_EVENTS_DESTINATION =
             Pattern.compile("^/topic/threads/(\\d+)/events$");
 
@@ -112,8 +114,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
 
         if (accessor.getCommand() == StompCommand.SEND) {
-            enforceSendRateLimit(accessor);
-            return message;
+            return enforceSendRateLimit(message, accessor);
         }
 
         if (accessor.getCommand() == StompCommand.DISCONNECT) {
@@ -155,22 +156,34 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         authorizeWorkspaceSubscription(userId, destination, target.workspaceId(), accessor.getSessionId());
     }
 
-    private void enforceSendRateLimit(StompHeaderAccessor accessor) {
+    private Message<?> enforceSendRateLimit(Message<?> message, StompHeaderAccessor accessor) {
         Long userId = getCurrentUserId(accessor.getUser());
+
+        if (isTypingSendDestination(accessor.getDestination())) {
+            return message;
+        }
+
         String rateLimitKey = rateLimitKey(accessor, userId);
 
-        // 단일 세션에서 과도한 SEND가 DB write와 broadcast를 폭주시킬 수 있어 고정 윈도우로 제한함
+        // 동일 세션의 일반 SEND 폭주가 DB write와 broadcast로 번지는 것을 막음.
+        // typing은 고빈도 상태 이벤트라 별도 경로에서 제외하고, 초과 프레임은 연결 종료 없이 drop함.
         SendRateLimitWindow window = sendRateLimitWindows.computeIfAbsent(rateLimitKey, ignored -> new SendRateLimitWindow());
 
         if (!window.tryConsume(clock.millis())) {
-            log.warn(
-                    "WebSocket SEND rate limit exceeded. userId={}, sessionId={}, destination={}",
+            log.debug(
+                    "WebSocket SEND rate limit 초과로 프레임을 drop합니다. userId={}, sessionId={}, destination={}",
                     userId,
                     accessor.getSessionId(),
                     accessor.getDestination()
             );
-            throw new AccessDeniedException("WebSocket 메시지 전송이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+            return null;
         }
+
+        return message;
+    }
+
+    private boolean isTypingSendDestination(String destination) {
+        return StringUtils.hasText(destination) && CHANNEL_TYPING_SEND_DESTINATION.matcher(destination).matches();
     }
 
     private void clearSessionState(StompHeaderAccessor accessor) {
