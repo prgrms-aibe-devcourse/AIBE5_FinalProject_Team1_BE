@@ -3,6 +3,7 @@ package com.team1.codedock.domain.chat.dto;
 import com.team1.codedock.domain.chat.entity.Mention;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 
@@ -35,7 +36,7 @@ public record MentionResponse(
                 mention.getMentionedMember().getId(),
                 mentionedBy.getId(),
                 resolveSenderName(mentionedBy.getUser()),
-                reply == null ? thread.getContent() : reply.getContent(),
+                ChatContentEmojiCodec.decode(reply == null ? thread.getContent() : reply.getContent()),
                 mention.isRead(),
                 mention.getCreatedAt()
         );

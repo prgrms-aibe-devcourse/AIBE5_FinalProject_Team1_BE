@@ -11,6 +11,7 @@ import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -98,6 +99,45 @@ class ChatMessageServiceTest {
     }
 
     @Test
+    @DisplayName("채널 메시지 이모지는 인코딩해 저장하고 응답과 멘션 입력은 원문을 유지한다")
+    void createChannelMessageEncodesEmojiContent() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        String content = "배포 완료 👍🔥";
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(content);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.content()).isEqualTo(content);
+        ArgumentCaptor<Thread> threadCaptor = ArgumentCaptor.forClass(Thread.class);
+        verify(threadRepository).save(threadCaptor.capture());
+        String storedContent = threadCaptor.getValue().getContent();
+        assertThat(storedContent).isNotEqualTo(content);
+        assertThat(storedContent).isEqualTo("배포 완료 [[emoji:like]][[emoji:fire]]");
+        assertThat(storedContent).doesNotContain("👍", "🔥");
+        assertThat(ChatContentEmojiCodec.decode(storedContent)).isEqualTo(content);
+        verify(mentionService).createMentionsForThread(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(sender),
+                org.mockito.ArgumentMatchers.eq(content)
+        );
+    }
+
+    @Test
     @DisplayName("REST message create saves attachments and returns them")
     void createChannelMessageByRestWithAttachments() {
         Long channelId = 1L;
@@ -117,8 +157,9 @@ class ChatMessageServiceTest {
                 "image/png",
                 100L
         );
+        String content = "첨부 확인 👍📝";
         ChannelMessageRestCreateRequest request =
-                new ChannelMessageRestCreateRequest("hello", List.of(attachmentRequest));
+                new ChannelMessageRestCreateRequest(content, List.of(attachmentRequest));
         ThreadAttachmentResponse attachmentResponse = new ThreadAttachmentResponse(
                 1L,
                 "image",
@@ -150,7 +191,11 @@ class ChatMessageServiceTest {
         ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
         assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.content()).isEqualTo(content);
         assertThat(response.attachments()).containsExactly(attachmentResponse);
+        ArgumentCaptor<Thread> threadCaptor = ArgumentCaptor.forClass(Thread.class);
+        verify(threadRepository).save(threadCaptor.capture());
+        assertThat(threadCaptor.getValue().getContent()).isEqualTo("첨부 확인 [[emoji:like]][[emoji:memo]]");
         verify(threadAttachmentService).saveAttachments(
                 org.mockito.ArgumentMatchers.any(Thread.class),
                 org.mockito.ArgumentMatchers.eq(List.of(attachmentRequest))
@@ -468,6 +513,36 @@ class ChatMessageServiceTest {
     }
 
     @Test
+    @DisplayName("메시지 수정 이모지는 인코딩해 저장하고 응답은 원문을 반환한다")
+    void updateChannelMessageEncodesEmojiContent() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long memberId = 10L;
+        Long messageId = 100L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember member = workspaceMember(memberId, workspace, true, user("tester", "tester"));
+        Thread message = thread(messageId, channel, member, "before", LocalDateTime.of(2026, 6, 9, 10, 0));
+        String content = "수정 완료 😄";
+        ChannelMessageUpdateRequest request = new ChannelMessageUpdateRequest(content);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadRepository.findById(messageId)).thenReturn(Optional.of(message));
+
+        ChannelMessageResponse response = chatMessageService.updateChannelMessage(channelId, messageId, userId, request);
+
+        assertThat(response.id()).isEqualTo(messageId);
+        assertThat(response.content()).isEqualTo(content);
+        assertThat(message.getContent()).isNotEqualTo(content);
+        assertThat(message.getContent()).isEqualTo("수정 완료 [[emoji:smile]]");
+        assertThat(message.getContent()).doesNotContain("😄");
+        assertThat(ChatContentEmojiCodec.decode(message.getContent())).isEqualTo(content);
+    }
+
+    @Test
     @DisplayName("Non-author cannot update channel message")
     void updateChannelMessageWithDifferentAuthor() {
         Long channelId = 1L;
@@ -622,6 +697,38 @@ class ChatMessageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("인코딩 저장된 메시지는 목록 조회 응답에서 원문 이모지로 복원된다")
+    void getChannelMessagesDecodesEmojiContent() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Channel channel = channel(channelId, workspace(workspaceId));
+        WorkspaceMember sender = workspaceMember(10L, user("tester", "테스터"));
+        String content = "목록 조회 👍";
+        Thread message = thread(
+                100L,
+                channel,
+                sender,
+                ChatContentEmojiCodec.encode(content),
+                LocalDateTime.of(2026, 6, 8, 10, 0)
+        );
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(Thread.TYPE_USER_MESSAGE),
+                org.mockito.ArgumentMatchers.any(Pageable.class)
+        )).thenReturn(List.of(message));
+
+        List<ChannelMessageResponse> responses = chatMessageService.getChannelMessages(channelId, userId, null, 30);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).content()).isEqualTo(content);
     }
 
     @Test

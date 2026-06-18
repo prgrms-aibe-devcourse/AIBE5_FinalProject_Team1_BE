@@ -7,6 +7,7 @@ import com.team1.codedock.domain.chat.dto.ThreadReplyUpdateRequest;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -17,6 +18,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -118,6 +120,45 @@ class ThreadReplyServiceTest {
     }
 
     @Test
+    @DisplayName("답글 이모지는 인코딩해 저장하고 응답과 멘션 입력은 원문을 유지한다")
+    void createReplyEncodesEmojiContent() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "테스터"));
+        String content = "확인했습니다 👍🔥";
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest(content);
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 2));
+                    return saved;
+                });
+
+        ThreadReplyResponse response = threadReplyService.createReply(threadId, userId, request);
+
+        assertThat(response.content()).isEqualTo(content);
+        ArgumentCaptor<ThreadReply> replyCaptor = ArgumentCaptor.forClass(ThreadReply.class);
+        verify(threadReplyRepository).save(replyCaptor.capture());
+        String storedContent = replyCaptor.getValue().getContent();
+        assertThat(storedContent).isNotEqualTo(content);
+        assertThat(storedContent).isEqualTo("확인했습니다 [[emoji:like]][[emoji:fire]]");
+        assertThat(storedContent).doesNotContain("👍", "🔥");
+        assertThat(ChatContentEmojiCodec.decode(storedContent)).isEqualTo(content);
+        verify(mentionService).createMentionsForThreadReply(
+                org.mockito.ArgumentMatchers.any(ThreadReply.class),
+                org.mockito.ArgumentMatchers.eq(member),
+                org.mockito.ArgumentMatchers.eq(content)
+        );
+    }
+
+    @Test
     @DisplayName("존재하지 않는 스레드이면 THREAD_NOT_FOUND 예외가 발생한다")
     void getRepliesWithMissingThread() {
         Long threadId = 999L;
@@ -184,6 +225,35 @@ class ThreadReplyServiceTest {
     }
 
     @Test
+    @DisplayName("인코딩 저장된 답글은 목록 조회 응답에서 원문 이모지로 복원된다")
+    void getRepliesDecodesEmojiContent() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "테스터"));
+        String content = "목록 답글 😄";
+        ThreadReply reply = reply(
+                100L,
+                thread,
+                member,
+                ChatContentEmojiCodec.encode(content),
+                LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findAllByThread_IdOrderByCreatedAtAscIdAsc(threadId))
+                .thenReturn(List.of(reply));
+
+        List<ThreadReplyResponse> responses = threadReplyService.getReplies(threadId, userId);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).content()).isEqualTo(content);
+    }
+
+    @Test
     @DisplayName("Reply author can update own reply")
     void updateReply() {
         Long threadId = 1L;
@@ -203,6 +273,33 @@ class ThreadReplyServiceTest {
 
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.content()).isEqualTo("updated reply");
+    }
+
+    @Test
+    @DisplayName("답글 수정 이모지는 인코딩해 저장하고 응답은 원문을 반환한다")
+    void updateReplyEncodesEmojiContent() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
+        WorkspaceMember member = workspaceMember(20L, user("tester", "Tester"));
+        ThreadReply reply = reply(100L, thread, member, "old reply", LocalDateTime.of(2026, 6, 9, 10, 0));
+        String content = "수정 답글 🔧";
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.findById(100L)).thenReturn(Optional.of(reply));
+
+        ThreadReplyResponse response =
+                threadReplyService.updateReply(threadId, 100L, userId, new ThreadReplyUpdateRequest(content));
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.content()).isEqualTo(content);
+        assertThat(reply.getContent()).isNotEqualTo(content);
+        assertThat(reply.getContent()).isEqualTo("수정 답글 [[emoji:fix]]");
+        assertThat(reply.getContent()).doesNotContain("🔧");
+        assertThat(ChatContentEmojiCodec.decode(reply.getContent())).isEqualTo(content);
     }
 
     @Test

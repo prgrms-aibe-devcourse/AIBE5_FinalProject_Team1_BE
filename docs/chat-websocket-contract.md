@@ -99,6 +99,25 @@ Authorization: Bearer {accessToken}
 
 REST 생성 fallback인 `POST /api/channels/{channelId}/messages`도 성공 시 같은 `MESSAGE_CREATED` event를 broadcast한다.
 
+### Content Emoji
+
+메시지 본문 `content`는 일반 텍스트와 실제 이모지를 그대로 요청한다.
+
+```json
+{
+  "content": "확인했습니다 👍🔥"
+}
+```
+
+백엔드는 Oracle 문자셋 호환성을 위해 리액션 팔레트 24개 이모지를 같은 key 기반 내부 토큰으로 변환해 저장한다.
+
+```text
+배포 완료 👍🔥
+-> 배포 완료 [[emoji:like]][[emoji:fire]]
+```
+
+프론트가 받는 REST/WebSocket 응답의 `content`는 다시 원문 이모지로 복원된다. 본문 이모지 key는 리액션의 `emoji` 필드와 같은 key set을 사용한다.
+
 ## Thread Reply
 
 ### Send
@@ -134,6 +153,8 @@ REST 생성 fallback인 `POST /api/channels/{channelId}/messages`도 성공 시 
 ```
 
 REST 생성 fallback인 `POST /api/threads/{threadId}/replies`도 성공 시 같은 `THREAD_REPLY_CREATED` event를 broadcast한다.
+
+답글 본문 `content`도 채널 메시지와 동일하게 실제 이모지를 요청하고, 백엔드가 저장 시 리액션 key 기반 토큰으로 변환한 뒤 응답에서 원문으로 복원한다.
 
 ## Typing
 

@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.entity.Bookmark;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -106,7 +107,7 @@ class BookmarkServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
         WorkspaceMember member = workspaceMember(20L, workspace, user("sender"));
-        Thread message = message(100L, channel, member, "hello");
+        Thread message = message(100L, channel, member, ChatContentEmojiCodec.encode("hello 👍🔥"));
         ReflectionTestUtils.setField(message, "createdAt", LocalDateTime.of(2026, 6, 11, 10, 0));
         Bookmark bookmark = Bookmark.create(member, message);
         ReflectionTestUtils.setField(bookmark, "id", 200L);
@@ -122,7 +123,8 @@ class BookmarkServiceTest {
         assertThat(response.get(0).bookmarkId()).isEqualTo(200L);
         assertThat(response.get(0).channelId()).isEqualTo(1L);
         assertThat(response.get(0).messageId()).isEqualTo(100L);
-        assertThat(response.get(0).content()).isEqualTo("hello");
+        assertThat(message.getContent()).isEqualTo("hello [[emoji:like]][[emoji:fire]]");
+        assertThat(response.get(0).content()).isEqualTo("hello 👍🔥");
         assertThat(response.get(0).bookmarkedAt()).isEqualTo(LocalDateTime.of(2026, 6, 11, 11, 0));
     }
 

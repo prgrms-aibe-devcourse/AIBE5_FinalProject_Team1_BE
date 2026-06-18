@@ -126,6 +126,28 @@ type ChannelMessagePayload = {
 };
 ```
 
+### Content Emoji
+
+메시지 본문 `content`는 실제 이모지를 그대로 보낸다.
+
+```ts
+client.publish({
+  destination: `/app/channels/${channelId}/messages`,
+  body: JSON.stringify({
+    content: "확인했습니다 👍🔥",
+  }),
+});
+```
+
+백엔드는 DB 저장 시 리액션 팔레트 24개 이모지를 같은 key 기반 내부 토큰으로 변환하고, REST/WebSocket 응답에서는 다시 원문 이모지로 복원한다.
+
+```text
+배포 완료 👍🔥
+-> 배포 완료 [[emoji:like]][[emoji:fire]]
+```
+
+주의: 본문 이모지 토큰의 key는 리액션의 `emoji` 필드와 같은 key set을 사용한다. 프론트는 응답 `content`를 원문 이모지로 받기 때문에 화면 표시 시 본문 토큰을 직접 처리하지 않는다.
+
 ## Thread Reply
 
 ### STOMP Send
@@ -171,6 +193,8 @@ type ThreadReplyPayload = {
   createdAt: string;
 };
 ```
+
+답글 본문 `content`도 채널 메시지와 동일하게 실제 이모지를 그대로 보내고, 응답에서도 원문 이모지로 받는다. 저장 시에는 리액션 key 기반 토큰으로 변환된다.
 
 ## Typing
 

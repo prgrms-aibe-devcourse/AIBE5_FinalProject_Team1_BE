@@ -7,6 +7,7 @@ import com.team1.codedock.domain.chat.entity.Mention;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.MentionRepository;
+import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -226,7 +227,7 @@ class MentionServiceTest {
         Channel channel = channel(1L, workspace);
         WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
         WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
-        Thread thread = thread(100L, channel, sender, "hello @alice");
+        Thread thread = thread(100L, channel, sender, ChatContentEmojiCodec.encode("hello @alice 👍"));
         Mention mention = Mention.createForThread(workspace, thread, mentioned, sender);
         ReflectionTestUtils.setField(mention, "id", 300L);
         ReflectionTestUtils.setField(mention, "createdAt", LocalDateTime.of(2026, 6, 11, 12, 0));
@@ -244,7 +245,34 @@ class MentionServiceTest {
         assertThat(response.get(0).threadId()).isEqualTo(100L);
         assertThat(response.get(0).threadReplyId()).isNull();
         assertThat(response.get(0).mentionedByName()).isEqualTo("Sender");
+        assertThat(response.get(0).content()).isEqualTo("hello @alice 👍");
         assertThat(response.get(0).read()).isFalse();
+    }
+
+    @Test
+    @DisplayName("멘션 목록에서 답글 본문 이모지도 원문으로 복원한다")
+    void getMyMentionsDecodesReplyEmojiContent() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        WorkspaceMember mentioned = workspaceMember(21L, workspace, user("alice", "Alice"));
+        Thread thread = thread(100L, channel, sender, "parent");
+        ThreadReply reply = reply(200L, thread, sender, ChatContentEmojiCodec.encode("답글 @alice 🔧🔥"));
+        Mention mention = Mention.createForThreadReply(workspace, reply, mentioned, sender);
+        ReflectionTestUtils.setField(mention, "id", 301L);
+        ReflectionTestUtils.setField(mention, "createdAt", LocalDateTime.of(2026, 6, 11, 12, 1));
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(mentioned));
+        when(mentionRepository.findAllByWorkspace_IdAndMentionedMember_IdOrderByCreatedAtDesc(10L, 21L))
+                .thenReturn(List.of(mention));
+
+        List<MentionResponse> response = mentionService.getMyMentions(10L, 30L);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).threadId()).isEqualTo(100L);
+        assertThat(response.get(0).threadReplyId()).isEqualTo(200L);
+        assertThat(response.get(0).content()).isEqualTo("답글 @alice 🔧🔥");
     }
 
     @Test
