@@ -38,6 +38,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String PERSONAL_NOTIFICATION_DESTINATION = "/user/queue/notifications";
     private static final String PERSONAL_ERROR_DESTINATION = "/user/queue/errors";
+    private static final String PERSONAL_WORKSPACE_DESTINATION = "/user/queue/workspace";
     private static final int SEND_RATE_LIMIT_CAPACITY = 20;
     private static final long SEND_RATE_LIMIT_WINDOW_MILLIS = 10_000L;
     private static final long SUBSCRIBE_AUTH_CACHE_TTL_MILLIS = 30_000L;
@@ -53,6 +54,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Pattern.compile("^/topic/threads/(\\d+)/events$");
     private static final Pattern WORKSPACE_PRESENCE_DESTINATION =
             Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
+    private static final Pattern WORKSPACE_MEMBERS_DESTINATION =
+            Pattern.compile("^/topic/workspaces/(\\d+)/members$");
 
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
@@ -150,7 +153,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             denySubscribe(userId, destination, "WebSocket 구독 경로가 필요합니다.");
         }
 
-        if (PERSONAL_NOTIFICATION_DESTINATION.equals(destination) || PERSONAL_ERROR_DESTINATION.equals(destination)) {
+        if (PERSONAL_NOTIFICATION_DESTINATION.equals(destination) || PERSONAL_ERROR_DESTINATION.equals(destination) || PERSONAL_WORKSPACE_DESTINATION.equals(destination)) {
             return;
         }
 
@@ -324,6 +327,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         Matcher threadEventsMatcher = THREAD_EVENTS_DESTINATION.matcher(destination);
         if (threadEventsMatcher.matches()) {
             return threadRepository.findWorkspaceIdById(parseId(threadEventsMatcher.group(1)));
+        }
+
+        Matcher workspaceMembersMatcher = WORKSPACE_MEMBERS_DESTINATION.matcher(destination);
+        if (workspaceMembersMatcher.matches()) {
+            return Optional.of(parseId(workspaceMembersMatcher.group(1)));
         }
 
         return Optional.empty();
