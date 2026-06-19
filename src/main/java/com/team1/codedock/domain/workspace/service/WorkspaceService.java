@@ -150,7 +150,7 @@ public class WorkspaceService {
         String token = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(req.getExpiresInHours());
         Invitation invitation = invitationRepository.save(
-                Invitation.create(workspace, inviterMember, invitedEmail, req.getRole(), token, expiresAt)
+                Invitation.create(workspace, inviterMember, invitedEmail, req.getRole(), req.getPosition(), token, expiresAt)
         );
         if (invitedOwner != null) {
             publishInviteEvent(invitedOwner.getEmail(), "RECEIVED", workspaceId);
@@ -180,10 +180,11 @@ public class WorkspaceService {
                 throw new BusinessException(ErrorCode.INVALID_INPUT);
             }
             existing.reactivate(invitation.getInvitedAuthority());
+            existing.assignPosition(invitation.getInvitedPosition());
         } else {
-            workspaceMemberRepository.save(
-                    WorkspaceMember.create(workspace, user, invitation.getInvitedAuthority())
-            );
+            WorkspaceMember member = WorkspaceMember.create(workspace, user, invitation.getInvitedAuthority());
+            member.assignPosition(invitation.getInvitedPosition());
+            workspaceMemberRepository.save(member);
         }
         invitation.accept();
         publishInviteEvent(invitation.getInviterMember().getUser().getEmail(), "ACCEPTED", invitation.getWorkspace().getId());

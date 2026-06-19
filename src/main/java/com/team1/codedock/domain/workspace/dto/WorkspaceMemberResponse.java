@@ -15,6 +15,7 @@ public class WorkspaceMemberResponse {
     private String email;
     private String username;
     private String role;
+    private String position;
     private LocalDateTime joinedAt;
     private String presence;
 
@@ -25,6 +26,7 @@ public class WorkspaceMemberResponse {
                 .email(member.getUser().getEmail())
                 .username(member.getUser().getUsername())
                 .role(member.getAuthority())
+                .position(member.getPosition())
                 .joinedAt(member.getCreatedAt())
                 .presence("active")
                 .build();
@@ -37,6 +39,7 @@ public class WorkspaceMemberResponse {
                 .email(member.getUser().getEmail())
                 .username(member.getUser().getUsername())
                 .role(member.getAuthority())
+                .position(member.getPosition())
                 .joinedAt(member.getCreatedAt())
                 .presence(presence != null ? presence : "active")
                 .build();
