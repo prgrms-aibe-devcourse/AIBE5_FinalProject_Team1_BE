@@ -23,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -62,6 +63,9 @@ class WorkspaceServiceTest {
 
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private WorkspaceService workspaceService;
@@ -395,6 +399,7 @@ class WorkspaceServiceTest {
     private static Invitation pendingInvitation(String invitedEmail) {
         User owner = user(99L, "owner@x.com", null);
         Workspace workspace = Workspace.create(owner, "WS", "ws", "");
-        return Invitation.create(workspace, null, invitedEmail, "viewer", "tok", LocalDateTime.now().plusDays(1));
+        WorkspaceMember inviter = WorkspaceMember.create(workspace, owner, "owner");
+        return Invitation.create(workspace, inviter, invitedEmail, "viewer", "tok", LocalDateTime.now().plusDays(1));
     }
 }
