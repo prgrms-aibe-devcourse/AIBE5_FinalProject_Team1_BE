@@ -2,6 +2,7 @@ package com.team1.codedock.global.config;
 
 import com.team1.codedock.global.security.WebSocketAuthChannelInterceptor;
 import com.team1.codedock.global.security.WebSocketHandshakeAuthInterceptor;
+import com.team1.codedock.global.security.WebSocketStompErrorHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -30,7 +31,12 @@ class WebSocketConfigTest {
 
     private final WebSocketAuthChannelInterceptor interceptor = mock(WebSocketAuthChannelInterceptor.class);
     private final WebSocketHandshakeAuthInterceptor handshakeAuthInterceptor = mock(WebSocketHandshakeAuthInterceptor.class);
-    private final WebSocketConfig webSocketConfig = new WebSocketConfig(interceptor, handshakeAuthInterceptor);
+    private final WebSocketStompErrorHandler stompErrorHandler = mock(WebSocketStompErrorHandler.class);
+    private final WebSocketConfig webSocketConfig = new WebSocketConfig(
+            interceptor,
+            handshakeAuthInterceptor,
+            stompErrorHandler
+    );
 
     @Test
     @DisplayName("WebSocket 캐시 sweep을 위해 scheduling을 활성화한다")
@@ -127,6 +133,7 @@ class WebSocketConfigTest {
 
         webSocketConfig.registerStompEndpoints(registry);
 
+        verify(registry).setErrorHandler(stompErrorHandler);
         verify(registry, times(2)).addEndpoint("/ws");
         verify(registration, times(2)).setAllowedOriginPatterns(expectedOriginPatterns);
         verify(registration, times(2)).addInterceptors(handshakeAuthInterceptor);

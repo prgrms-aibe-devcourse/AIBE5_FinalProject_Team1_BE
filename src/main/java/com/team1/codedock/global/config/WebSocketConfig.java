@@ -2,6 +2,7 @@ package com.team1.codedock.global.config;
 
 import com.team1.codedock.global.security.WebSocketAuthChannelInterceptor;
 import com.team1.codedock.global.security.WebSocketHandshakeAuthInterceptor;
+import com.team1.codedock.global.security.WebSocketStompErrorHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -52,12 +53,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
     private final WebSocketHandshakeAuthInterceptor webSocketHandshakeAuthInterceptor;
+    private final WebSocketStompErrorHandler webSocketStompErrorHandler;
 
     @Value("${app.websocket.allowed-origin-patterns:http://localhost:*,http://127.0.0.1:*,http://[::1]:*}")
     private String[] allowedOriginPatterns;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.setErrorHandler(webSocketStompErrorHandler);
+
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(resolveAllowedOriginPatterns())
                 .addInterceptors(webSocketHandshakeAuthInterceptor);
