@@ -7,6 +7,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "workspaces")
 @Getter
@@ -41,6 +43,9 @@ public class Workspace extends BaseEntity {
     @Column(name = "swagger_url", length = 500)
     private String swaggerUrl;
 
+    @Column(name = "last_activity_at")
+    private LocalDateTime lastActivityAt;
+
     public static Workspace create(User owner, String name, String slug, String description) {
         Workspace workspace = new Workspace();
         workspace.createdBy = owner;
@@ -63,5 +68,9 @@ public class Workspace extends BaseEntity {
 
     public void updateSwaggerUrl(String swaggerUrl) {
         this.swaggerUrl = swaggerUrl;
+    }
+
+    public void updateLastActivityAt(LocalDateTime at) {
+        this.lastActivityAt = at;
     }
 }

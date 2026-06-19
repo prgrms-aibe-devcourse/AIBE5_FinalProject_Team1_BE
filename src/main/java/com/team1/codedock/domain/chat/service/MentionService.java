@@ -8,8 +8,10 @@ import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.MentionRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class MentionService {
     private final MentionRepository mentionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final WorkspaceEventService workspaceEventService;
 
     @Transactional
     public void createMentionsForThread(Thread thread, WorkspaceMember mentionedByMember, String content) {
@@ -53,6 +56,8 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
+        workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
+                mentionedByMember.getUser().getDisplayName(), null, null, thread.getChannel().getId(), content);
         publishThreadMentionNotifications(workspace, thread, mentionedMembers);
     }
 
@@ -73,6 +78,9 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
+        workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
+                mentionedByMember.getUser().getDisplayName(), null, null,
+                threadReply.getThread().getChannel().getId(), content);
         publishThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
     }
 

@@ -7,8 +7,10 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -26,6 +28,7 @@ public class ThreadReplyService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
     private final MentionService mentionService;
+    private final WorkspaceEventService workspaceEventService;
 
     @Transactional(readOnly = true)
     public List<ThreadReplyResponse> getReplies(Long threadId, Long userId) {
@@ -47,6 +50,9 @@ public class ThreadReplyService {
         ThreadReply reply = ThreadReply.create(thread, member, ChatContentEmojiCodec.encode(request.content()));
         ThreadReply savedReply = threadReplyRepository.save(reply);
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
+        Long workspaceId = thread.getChannel().getWorkspace().getId();
+        workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.REPLY,
+                member.getUser().getDisplayName(), null, null, thread.getChannel().getId(), request.content());
         return ThreadReplyResponse.from(savedReply);
     }
 
