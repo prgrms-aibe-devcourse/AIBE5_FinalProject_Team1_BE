@@ -61,10 +61,19 @@ public class Thread extends BaseEntity {
     }
 
     public static Thread createChannelMessage(Channel channel, WorkspaceMember createdBy, String content) {
+        return createChannelMessage(channel, createdBy, content, null);
+    }
+
+    public static Thread createChannelMessage(
+            Channel channel,
+            WorkspaceMember createdBy,
+            String content,
+            Thread replyTo
+    ) {
         Thread thread = new Thread();
         thread.channel = channel;
         thread.createdBy = createdBy;
-        thread.replyTo = null;
+        thread.replyTo = replyTo;
         thread.threadType = TYPE_USER_MESSAGE;
         thread.threadableType = null;
         thread.threadableId = null;

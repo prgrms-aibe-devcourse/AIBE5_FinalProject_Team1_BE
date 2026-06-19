@@ -45,8 +45,9 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         // 클라이언트 senderMemberId를 믿지 않고 인증 userId로 채널 멤버 조회함
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
+        Thread replyTo = resolveReplyTo(channel, request.replyToMessageId());
 
-        return saveChannelMessage(channel, sender, request.content());
+        return saveChannelMessage(channel, sender, request.content(), replyTo);
     }
 
     @Transactional(readOnly = true)
@@ -64,7 +65,8 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
-        Thread savedThread = saveChannelMessageEntity(channel, sender, request.content());
+        Thread replyTo = resolveReplyTo(channel, request.replyToMessageId());
+        Thread savedThread = saveChannelMessageEntity(channel, sender, request.content(), replyTo);
         List<ThreadAttachmentResponse> attachments =
                 threadAttachmentService.saveAttachments(savedThread, request.attachments());
         return ChannelMessageResponse.from(savedThread, attachments);
@@ -96,8 +98,26 @@ public class ChatMessageService {
         return responseWithAttachments(message);
     }
 
-    private ChannelMessageResponse saveChannelMessage(Channel channel, WorkspaceMember sender, String content) {
-        return ChannelMessageResponse.from(saveChannelMessageEntity(channel, sender, content));
+    private ChannelMessageResponse saveChannelMessage(
+            Channel channel,
+            WorkspaceMember sender,
+            String content,
+            Thread replyTo
+    ) {
+        return ChannelMessageResponse.from(saveChannelMessageEntity(channel, sender, content, replyTo));
+    }
+
+    private Thread resolveReplyTo(Channel channel, Long replyToMessageId) {
+        if (replyToMessageId == null) {
+            return null;
+        }
+        Thread replyTo = threadRepository.findById(replyToMessageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "답장 대상 메시지를 찾을 수 없습니다."));
+        // 답장 대상은 같은 채널의 메시지여야 함
+        if (!replyTo.getChannel().getId().equals(channel.getId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "다른 채널의 메시지에는 답장할 수 없습니다.");
+        }
+        return replyTo;
     }
 
     private ChannelMessageResponse responseWithAttachments(Thread message) {
@@ -108,13 +128,19 @@ public class ChatMessageService {
         return ChannelMessageResponse.from(message, attachments);
     }
 
-    private Thread saveChannelMessageEntity(Channel channel, WorkspaceMember sender, String content) {
+    private Thread saveChannelMessageEntity(
+            Channel channel,
+            WorkspaceMember sender,
+            String content,
+            Thread replyTo
+    ) {
         String encodedContent = ChatContentEmojiCodec.encode(content);
         Thread thread =
                 Thread.createChannelMessage(
                         channel,
                         sender,
-                        encodedContent
+                        encodedContent,
+                        replyTo
                 );
 
         Thread savedThread = threadRepository.save(thread);

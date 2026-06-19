@@ -15,8 +15,19 @@ public record ChannelMessageResponse(
         String senderName,
         String content,
         LocalDateTime createdAt,
-        List<ThreadAttachmentResponse> attachments
+        List<ThreadAttachmentResponse> attachments,
+        ReplyToSummary replyTo
 ) {
+
+    private static final int REPLY_PREVIEW_MAX_LENGTH = 100;
+
+    // 답장 대상 메시지 요약 (없으면 null)
+    public record ReplyToSummary(
+            Long messageId,
+            String senderName,
+            String content
+    ) {
+    }
 
     public ChannelMessageResponse(
             Long id,
@@ -26,7 +37,7 @@ public record ChannelMessageResponse(
             String content,
             LocalDateTime createdAt
     ) {
-        this(id, channelId, senderMemberId, senderName, content, createdAt, List.of());
+        this(id, channelId, senderMemberId, senderName, content, createdAt, List.of(), null);
     }
 
     public static ChannelMessageResponse from(Thread thread) {
@@ -44,8 +55,30 @@ public record ChannelMessageResponse(
                 resolveSenderName(user),
                 ChatContentEmojiCodec.decode(thread.getContent()),
                 thread.getCreatedAt(),
-                attachments == null ? List.of() : attachments
+                attachments == null ? List.of() : attachments,
+                toReplyToSummary(thread.getReplyTo())
         );
+    }
+
+    private static ReplyToSummary toReplyToSummary(Thread replyTo) {
+        if (replyTo == null) {
+            return null;
+        }
+        WorkspaceMember sender = replyTo.getCreatedBy();
+        String senderName = sender == null ? null : resolveSenderName(sender.getUser());
+        return new ReplyToSummary(
+                replyTo.getId(),
+                senderName,
+                toReplyPreview(ChatContentEmojiCodec.decode(replyTo.getContent()))
+        );
+    }
+
+    // 답장 인용은 UI에서 한 줄로 잘려 표시되므로 응답 페이로드도 프리뷰 길이로 제한함
+    private static String toReplyPreview(String content) {
+        if (content == null || content.length() <= REPLY_PREVIEW_MAX_LENGTH) {
+            return content;
+        }
+        return content.substring(0, REPLY_PREVIEW_MAX_LENGTH) + "…";
     }
 
     private static String resolveSenderName(User user) {
