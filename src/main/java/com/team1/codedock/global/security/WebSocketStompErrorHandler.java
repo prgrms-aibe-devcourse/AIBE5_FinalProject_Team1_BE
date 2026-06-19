@@ -53,7 +53,16 @@ public class WebSocketStompErrorHandler extends StompSubProtocolErrorHandler {
     }
 
     private boolean isAuthenticationFailure(String message) {
-        return message != null && (message.contains("인증") || message.contains("토큰"));
+        if (message == null) {
+            return false;
+        }
+        String lowerCaseMessage = message.toLowerCase();
+        return message.contains("인증")
+                || message.contains("토큰")
+                || lowerCaseMessage.contains("jwt")
+                || lowerCaseMessage.contains("bearer")
+                || lowerCaseMessage.contains("token")
+                || lowerCaseMessage.contains("expired");
     }
 
     private String escapeJson(String value) {
