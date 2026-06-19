@@ -77,4 +77,62 @@ public class GithubIssue extends BaseEntity {
 
     @Column(name = "github_updated_at")
     private LocalDateTime githubUpdatedAt;
+
+    public static GithubIssue create(
+            GithubRepository repository,
+            Channel channel,
+            String githubIssueId,
+            Integer issueNumber,
+            String title,
+            String description,
+            String state,
+            String url,
+            String author,
+            String labels,
+            LocalDateTime closedAt,
+            LocalDateTime githubCreatedAt,
+            LocalDateTime githubUpdatedAt
+    ) {
+        GithubIssue issue = new GithubIssue();
+        issue.repository = repository;
+        issue.channel = channel;
+        issue.githubIssueId = githubIssueId;
+        issue.issueNumber = issueNumber;
+        issue.title = title;
+        issue.description = description;
+        issue.state = state;
+        issue.localStatus = "todo";
+        issue.url = url;
+        issue.author = author;
+        issue.labels = labels;
+        issue.closedAt = closedAt;
+        issue.githubCreatedAt = githubCreatedAt;
+        issue.githubUpdatedAt = githubUpdatedAt;
+        return issue;
+    }
+
+    public void syncFromWebhook(
+            String title,
+            String description,
+            String state,
+            String url,
+            String labels,
+            LocalDateTime closedAt,
+            LocalDateTime githubUpdatedAt
+    ) {
+        this.title = title;
+        this.description = description;
+        this.state = state;
+        this.url = url;
+        this.labels = labels;
+        this.closedAt = closedAt;
+        this.githubUpdatedAt = githubUpdatedAt;
+        if ("closed".equals(state) && !"done".equals(this.localStatus)) {
+            this.localStatus = "done";
+        }
+    }
+
+    public void updateLocalStatus(String localStatus) {
+        this.localStatus = localStatus;
+    }
 }

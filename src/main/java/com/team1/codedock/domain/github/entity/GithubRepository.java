@@ -116,6 +116,19 @@ public class GithubRepository extends BaseEntity {
         return repository;
     }
 
+    public void updateWebhook(String webhookId, String webhookSecret, String webhookUrl, boolean active) {
+        this.webhookId = webhookId;
+        this.webhookSecret = webhookSecret;
+        this.webhookUrl = webhookUrl;
+        this.webhookActive = active;
+        this.webhookEvents = "[\"issues\",\"push\",\"pull_request\"]";
+    }
+
+    public void recordWebhookDelivery(String status) {
+        this.webhookLastDeliveryAt = java.time.LocalDateTime.now();
+        this.webhookLastStatus = status;
+    }
+
     public void updateMetadata(
             String owner,
             String name,

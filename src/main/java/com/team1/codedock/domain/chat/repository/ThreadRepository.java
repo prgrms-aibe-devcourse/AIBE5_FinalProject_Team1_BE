@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.chat.repository;
 
+import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.entity.Thread;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -89,6 +90,30 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             @Param("channelIds") List<Long> channelIds,
             @Param("threadType") String threadType
     );
+
+    @Query("SELECT t FROM Thread t WHERE t.channel.id = :channelId AND t.threadType IN :threadTypes ORDER BY t.id DESC")
+    List<Thread> findAllByChannel_IdAndThreadTypeInOrderByIdDesc(
+            @Param("channelId") Long channelId,
+            @Param("threadTypes") List<String> threadTypes,
+            Pageable pageable
+    );
+
+    @Query("SELECT t FROM Thread t WHERE t.channel.id = :channelId AND t.threadType IN :threadTypes AND t.id < :cursor ORDER BY t.id DESC")
+    List<Thread> findAllByChannel_IdAndThreadTypeInAndIdLessThanOrderByIdDesc(
+            @Param("channelId") Long channelId,
+            @Param("threadTypes") List<String> threadTypes,
+            @Param("cursor") Long cursor,
+            Pageable pageable
+    );
+
+    @Query("SELECT t FROM Thread t WHERE t.threadableType = :threadableType AND t.threadableId = :threadableId")
+    Optional<Thread> findByThreadableTypeAndThreadableId(
+            @Param("threadableType") String threadableType,
+            @Param("threadableId") Long threadableId
+    );
+
+    @Query("SELECT c FROM Channel c WHERE c.githubRepository.id = :githubRepositoryId")
+    Optional<Channel> findChannelByGithubRepositoryId(@Param("githubRepositoryId") Long githubRepositoryId);
 
     @Modifying
     @Query(value = """

@@ -39,7 +39,8 @@ public class ThreadAttachment extends BaseCreatedEntity {
     @Column(length = 255)
     private String detail;
 
-    @Column(length = 100)
+    @Lob
+    @Column
     private String meta;
 
     @Lob
@@ -52,6 +53,10 @@ public class ThreadAttachment extends BaseCreatedEntity {
     // Oracle 예약어 size -> file_size 로 변경됨
     @Column(name = "file_size")
     private Long fileSize;
+
+    public void updateMeta(String meta) {
+        this.meta = meta;
+    }
 
     public static ThreadAttachment create(
             Thread thread,

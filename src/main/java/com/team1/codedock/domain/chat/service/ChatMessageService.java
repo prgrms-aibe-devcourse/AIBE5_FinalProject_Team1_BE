@@ -155,7 +155,7 @@ public class ChatMessageService {
         validateWorkspaceMember(channel, userId);
 
         List<Thread> messages = findPagedChannelMessages(
-                        channelId,
+                        channel,
                         cursor,
                         normalizedLimit
         );
@@ -198,27 +198,26 @@ public class ChatMessageService {
     }
 
     private List<Thread> findPagedChannelMessages(
-            Long channelId,
+            Channel channel,
             Long cursor,
             int limit
     ) {
         PageRequest pageRequest = PageRequest.of(0, limit);
-        String threadType = Thread.TYPE_USER_MESSAGE;
+        Long channelId = channel.getId();
 
-        if (cursor == null) {
-            return threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(
-                    channelId,
-                    threadType,
-                    pageRequest
-            );
+        if (Channel.TYPE_REPOSITORY.equals(channel.getChannelType())) {
+            List<String> types = List.of(Thread.TYPE_USER_MESSAGE, Thread.TYPE_BOT_NOTIFICATION);
+            if (cursor == null) {
+                return threadRepository.findAllByChannel_IdAndThreadTypeInOrderByIdDesc(channelId, types, pageRequest);
+            }
+            return threadRepository.findAllByChannel_IdAndThreadTypeInAndIdLessThanOrderByIdDesc(channelId, types, cursor, pageRequest);
         }
 
-        return threadRepository.findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(
-                channelId,
-                threadType,
-                cursor,
-                pageRequest
-        );
+        String threadType = Thread.TYPE_USER_MESSAGE;
+        if (cursor == null) {
+            return threadRepository.findAllByChannel_IdAndThreadTypeOrderByIdDesc(channelId, threadType, pageRequest);
+        }
+        return threadRepository.findAllByChannel_IdAndThreadTypeAndIdLessThanOrderByIdDesc(channelId, threadType, cursor, pageRequest);
     }
 
     private void validateWorkspaceMember(Channel channel, Long userId) {

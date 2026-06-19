@@ -26,4 +26,12 @@ public class IssueLabel extends BaseCreatedEntity {
 
     @Column(nullable = false, length = 7)
     private String color;
+
+    public static IssueLabel create(GithubIssue issue, String name, String color) {
+        IssueLabel label = new IssueLabel();
+        label.githubIssue = issue;
+        label.name = name;
+        label.color = color.startsWith("#") ? color : "#" + color;
+        return label;
+    }
 }

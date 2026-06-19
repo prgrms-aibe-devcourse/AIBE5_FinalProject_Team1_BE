@@ -64,6 +64,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/me/github/connect/callback").permitAll()
+                        // GitHub Webhook — HMAC 서명으로 인증하므로 JWT 불필요
+                        .requestMatchers(HttpMethod.POST, "/api/v1/github/webhooks/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
