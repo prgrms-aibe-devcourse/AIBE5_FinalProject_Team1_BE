@@ -30,6 +30,20 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private static final List<String> LOCAL_DEVELOPMENT_ORIGIN_PATTERNS = List.of(
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+            "http://[::1]:*",
+            "http://10.*:*",
+            "http://172.*:*",
+            "http://192.168.*:*",
+            "http://*.local:*",
+            "https://10.*:*",
+            "https://172.*:*",
+            "https://192.168.*:*",
+            "https://*.local:*"
+    );
+
     private final CustomOAuth2UserService oAuth2UserService;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
     private final OAuth2FailureHandler oAuth2FailureHandler;
@@ -37,8 +51,8 @@ public class SecurityConfig {
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:3000}")
-    private String[] allowedOrigins;
+    @Value("${app.cors.allowed-origin-patterns:${app.cors.allowed-origins:http://localhost:*,http://127.0.0.1:*,http://[::1]:*}}")
+    private String[] allowedOriginPatterns;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -102,7 +116,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        config.setAllowedOriginPatterns(resolveAllowedOriginPatterns());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -110,5 +124,15 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private List<String> resolveAllowedOriginPatterns() {
+        return java.util.stream.Stream.concat(
+                        Arrays.stream(allowedOriginPatterns == null ? new String[0] : allowedOriginPatterns),
+                        LOCAL_DEVELOPMENT_ORIGIN_PATTERNS.stream()
+                )
+                .filter(pattern -> pattern != null && !pattern.isBlank())
+                .distinct()
+                .toList();
     }
 }
