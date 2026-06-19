@@ -23,6 +23,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.time.Clock;
 import java.time.Duration;
@@ -166,6 +167,216 @@ class WebSocketAuthChannelInterceptorTest {
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
         verify(jwtProvider).validateAccessToken(standardToken);
         verify(jwtProvider, never()).validateAccessToken(lowercaseToken);
+    }
+
+    @Test
+    @DisplayName("CONNECT 요청은 access_token native header도 인증 토큰으로 처리한다")
+    void preSendWithAccessTokenNativeHeader() {
+        String token = "native-access-token";
+        Long userId = 1L;
+        Message<?> message = stompMessage(StompCommand.CONNECT, "access_token", token);
+
+        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.getUserId(token)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).getUserId(token);
+        verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
+    @DisplayName("CONNECT 요청은 handshake session에 저장된 token도 인증 토큰으로 처리한다")
+    void preSendWithHandshakeSessionToken() {
+        String token = "valid-access-token";
+        Long userId = 1L;
+        Message<?> message = stompMessageWithSessionAttributes(
+                StompCommand.CONNECT,
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, token)
+        );
+
+        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.getUserId(token)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).getUserId(token);
+        verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
+    @DisplayName("CONNECT uses token native header as auth token")
+    void preSendWithTokenNativeHeader() {
+        String token = "native-token-header";
+        Long userId = 1L;
+        Message<?> message = stompMessage(StompCommand.CONNECT, "token", token);
+
+        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.getUserId(token)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).getUserId(token);
+        verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
+    @DisplayName("CONNECT strips Bearer prefix from access_token native header")
+    void preSendWithBearerAccessTokenNativeHeader() {
+        String token = "native-access-token";
+        Long userId = 1L;
+        Message<?> message = stompMessage(StompCommand.CONNECT, "access_token", "Bearer " + token + "  ");
+
+        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.getUserId(token)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).getUserId(token);
+        verify(userDetailsService).loadUserById(userId);
+    }
+
+    @Test
+    @DisplayName("CONNECT prefers Authorization over native and session tokens")
+    void preSendPrefersAuthorizationOverNativeAndSessionTokens() {
+        String authorizationToken = "authorization-token";
+        String accessToken = "native-access-token";
+        String sessionToken = "session-access-token";
+        Long userId = 1L;
+        Message<?> message = connectMessageWithHeadersAndSessionAttributes(
+                List.of(
+                        new NativeHeader("Authorization", "Bearer " + authorizationToken),
+                        new NativeHeader("access_token", accessToken)
+                ),
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
+        );
+
+        when(jwtProvider.validateAccessToken(authorizationToken)).thenReturn(true);
+        when(jwtProvider.getUserId(authorizationToken)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(authorizationToken);
+        verify(jwtProvider, never()).validateAccessToken(accessToken);
+        verify(jwtProvider, never()).validateAccessToken(sessionToken);
+    }
+
+    @Test
+    @DisplayName("CONNECT prefers access_token over token header and session token")
+    void preSendPrefersAccessTokenHeaderOverTokenHeaderAndSessionToken() {
+        String accessToken = "native-access-token";
+        String tokenHeader = "token-header";
+        String sessionToken = "session-access-token";
+        Long userId = 1L;
+        Message<?> message = connectMessageWithHeadersAndSessionAttributes(
+                List.of(
+                        new NativeHeader("access_token", accessToken),
+                        new NativeHeader("token", tokenHeader)
+                ),
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
+        );
+
+        when(jwtProvider.validateAccessToken(accessToken)).thenReturn(true);
+        when(jwtProvider.getUserId(accessToken)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(accessToken);
+        verify(jwtProvider, never()).validateAccessToken(tokenHeader);
+        verify(jwtProvider, never()).validateAccessToken(sessionToken);
+    }
+
+    @Test
+    @DisplayName("CONNECT falls back to session token when native token headers are blank")
+    void preSendFallsBackToSessionTokenWhenNativeTokenHeadersAreBlank() {
+        String sessionToken = "session-access-token";
+        Long userId = 1L;
+        Message<?> message = connectMessageWithHeadersAndSessionAttributes(
+                List.of(
+                        new NativeHeader("access_token", " "),
+                        new NativeHeader("token", "")
+                ),
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
+        );
+
+        when(jwtProvider.validateAccessToken(sessionToken)).thenReturn(true);
+        when(jwtProvider.getUserId(sessionToken)).thenReturn(userId);
+        when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
+        doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
+        assertThat(accessor).isNotNull();
+        assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
+        verify(jwtProvider).validateAccessToken(sessionToken);
+    }
+
+    @Test
+    @DisplayName("CONNECT ignores non-string handshake session token")
+    void preSendIgnoresNonStringSessionToken() {
+        Message<?> message = connectMessageWithHeadersAndSessionAttributes(
+                List.of(),
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, 12345L)
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 토큰이 필요합니다.");
+
+        verifyNoInteractions(jwtProvider, userDetailsService);
+    }
+
+    @Test
+    @DisplayName("CONNECT rejects malformed Authorization even when fallback token exists")
+    void preSendRejectsMalformedAuthorizationEvenWhenFallbackTokenExists() {
+        Message<?> message = connectMessageWithHeadersAndSessionAttributes(
+                List.of(
+                        new NativeHeader("Authorization", "Token invalid"),
+                        new NativeHeader("access_token", "native-access-token")
+                ),
+                Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, "session-access-token")
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 토큰이 필요합니다.");
+
+        verifyNoInteractions(jwtProvider, userDetailsService);
     }
 
     @Test
@@ -512,6 +723,20 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("채널 legacy 이벤트 구독도 해당 워크스페이스 활성 멤버만 허용한다")
+    void subscribeLegacyChannelEventsWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/channels/10", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+    }
+
+    @Test
     @DisplayName("채널 typing 구독도 해당 워크스페이스 활성 멤버만 허용한다")
     void subscribeChannelTypingWithWorkspaceMember() {
         Message<?> message = subscribeMessage("/topic/channels/10/typing", authenticatedPrincipal(1L));
@@ -537,6 +762,38 @@ class WebSocketAuthChannelInterceptorTest {
         Message<?> result = interceptor.preSend(message, messageChannel);
 
         assertThat(result).isSameAs(message);
+    }
+
+    @Test
+    @DisplayName("스레드 legacy 이벤트 구독도 스레드가 속한 워크스페이스 활성 멤버만 허용한다")
+    void subscribeLegacyThreadEventsWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/threads/20", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+        verify(threadRepository).findWorkspaceIdById(20L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository);
+    }
+
+    @Test
+    @DisplayName("legacy 채널 이벤트 구독 대상 채널이 없으면 거부한다")
+    void subscribeMissingLegacyChannelEvents() {
+        Message<?> message = subscribeMessage("/topic/channels/10", authenticatedPrincipal(1L));
+
+        when(channelRepository.findWorkspaceIdById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verify(channelRepository).findWorkspaceIdById(10L);
+        verifyNoInteractions(threadRepository, workspaceMemberRepository);
     }
 
     @Test
@@ -1263,6 +1520,27 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
         accessor.setLeaveMutable(true);
         nativeHeaders.forEach(header -> accessor.setNativeHeader(header.name(), header.value()));
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> stompMessageWithSessionAttributes(
+            StompCommand command,
+            Map<String, Object> sessionAttributes
+    ) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
+        accessor.setLeaveMutable(true);
+        accessor.setSessionAttributes(sessionAttributes);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<?> connectMessageWithHeadersAndSessionAttributes(
+            List<NativeHeader> nativeHeaders,
+            Map<String, Object> sessionAttributes
+    ) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setLeaveMutable(true);
+        nativeHeaders.forEach(header -> accessor.setNativeHeader(header.name(), header.value()));
+        accessor.setSessionAttributes(sessionAttributes);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
