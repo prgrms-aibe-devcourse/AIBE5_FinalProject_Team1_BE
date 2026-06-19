@@ -53,7 +53,7 @@ public class ThreadReplyService {
         Long workspaceId = thread.getChannel().getWorkspace().getId();
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.REPLY,
                 member.getUser().getDisplayName(), null, null, thread.getChannel().getId(), request.content(),
-                null, thread.getId());
+                null, thread.getId(), null, null);
         return ThreadReplyResponse.from(savedReply);
     }
 

@@ -15,7 +15,9 @@ public record WorkspaceEventResponse(
         String content,
         LocalDateTime createdAt,
         Long repositoryId,
-        Long threadId
+        Long threadId,
+        Long prNumber,
+        Long issueNumber
 ) {
     public static WorkspaceEventResponse from(WorkspaceEvent event) {
         return new WorkspaceEventResponse(
@@ -29,7 +31,9 @@ public record WorkspaceEventResponse(
                 event.getContent(),
                 event.getCreatedAt(),
                 event.getRepositoryId(),
-                event.getThreadId()
+                event.getThreadId(),
+                event.getPrNumber(),
+                event.getIssueNumber()
         );
     }
 }
