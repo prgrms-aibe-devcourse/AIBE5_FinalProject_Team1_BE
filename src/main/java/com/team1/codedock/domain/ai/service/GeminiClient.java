@@ -23,7 +23,7 @@ public class GeminiClient {
 
     public GeminiClient(
             RestClient.Builder builder,
-            @Value("${groq.api-key}") String apiKey,
+            @Value("${groq.api-key:}") String apiKey,
             @Value("${groq.model:llama-3.3-70b-versatile}") String model,
             ObjectMapper objectMapper
     ) {
