@@ -19,6 +19,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,7 @@ public class WorkspaceService {
     private final InvitationRepository invitationRepository;
     private final WorkspaceMemberPreferencesRepository preferencesRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final Set<String> ASSIGNABLE_ROLES = Set.of("admin", "editor", "viewer");
 
@@ -94,6 +96,7 @@ public class WorkspaceService {
         Workspace workspace = membership.getWorkspace();
         String trimmedName = req.getName() != null ? req.getName().trim() : null;
         workspace.update(trimmedName, req.getDescription(), req.getLogoUrl());
+        publishMemberEvent(workspaceId, "WORKSPACE_UPDATED");
         int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
         return WorkspaceResponse.fromDetail(workspace, membership, count);
     }
@@ -149,6 +152,9 @@ public class WorkspaceService {
         Invitation invitation = invitationRepository.save(
                 Invitation.create(workspace, inviterMember, invitedEmail, req.getRole(), token, expiresAt)
         );
+        if (invitedOwner != null) {
+            publishInviteEvent(invitedOwner.getEmail(), "RECEIVED", workspaceId);
+        }
         return InviteResponse.from(invitation, baseUrl);
     }
 
@@ -180,6 +186,8 @@ public class WorkspaceService {
             );
         }
         invitation.accept();
+        publishInviteEvent(invitation.getInviterMember().getUser().getEmail(), "ACCEPTED", invitation.getWorkspace().getId());
+        publishMemberEvent(invitation.getWorkspace().getId(), "JOINED");
     }
 
     public void rejectInvite(String token, Long currentUserId) {
@@ -195,6 +203,7 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         invitation.reject();
+        publishInviteEvent(invitation.getInviterMember().getUser().getEmail(), "REJECTED", invitation.getWorkspace().getId());
     }
 
     private User resolveOwner(String email) {
@@ -253,6 +262,11 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.INVALID_INPUT);   // accepted/rejected invite can't be revoked
         }
         invitation.revoke(requester);
+
+        User revokedInvitee = resolveOwner(invitation.getInvitedEmail());
+        if (revokedInvitee != null) {
+            publishInviteEvent(revokedInvitee.getEmail(), "REVOKED", workspaceId);
+        }
     }
 
     public void changeMemberRole(Long workspaceId, Long memberId, String newRole, Long currentUserId) {
@@ -261,11 +275,14 @@ public class WorkspaceService {
         }
         WorkspaceMember target = validateAndGetTarget(workspaceId, memberId, currentUserId);
         target.changeAuthority(newRole);
+        publishMemberEvent(workspaceId, "ROLE_CHANGED");
     }
 
     public void removeMember(Long workspaceId, Long memberId, Long currentUserId) {
         WorkspaceMember target = validateAndGetTarget(workspaceId, memberId, currentUserId);
         target.deactivate("removed_by_admin");
+        publishMemberEvent(workspaceId, "REMOVED");
+        publishMemberRemovedToUser(target.getUser().getEmail(), workspaceId);
     }
 
     public void leaveWorkspace(Long workspaceId, Long currentUserId) {
@@ -274,6 +291,7 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.FORBIDDEN);   // owner는 워크스페이스를 위임하거나 삭제해야 함
         }
         membership.deactivate("left");
+        publishMemberEvent(workspaceId, "LEFT");
     }
 
     public void transferOwnership(Long workspaceId, Long memberId, Long currentUserId) {
@@ -289,6 +307,7 @@ public class WorkspaceService {
         requester.changeAuthority("admin");
         target.changeAuthority("owner");
         requester.getWorkspace().changeOwner(target.getUser());
+        publishMemberEvent(workspaceId, "OWNERSHIP_TRANSFERRED");
     }
 
     public void deleteWorkspace(Long workspaceId, Long currentUserId) {
@@ -355,6 +374,36 @@ public class WorkspaceService {
 
     private void nq(String sql, Long workspaceId) {
         em.createNativeQuery(sql).setParameter("wid", workspaceId).executeUpdate();
+    }
+
+    private void publishInviteEvent(String email, String action, Long workspaceId) {
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("type", "INVITE_EVENT");
+        payload.put("action", action);
+        payload.put("workspaceId", workspaceId);
+        eventPublisher.publishEvent(new InviteNotificationEvent(email, payload));
+    }
+
+    private void publishMemberEvent(Long workspaceId, String action) {
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("type", "MEMBER_EVENT");
+        payload.put("action", action);
+        payload.put("workspaceId", workspaceId);
+        eventPublisher.publishEvent(new WorkspaceMemberEvent(workspaceId, payload));
+    }
+
+    private void publishMemberRemovedToUser(String email, Long workspaceId) {
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("type", "MEMBER_EVENT");
+        payload.put("action", "REMOVED");
+        payload.put("workspaceId", workspaceId);
+        eventPublisher.publishEvent(new InviteNotificationEvent(email, payload));
     }
 
     private WorkspaceMember getMembership(Long workspaceId, Long currentUserId) {
