@@ -60,6 +60,10 @@ public class WorkspaceMember extends BaseEntity {
         this.authority = authority;
     }
 
+    public void assignPosition(String position) {
+        this.position = position;
+    }
+
     public void deactivate(String reason) {
         this.isActive = false;
         this.leftAt = LocalDateTime.now();

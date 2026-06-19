@@ -34,6 +34,9 @@ public class Invitation extends BaseCreatedEntity {
     @Column(name = "invited_authority", nullable = false, length = 30)
     private String invitedAuthority;
 
+    @Column(name = "invited_position", length = 100)
+    private String invitedPosition;
+
     @Column(nullable = false, unique = true, length = 255)
     private String token;
 
@@ -53,12 +56,13 @@ public class Invitation extends BaseCreatedEntity {
 
     public static Invitation create(Workspace workspace, WorkspaceMember inviterMember,
                                     String invitedEmail, String invitedAuthority,
-                                    String token, LocalDateTime expiresAt) {
+                                    String invitedPosition, String token, LocalDateTime expiresAt) {
         Invitation invitation = new Invitation();
         invitation.workspace = workspace;
         invitation.inviterMember = inviterMember;
         invitation.invitedEmail = invitedEmail;
         invitation.invitedAuthority = invitedAuthority;
+        invitation.invitedPosition = invitedPosition;
         invitation.token = token;
         invitation.expiresAt = expiresAt;
         invitation.status = "pending";

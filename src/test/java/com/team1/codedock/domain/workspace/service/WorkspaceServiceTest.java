@@ -5,6 +5,7 @@ import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.dto.WorkspaceCreateRequest;
+import com.team1.codedock.domain.workspace.dto.InviteCreateRequest;
 import com.team1.codedock.domain.workspace.entity.Invitation;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
@@ -343,6 +344,91 @@ class WorkspaceServiceTest {
                 .isEqualTo(ErrorCode.FORBIDDEN);
     }
 
+    @Test
+    @DisplayName("초대 생성: 요청의 직무(position)가 초대에 저장된다")
+    void createInvite_persistsInvitedPosition() {
+        Workspace workspace = workspace(10L);
+        User adminUser = user(100L, "admin@test.com");
+        WorkspaceMember adminMember = workspaceMember(1L, workspace, adminUser, "admin");
+        InviteCreateRequest request = new InviteCreateRequest();
+        request.setEmail("invitee@test.com");
+        request.setRole("viewer");
+        request.setPosition("Backend Developer");
+        request.setExpiresInHours(168);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(adminUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, adminUser))
+                .thenReturn(Optional.of(adminMember));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("invitee@test.com")).thenReturn(List.of());
+        when(userRepository.findByGithubEmailIgnoreCaseOrderByIdAsc("invitee@test.com")).thenReturn(List.of());
+        when(invitationRepository.existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(10L, "invitee@test.com", "pending"))
+                .thenReturn(false);
+        when(invitationRepository.save(any(Invitation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceService.createInvite(10L, request, 100L);
+
+        ArgumentCaptor<Invitation> captor = ArgumentCaptor.forClass(Invitation.class);
+        verify(invitationRepository).save(captor.capture());
+        assertThat(captor.getValue().getInvitedPosition()).isEqualTo("Backend Developer");
+        assertThat(captor.getValue().getInvitedAuthority()).isEqualTo("viewer");
+    }
+
+    @Test
+    @DisplayName("초대 수락: 신규 멤버에게 초대의 직무(position)가 배정된다")
+    void acceptInvite_assignsPositionToNewMember() {
+        User user = user(1L, "a@x.com", null);
+        Invitation invitation = pendingInvitation("a@x.com", "Tech Lead");
+        when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(invitation));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("a@x.com")).thenReturn(List.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(invitation.getWorkspace(), user)).thenReturn(Optional.empty());
+
+        workspaceService.acceptInvite("tok", 1L);
+
+        ArgumentCaptor<WorkspaceMember> captor = ArgumentCaptor.forClass(WorkspaceMember.class);
+        verify(workspaceMemberRepository).save(captor.capture());
+        assertThat(captor.getValue().getPosition()).isEqualTo("Tech Lead");
+        assertThat(invitation.getStatus()).isEqualTo("accepted");
+    }
+
+    @Test
+    @DisplayName("초대 수락: 재가입(재활성화) 멤버에게도 직무(position)가 배정된다")
+    void acceptInvite_assignsPositionToReactivatedMember() {
+        User user = user(1L, "a@x.com", null);
+        Invitation invitation = pendingInvitation("a@x.com", "QA Engineer");
+        WorkspaceMember existing = WorkspaceMember.create(invitation.getWorkspace(), user, "viewer");
+        existing.deactivate("left");
+        when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(invitation));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("a@x.com")).thenReturn(List.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(invitation.getWorkspace(), user)).thenReturn(Optional.of(existing));
+
+        workspaceService.acceptInvite("tok", 1L);
+
+        assertThat(existing.isActive()).isTrue();
+        assertThat(existing.getPosition()).isEqualTo("QA Engineer");
+        assertThat(invitation.getStatus()).isEqualTo("accepted");
+    }
+
+    @Test
+    @DisplayName("초대 수락: 직무(position)가 없으면 멤버 직무는 null로 정상 처리된다")
+    void acceptInvite_nullPositionIsAllowed() {
+        User user = user(1L, "a@x.com", null);
+        Invitation invitation = pendingInvitation("a@x.com", null);
+        when(invitationRepository.findByToken("tok")).thenReturn(Optional.of(invitation));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("a@x.com")).thenReturn(List.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(invitation.getWorkspace(), user)).thenReturn(Optional.empty());
+
+        workspaceService.acceptInvite("tok", 1L);
+
+        ArgumentCaptor<WorkspaceMember> captor = ArgumentCaptor.forClass(WorkspaceMember.class);
+        verify(workspaceMemberRepository).save(captor.capture());
+        assertThat(captor.getValue().getPosition()).isNull();
+        assertThat(invitation.getStatus()).isEqualTo("accepted");
+    }
+
     private static User user(Long id, String email) {
         User user = User.create(email, "hashed-password", email);
         ReflectionTestUtils.setField(user, "id", id);
@@ -397,9 +483,13 @@ class WorkspaceServiceTest {
     }
 
     private static Invitation pendingInvitation(String invitedEmail) {
+        return pendingInvitation(invitedEmail, null);
+    }
+
+    private static Invitation pendingInvitation(String invitedEmail, String invitedPosition) {
         User owner = user(99L, "owner@x.com", null);
         Workspace workspace = Workspace.create(owner, "WS", "ws", "");
         WorkspaceMember inviter = WorkspaceMember.create(workspace, owner, "owner");
-        return Invitation.create(workspace, inviter, invitedEmail, "viewer", "tok", LocalDateTime.now().plusDays(1));
+        return Invitation.create(workspace, inviter, invitedEmail, "viewer", invitedPosition, "tok", LocalDateTime.now().plusDays(1));
     }
 }

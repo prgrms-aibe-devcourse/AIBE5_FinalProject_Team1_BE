@@ -21,6 +21,9 @@ public class InviteCreateRequest {
     )
     private String role;
 
+    @Size(max = 100, message = "직무는 100자 이하여야 합니다.")
+    private String position;
+
     @NotNull(message = "초대 만료 시간은 필수입니다.")
     @Min(value = 1, message = "초대 만료 시간은 1시간 이상이어야 합니다.")
     private Integer expiresInHours;
