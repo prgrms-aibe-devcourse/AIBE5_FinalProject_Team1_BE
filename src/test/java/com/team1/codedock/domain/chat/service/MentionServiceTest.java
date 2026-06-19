@@ -109,7 +109,7 @@ class MentionServiceTest {
                     assertThat(notification.message()).isEqualTo("새 멘션이 도착했습니다.");
                 });
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none");
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, 100L);
     }
 
     @Test
@@ -187,7 +187,7 @@ class MentionServiceTest {
         verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
         verify(mentionRepository, never()).saveAll(any());
         verify(eventPublisher, never()).publishEvent(any());
-        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any());
+        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -227,7 +227,7 @@ class MentionServiceTest {
         assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
         assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice");
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice", null, 100L);
     }
 
     @Test

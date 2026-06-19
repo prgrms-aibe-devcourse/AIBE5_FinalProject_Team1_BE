@@ -123,7 +123,7 @@ class ThreadReplyServiceTest {
                 org.mockito.ArgumentMatchers.eq("새 답글")
         );
         verify(workspaceEventService).recordEvent(
-                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, "새 답글");
+                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, "새 답글", null, 1L);
     }
 
     @Test
@@ -164,7 +164,7 @@ class ThreadReplyServiceTest {
                 org.mockito.ArgumentMatchers.eq(content)
         );
         verify(workspaceEventService).recordEvent(
-                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, content);
+                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, content, null, 1L);
     }
 
     @Test
