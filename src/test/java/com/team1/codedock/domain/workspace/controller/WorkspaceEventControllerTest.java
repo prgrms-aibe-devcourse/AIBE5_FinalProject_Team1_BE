@@ -61,7 +61,7 @@ class WorkspaceEventControllerTest {
     void getMyEvents_성공() throws Exception {
         WorkspaceEventResponse event = new WorkspaceEventResponse(
                 100L, 10L, "MENTION", "actor", null, null, 1L, "hello",
-                LocalDateTime.of(2026, 6, 18, 12, 0));
+                LocalDateTime.of(2026, 6, 18, 12, 0), null, null, null, null, null);
         when(workspaceEventService.getEventsForUser(USER_ID)).thenReturn(List.of(event));
 
         mockMvc.perform(get("/api/v1/events"))
