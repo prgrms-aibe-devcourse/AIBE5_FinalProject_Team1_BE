@@ -15,6 +15,7 @@ public record WorkspaceEventResponse(
         String content,
         LocalDateTime createdAt,
         Long repositoryId,
+        String repositoryName,
         Long threadId,
         Long prNumber,
         Long issueNumber
@@ -31,6 +32,7 @@ public record WorkspaceEventResponse(
                 event.getContent(),
                 event.getCreatedAt(),
                 event.getRepositoryId(),
+                event.getRepositoryName(),
                 event.getThreadId(),
                 event.getPrNumber(),
                 event.getIssueNumber()

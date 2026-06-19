@@ -13,18 +13,18 @@ public class GithubWebhookEventService {
 
     private final WorkspaceEventService workspaceEventService;
 
-    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, Long prNumber) {
+    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, String repositoryName, Long prNumber) {
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.PR_CREATED,
-                actorName, prId, null, null, title, repositoryId, null, prNumber, null);
+                actorName, prId, null, null, title, repositoryId, repositoryName, null, prNumber, null);
     }
 
-    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, Long issueNumber) {
+    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, String repositoryName, Long issueNumber) {
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.ISSUE_CREATED,
-                actorName, null, issueId, null, title, repositoryId, null, null, issueNumber);
+                actorName, null, issueId, null, title, repositoryId, repositoryName, null, null, issueNumber);
     }
 
-    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, Long prNumber) {
+    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, String repositoryName, Long prNumber) {
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.PR_REVIEW,
-                actorName, prId, null, null, comment, repositoryId, null, prNumber, null);
+                actorName, prId, null, null, comment, repositoryId, repositoryName, null, prNumber, null);
     }
 }
