@@ -39,10 +39,9 @@ public class ReactionController {
                 request
         );
 
-        messagingTemplate.convertAndSend(
-                "/topic/channels/" + channelId + "/events",
-                ChatEventResponse.of(ChatEventType.REACTION_UPDATED, response)
-        );
+        ChatEventResponse<ReactionToggleResponse> event = ChatEventResponse.of(ChatEventType.REACTION_UPDATED, response);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId + "/events", event);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId, event);
 
         return ApiResponse.ok(response);
     }

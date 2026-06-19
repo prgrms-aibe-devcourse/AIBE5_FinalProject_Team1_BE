@@ -34,7 +34,7 @@ public class ChatWebSocketController {
     private final ThreadReplyService threadReplyService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    @MessageMapping("/channels/{channelId}/messages")
+    @MessageMapping({"/channels/{channelId}/messages", "/channels/{channelId}"})
     public void createChannelMessage(
             @DestinationVariable Long channelId,
             Principal principal,
@@ -44,13 +44,10 @@ public class ChatWebSocketController {
         Long userId = getCurrentUserId(principal);
         ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
 
-        messagingTemplate.convertAndSend(
-                "/topic/channels/" + channelId + "/events",
-                ChatEventResponse.of(ChatEventType.MESSAGE_CREATED, response)
-        );
+        broadcastChannelEvent(channelId, ChatEventType.MESSAGE_CREATED, response);
     }
 
-    @MessageMapping("/threads/{threadId}/replies")
+    @MessageMapping({"/threads/{threadId}/replies", "/threads/{threadId}"})
     public void createThreadReply(
             @DestinationVariable Long threadId,
             Principal principal,
@@ -64,10 +61,7 @@ public class ChatWebSocketController {
                 request.toCreateRequest()
         );
 
-        messagingTemplate.convertAndSend(
-                "/topic/threads/" + threadId + "/events",
-                ChatEventResponse.of(ChatEventType.THREAD_REPLY_CREATED, response)
-        );
+        broadcastThreadEvent(threadId, ChatEventType.THREAD_REPLY_CREATED, response);
     }
 
     @MessageMapping("/channels/{channelId}/typing")
@@ -105,5 +99,17 @@ public class ChatWebSocketController {
             return userDetails.getUserId();
         }
         throw new BusinessException(ErrorCode.UNAUTHORIZED);
+    }
+
+    private void broadcastChannelEvent(Long channelId, ChatEventType eventType, ChannelMessageResponse response) {
+        ChatEventResponse<ChannelMessageResponse> event = ChatEventResponse.of(eventType, response);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId + "/events", event);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId, event);
+    }
+
+    private void broadcastThreadEvent(Long threadId, ChatEventType eventType, ThreadReplyResponse response) {
+        ChatEventResponse<ThreadReplyResponse> event = ChatEventResponse.of(eventType, response);
+        messagingTemplate.convertAndSend("/topic/threads/" + threadId + "/events", event);
+        messagingTemplate.convertAndSend("/topic/threads/" + threadId, event);
     }
 }

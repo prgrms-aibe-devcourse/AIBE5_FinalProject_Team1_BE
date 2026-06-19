@@ -259,5 +259,14 @@ class ThreadReplyControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(expectedType);
         assertThat(event.payload()).isEqualTo(expectedPayload);
+
+        ArgumentCaptor<Object> legacyPayloadCaptor = ArgumentCaptor.forClass(Object.class);
+        String legacyDestination = destination.substring(0, destination.length() - "/events".length());
+        verify(messagingTemplate).convertAndSend(eq(legacyDestination), legacyPayloadCaptor.capture());
+
+        assertThat(legacyPayloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
+        ChatEventResponse<?> legacyEvent = (ChatEventResponse<?>) legacyPayloadCaptor.getValue();
+        assertThat(legacyEvent.type()).isEqualTo(expectedType);
+        assertThat(legacyEvent.payload()).isEqualTo(expectedPayload);
     }
 }

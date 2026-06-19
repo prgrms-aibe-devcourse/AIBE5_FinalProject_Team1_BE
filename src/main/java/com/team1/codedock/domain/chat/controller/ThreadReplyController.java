@@ -65,9 +65,8 @@ public class ThreadReplyController {
     }
 
     private void broadcastThreadEvent(Long threadId, ChatEventType eventType, ThreadReplyResponse response) {
-        messagingTemplate.convertAndSend(
-                "/topic/threads/" + threadId + "/events",
-                ChatEventResponse.of(eventType, response)
-        );
+        ChatEventResponse<ThreadReplyResponse> event = ChatEventResponse.of(eventType, response);
+        messagingTemplate.convertAndSend("/topic/threads/" + threadId + "/events", event);
+        messagingTemplate.convertAndSend("/topic/threads/" + threadId, event);
     }
 }
