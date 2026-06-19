@@ -10,6 +10,7 @@ import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
 import com.team1.codedock.domain.github.dto.GithubRepositoryResponse;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
+import java.util.List;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -86,6 +87,28 @@ public class GithubRepositoryService {
                 .defaultBranch(saved.getDefaultBranch())
                 .isPrivate(saved.isPrivate())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<GithubConnectResponse> getWorkspaceRepositories(Long workspaceId, Long userId) {
+        workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+
+        return githubRepositoryRepository.findByWorkspaceId(workspaceId).stream()
+                .map(repo -> {
+                    Channel channel = channelRepository.findRepositoryChannel(workspaceId, repo.getId()).orElse(null);
+                    return GithubConnectResponse.builder()
+                            .id(repo.getId())
+                            .channelId(channel != null ? channel.getId() : null)
+                            .owner(repo.getOwner())
+                            .name(repo.getName())
+                            .fullName(repo.getFullName())
+                            .url(repo.getUrl())
+                            .defaultBranch(repo.getDefaultBranch())
+                            .isPrivate(repo.isPrivate())
+                            .build();
+                })
+                .toList();
     }
 
     public GithubRepository linkRepository(Long workspaceId, Long userId, GithubRepositoryLinkRequest request) {

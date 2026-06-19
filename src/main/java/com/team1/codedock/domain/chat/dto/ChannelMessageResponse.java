@@ -46,8 +46,10 @@ public record ChannelMessageResponse(
 
     public static ChannelMessageResponse from(Thread thread, List<ThreadAttachmentResponse> attachments) {
         WorkspaceMember sender = thread.getCreatedBy();
+        if (sender == null) {
+            return fromBot(thread, "GitHub Bot", attachments);
+        }
         User user = sender.getUser();
-
         return new ChannelMessageResponse(
                 thread.getId(),
                 thread.getChannel().getId(),
@@ -57,6 +59,19 @@ public record ChannelMessageResponse(
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
                 toReplyToSummary(thread.getReplyTo())
+        );
+    }
+
+    public static ChannelMessageResponse fromBot(Thread thread, String botName, List<ThreadAttachmentResponse> attachments) {
+        return new ChannelMessageResponse(
+                thread.getId(),
+                thread.getChannel().getId(),
+                null,
+                botName,
+                thread.getContent(),
+                thread.getCreatedAt(),
+                attachments == null ? List.of() : attachments,
+                null
         );
     }
 
@@ -80,7 +95,6 @@ public record ChannelMessageResponse(
         }
         return content.substring(0, REPLY_PREVIEW_MAX_LENGTH) + "…";
     }
-
     private static String resolveSenderName(User user) {
         if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
             return user.getDisplayName();

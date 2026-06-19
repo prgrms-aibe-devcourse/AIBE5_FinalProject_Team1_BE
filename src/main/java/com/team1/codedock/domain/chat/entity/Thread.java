@@ -15,6 +15,8 @@ import lombok.NoArgsConstructor;
 public class Thread extends BaseEntity {
 
     public static final String TYPE_USER_MESSAGE = "user_message";
+    public static final String TYPE_BOT_NOTIFICATION = "github_bot_notification";
+    public static final String THREADABLE_TYPE_GITHUB_ISSUE = "github_issue";
     public static final String DELETED_MESSAGE_CONTENT = "삭제된 메시지입니다";
 
     @Id
@@ -58,6 +60,19 @@ public class Thread extends BaseEntity {
 
     public void markAsDeleted() {
         this.content = DELETED_MESSAGE_CONTENT;
+    }
+
+    public static Thread createBotNotification(Channel channel, String content, String threadableType, Long threadableId) {
+        Thread thread = new Thread();
+        thread.channel = channel;
+        thread.createdBy = null;
+        thread.replyTo = null;
+        thread.threadType = TYPE_BOT_NOTIFICATION;
+        thread.threadableType = threadableType;
+        thread.threadableId = threadableId;
+        thread.title = null;
+        thread.content = content;
+        return thread;
     }
 
     public static Thread createChannelMessage(Channel channel, WorkspaceMember createdBy, String content) {
