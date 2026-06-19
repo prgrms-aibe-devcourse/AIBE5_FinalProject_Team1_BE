@@ -57,7 +57,8 @@ public class MentionService {
                 .toList();
         mentionRepository.saveAll(mentions);
         workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
-                mentionedByMember.getUser().getDisplayName(), null, null, thread.getChannel().getId(), content);
+                mentionedByMember.getUser().getDisplayName(), null, null, thread.getChannel().getId(), content,
+                null, thread.getId());
         publishThreadMentionNotifications(workspace, thread, mentionedMembers);
     }
 
@@ -80,7 +81,8 @@ public class MentionService {
         mentionRepository.saveAll(mentions);
         workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
                 mentionedByMember.getUser().getDisplayName(), null, null,
-                threadReply.getThread().getChannel().getId(), content);
+                threadReply.getThread().getChannel().getId(), content,
+                null, threadReply.getThread().getId());
         publishThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
     }
 

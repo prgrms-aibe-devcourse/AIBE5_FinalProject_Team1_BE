@@ -52,7 +52,8 @@ public class ThreadReplyService {
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
         Long workspaceId = thread.getChannel().getWorkspace().getId();
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.REPLY,
-                member.getUser().getDisplayName(), null, null, thread.getChannel().getId(), request.content());
+                member.getUser().getDisplayName(), null, null, thread.getChannel().getId(), request.content(),
+                null, thread.getId());
         return ThreadReplyResponse.from(savedReply);
     }
 

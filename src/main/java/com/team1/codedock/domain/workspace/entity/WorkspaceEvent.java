@@ -37,6 +37,12 @@ public class WorkspaceEvent extends BaseCreatedEntity {
     @Column(name = "channel_id")
     private Long channelId;
 
+    @Column(name = "repository_id")
+    private Long repositoryId;
+
+    @Column(name = "thread_id")
+    private Long threadId;
+
     @Column(columnDefinition = "CLOB")
     private String content;
 
@@ -46,7 +52,8 @@ public class WorkspaceEvent extends BaseCreatedEntity {
 
     public static WorkspaceEvent create(
             Workspace workspace, EventType type, String actorName,
-            Long prId, Long issueId, Long channelId, String content) {
+            Long prId, Long issueId, Long channelId, String content,
+            Long repositoryId, Long threadId) {
         WorkspaceEvent event = new WorkspaceEvent();
         event.workspace = workspace;
         event.type = type;
@@ -55,6 +62,8 @@ public class WorkspaceEvent extends BaseCreatedEntity {
         event.issueId = issueId;
         event.channelId = channelId;
         event.content = content;
+        event.repositoryId = repositoryId;
+        event.threadId = threadId;
         return event;
     }
 }
