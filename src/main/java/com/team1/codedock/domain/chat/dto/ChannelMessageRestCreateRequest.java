@@ -13,10 +13,16 @@ public record ChannelMessageRestCreateRequest(
         String content,
 
         @Size(max = 10, message = "첨부파일은 한 번에 10개 이하로 추가할 수 있습니다.")
-        List<@NotNull(message = "첨부파일 정보는 비어 있을 수 없습니다.") @Valid ThreadAttachmentRequest> attachments
+        List<@NotNull(message = "첨부파일 정보는 비어 있을 수 없습니다.") @Valid ThreadAttachmentRequest> attachments,
+
+        Long replyToMessageId
 ) {
 
     public ChannelMessageRestCreateRequest(String content) {
-        this(content, List.of());
+        this(content, List.of(), null);
+    }
+
+    public ChannelMessageRestCreateRequest(String content, List<ThreadAttachmentRequest> attachments) {
+        this(content, attachments, null);
     }
 }
