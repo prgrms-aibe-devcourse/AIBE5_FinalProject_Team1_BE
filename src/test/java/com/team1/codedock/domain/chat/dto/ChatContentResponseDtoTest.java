@@ -82,6 +82,23 @@ class ChatContentResponseDtoTest {
     }
 
     @Test
+    @DisplayName("봇 메시지 응답은 발신자 멤버와 프로필 이미지 URL을 null로 반환한다")
+    void channelMessageResponseFromBotHasNoSenderAvatarUrl() {
+        Workspace workspace = workspace(1L);
+        Channel channel = channel(10L, workspace);
+        Thread botMessage = Thread.createBotNotification(channel, "PR opened", "github_pull_request", 99L);
+        ReflectionTestUtils.setField(botMessage, "id", 101L);
+        ReflectionTestUtils.setField(botMessage, "createdAt", LocalDateTime.of(2026, 6, 18, 10, 5));
+
+        ChannelMessageResponse response = ChannelMessageResponse.fromBot(botMessage, "GitHub Bot", null);
+
+        assertThat(response.senderMemberId()).isNull();
+        assertThat(response.senderName()).isEqualTo("GitHub Bot");
+        assertThat(response.senderAvatarUrl()).isNull();
+        assertThat(response.attachments()).isEmpty();
+    }
+
+    @Test
     @DisplayName("답글 응답은 저장 토큰을 원문 이모지로 복원한다")
     void threadReplyResponseDecodesEmojiTokenContent() {
         Workspace workspace = workspace(1L);
@@ -107,6 +124,32 @@ class ChatContentResponseDtoTest {
         assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("수정했습니다 🔧✅");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 2));
+    }
+
+    @Test
+    @DisplayName("기존 테스트/호출용 생성자는 발신자 프로필 이미지 URL을 null로 유지한다")
+    void responseCompatibilityConstructorsUseNullSenderAvatarUrl() {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 6, 18, 11, 0);
+
+        ChannelMessageResponse messageResponse = new ChannelMessageResponse(
+                100L,
+                10L,
+                20L,
+                "보낸사람",
+                "본문",
+                createdAt
+        );
+        ThreadReplyResponse replyResponse = new ThreadReplyResponse(
+                200L,
+                100L,
+                20L,
+                "보낸사람",
+                "답글",
+                createdAt
+        );
+
+        assertThat(messageResponse.senderAvatarUrl()).isNull();
+        assertThat(replyResponse.senderAvatarUrl()).isNull();
     }
 
     @Test
