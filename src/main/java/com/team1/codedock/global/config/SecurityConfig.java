@@ -30,10 +30,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private static final List<String> LOCAL_DEVELOPMENT_ORIGIN_PATTERNS = List.of(
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-            "http://[::1]:*",
+    private static final List<String> LOCAL_NETWORK_ORIGIN_PATTERNS = List.of(
             "http://10.*:*",
             "http://172.*:*",
             "http://192.168.*:*",
@@ -53,6 +50,9 @@ public class SecurityConfig {
 
     @Value("${app.cors.allowed-origin-patterns:${app.cors.allowed-origins:http://localhost:*,http://127.0.0.1:*,http://[::1]:*}}")
     private String[] allowedOriginPatterns;
+
+    @Value("${app.local-network-origin-enabled:false}")
+    private boolean localNetworkOriginEnabled;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -127,10 +127,13 @@ public class SecurityConfig {
     }
 
     private List<String> resolveAllowedOriginPatterns() {
-        return java.util.stream.Stream.concat(
-                        Arrays.stream(allowedOriginPatterns == null ? new String[0] : allowedOriginPatterns),
-                        LOCAL_DEVELOPMENT_ORIGIN_PATTERNS.stream()
-                )
+        java.util.stream.Stream<String> configuredPatterns =
+                Arrays.stream(allowedOriginPatterns == null ? new String[0] : allowedOriginPatterns);
+        java.util.stream.Stream<String> localNetworkPatterns = localNetworkOriginEnabled
+                ? LOCAL_NETWORK_ORIGIN_PATTERNS.stream()
+                : java.util.stream.Stream.empty();
+
+        return java.util.stream.Stream.concat(configuredPatterns, localNetworkPatterns)
                 .filter(pattern -> pattern != null && !pattern.isBlank())
                 .distinct()
                 .toList();

@@ -52,13 +52,11 @@ class WebSocketConfigTest {
                 "allowedOriginPatterns",
                 new String[]{"http://localhost:5173"}
         );
+        ReflectionTestUtils.setField(webSocketConfig, "localNetworkOriginEnabled", true);
 
         assertThat(webSocketConfig.resolveAllowedOriginPatterns())
                 .containsExactly(
                         "http://localhost:5173",
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "http://[::1]:*",
                         "http://10.*:*",
                         "http://172.*:*",
                         "http://192.168.*:*",
@@ -67,6 +65,23 @@ class WebSocketConfigTest {
                         "https://172.*:*",
                         "https://192.168.*:*",
                         "https://*.local:*"
+                );
+    }
+
+    @Test
+    @DisplayName("WebSocket LAN origin pattern은 로컬 네트워크 허용 옵션이 꺼져 있으면 자동 추가하지 않는다")
+    void resolveAllowedOriginPatternsDoesNotAutoIncludeLanWildcardsByDefault() {
+        ReflectionTestUtils.setField(
+                webSocketConfig,
+                "allowedOriginPatterns",
+                new String[]{"http://localhost:*", "http://127.0.0.1:*", "http://[::1]:*"}
+        );
+
+        assertThat(webSocketConfig.resolveAllowedOriginPatterns())
+                .containsExactly(
+                        "http://localhost:*",
+                        "http://127.0.0.1:*",
+                        "http://[::1]:*"
                 );
     }
 
@@ -83,13 +98,12 @@ class WebSocketConfigTest {
                         "http://localhost:*"
                 }
         );
+        ReflectionTestUtils.setField(webSocketConfig, "localNetworkOriginEnabled", true);
 
         assertThat(webSocketConfig.resolveAllowedOriginPatterns())
                 .containsExactly(
                         "http://localhost:*",
                         "http://192.168.*:*",
-                        "http://127.0.0.1:*",
-                        "http://[::1]:*",
                         "http://10.*:*",
                         "http://172.*:*",
                         "http://*.local:*",
@@ -108,9 +122,6 @@ class WebSocketConfigTest {
         SockJsServiceRegistration sockJsRegistration = mock(SockJsServiceRegistration.class);
         String[] expectedOriginPatterns = {
                 "http://localhost:5173",
-                "http://localhost:*",
-                "http://127.0.0.1:*",
-                "http://[::1]:*",
                 "http://10.*:*",
                 "http://172.*:*",
                 "http://192.168.*:*",
@@ -125,6 +136,7 @@ class WebSocketConfigTest {
                 "allowedOriginPatterns",
                 new String[]{"http://localhost:5173"}
         );
+        ReflectionTestUtils.setField(webSocketConfig, "localNetworkOriginEnabled", true);
 
         when(registry.addEndpoint("/ws")).thenReturn(registration);
         when(registration.setAllowedOriginPatterns(any(String[].class))).thenReturn(registration);

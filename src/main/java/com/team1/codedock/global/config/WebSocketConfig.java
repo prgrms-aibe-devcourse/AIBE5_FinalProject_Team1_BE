@@ -25,10 +25,7 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    private static final String[] LOCAL_DEVELOPMENT_ORIGIN_PATTERNS = {
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-            "http://[::1]:*",
+    private static final String[] LOCAL_NETWORK_ORIGIN_PATTERNS = {
             "http://10.*:*",
             "http://172.*:*",
             "http://192.168.*:*",
@@ -57,6 +54,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Value("${app.websocket.allowed-origin-patterns:http://localhost:*,http://127.0.0.1:*,http://[::1]:*}")
     private String[] allowedOriginPatterns;
+
+    @Value("${app.local-network-origin-enabled:false}")
+    private boolean localNetworkOriginEnabled;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
@@ -141,7 +141,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     }
 
     String[] resolveAllowedOriginPatterns() {
-        return Arrays.stream(concat(allowedOriginPatterns, LOCAL_DEVELOPMENT_ORIGIN_PATTERNS))
+        String[] localNetworkPatterns = localNetworkOriginEnabled
+                ? LOCAL_NETWORK_ORIGIN_PATTERNS
+                : new String[0];
+
+        return Arrays.stream(concat(allowedOriginPatterns, localNetworkPatterns))
                 .filter(pattern -> pattern != null && !pattern.isBlank())
                 .distinct()
                 .toArray(String[]::new);

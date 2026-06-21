@@ -61,18 +61,17 @@ class SecurityConfigTest {
     @Test
     @DisplayName("CORS는 LAN IP 프론트 origin pattern을 허용한다")
     void corsConfigurationAllowsLanFrontendOriginPattern() {
-        setAllowedOriginPatterns("http://localhost:*", "http://192.168.*:*");
+        setAllowedOriginPatterns("http://localhost:*");
+        setLocalNetworkOriginEnabled(true);
 
         CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
 
         assertThat(cors.getAllowedOriginPatterns())
                 .containsExactly(
                         "http://localhost:*",
-                        "http://192.168.*:*",
-                        "http://127.0.0.1:*",
-                        "http://[::1]:*",
                         "http://10.*:*",
                         "http://172.*:*",
+                        "http://192.168.*:*",
                         "http://*.local:*",
                         "https://10.*:*",
                         "https://172.*:*",
@@ -91,21 +90,9 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("CORS는 설정되지 않은 외부 origin을 허용하지 않는다")
-    void corsConfigurationRejectsUnconfiguredPublicOrigin() {
-        setAllowedOriginPatterns("http://localhost:*", "http://192.168.*:*");
-
-        CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
-
-        assertThat(cors.checkOrigin("http://203.0.113.10:5173")).isNull();
-        assertThat(cors.checkOrigin("https://192.168.0.164:5173"))
-                .isEqualTo("https://192.168.0.164:5173");
-    }
-
-    @Test
-    @DisplayName("CORS origin pattern 설정의 null, blank, 중복 값을 제거한다")
-    void corsConfigurationCleansBlankAndDuplicateOriginPatterns() {
-        setAllowedOriginPatterns(null, "", " ", "http://localhost:*", "http://localhost:*", "http://127.0.0.1:*");
+    @DisplayName("CORS LAN origin pattern은 로컬 네트워크 허용 옵션이 꺼져 있으면 자동 추가하지 않는다")
+    void corsConfigurationDoesNotAutoAllowLanOriginPatternByDefault() {
+        setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*", "http://[::1]:*");
 
         CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
 
@@ -113,7 +100,37 @@ class SecurityConfigTest {
                 .containsExactly(
                         "http://localhost:*",
                         "http://127.0.0.1:*",
-                        "http://[::1]:*",
+                        "http://[::1]:*"
+                );
+        assertThat(cors.checkOrigin("http://192.168.0.164:5173")).isNull();
+        assertThat(cors.checkOrigin("http://localhost:5173"))
+                .isEqualTo("http://localhost:5173");
+    }
+
+    @Test
+    @DisplayName("CORS는 설정되지 않은 외부 origin을 허용하지 않는다")
+    void corsConfigurationRejectsUnconfiguredPublicOrigin() {
+        setAllowedOriginPatterns("http://localhost:*");
+
+        CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
+
+        assertThat(cors.checkOrigin("http://203.0.113.10:5173")).isNull();
+        assertThat(cors.checkOrigin("https://192.168.0.164:5173")).isNull();
+        assertThat(cors.checkOrigin("http://192.168.0.164:5173")).isNull();
+    }
+
+    @Test
+    @DisplayName("CORS origin pattern 설정의 null, blank, 중복 값을 제거한다")
+    void corsConfigurationCleansBlankAndDuplicateOriginPatterns() {
+        setAllowedOriginPatterns(null, "", " ", "http://localhost:*", "http://localhost:*", "http://127.0.0.1:*");
+        setLocalNetworkOriginEnabled(true);
+
+        CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
+
+        assertThat(cors.getAllowedOriginPatterns())
+                .containsExactly(
+                        "http://localhost:*",
+                        "http://127.0.0.1:*",
                         "http://10.*:*",
                         "http://172.*:*",
                         "http://192.168.*:*",
@@ -128,7 +145,8 @@ class SecurityConfigTest {
     @Test
     @DisplayName("CORS 설정은 모든 API path에 동일하게 적용된다")
     void corsConfigurationAppliesToEveryPath() {
-        setAllowedOriginPatterns("http://192.168.*:*");
+        setAllowedOriginPatterns("http://localhost:*");
+        setLocalNetworkOriginEnabled(true);
 
         CorsConfiguration apiCors = corsConfiguration("/api/channels/1/messages");
         CorsConfiguration wsCors = corsConfiguration("/ws/info");
@@ -143,6 +161,10 @@ class SecurityConfigTest {
 
     private void setAllowedOriginPatterns(String... patterns) {
         ReflectionTestUtils.setField(securityConfig, "allowedOriginPatterns", patterns);
+    }
+
+    private void setLocalNetworkOriginEnabled(boolean enabled) {
+        ReflectionTestUtils.setField(securityConfig, "localNetworkOriginEnabled", enabled);
     }
 
     private CorsConfiguration corsConfiguration(String path) {
