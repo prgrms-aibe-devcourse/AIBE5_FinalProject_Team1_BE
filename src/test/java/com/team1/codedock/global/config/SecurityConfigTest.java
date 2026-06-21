@@ -67,19 +67,26 @@ class SecurityConfigTest {
         CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
 
         assertThat(cors.getAllowedOriginPatterns())
-                .containsExactly(
+                .contains(
                         "http://localhost:*",
                         "http://10.*:*",
-                        "http://172.*:*",
+                        "http://172.16.*:*",
+                        "http://172.31.*:*",
                         "http://192.168.*:*",
                         "http://*.local:*",
                         "https://10.*:*",
-                        "https://172.*:*",
+                        "https://172.16.*:*",
+                        "https://172.31.*:*",
                         "https://192.168.*:*",
                         "https://*.local:*"
-                );
+                )
+                .doesNotContain("http://172.*:*", "https://172.*:*");
         assertThat(cors.checkOrigin("http://192.168.0.164:5173"))
                 .isEqualTo("http://192.168.0.164:5173");
+        assertThat(cors.checkOrigin("http://172.20.0.10:5173"))
+                .isEqualTo("http://172.20.0.10:5173");
+        assertThat(cors.checkOrigin("http://172.15.0.10:5173")).isNull();
+        assertThat(cors.checkOrigin("http://172.32.0.10:5173")).isNull();
         assertThat(cors.checkOrigin("http://localhost:5173"))
                 .isEqualTo("http://localhost:5173");
         assertThat(cors.getAllowCredentials()).isTrue();
@@ -128,18 +135,22 @@ class SecurityConfigTest {
         CorsConfiguration cors = corsConfiguration("/api/channels/1/messages");
 
         assertThat(cors.getAllowedOriginPatterns())
-                .containsExactly(
+                .contains(
                         "http://localhost:*",
                         "http://127.0.0.1:*",
                         "http://10.*:*",
-                        "http://172.*:*",
+                        "http://172.16.*:*",
+                        "http://172.31.*:*",
                         "http://192.168.*:*",
                         "http://*.local:*",
                         "https://10.*:*",
-                        "https://172.*:*",
+                        "https://172.16.*:*",
+                        "https://172.31.*:*",
                         "https://192.168.*:*",
                         "https://*.local:*"
-                );
+                )
+                .doesNotContain("http://172.*:*", "https://172.*:*")
+                .doesNotHaveDuplicates();
     }
 
     @Test
