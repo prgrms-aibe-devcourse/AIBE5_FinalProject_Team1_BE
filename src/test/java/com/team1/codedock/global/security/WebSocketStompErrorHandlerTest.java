@@ -231,6 +231,22 @@ class WebSocketStompErrorHandlerTest {
         assertThat(result.getPayload()).isEmpty();
     }
 
+    @Test
+    @DisplayName("cause가 없는 MessageDeliveryException은 원본 예외를 Spring 기본 STOMP ERROR로 위임한다")
+    void handleMessageDeliveryExceptionWithoutCauseWithDefaultFallback() {
+        Message<byte[]> clientMessage = clientMessage();
+        MessageDeliveryException exception = new MessageDeliveryException(clientMessage, "delivery failed without cause");
+
+        Message<byte[]> result = errorHandler.handleClientMessageProcessingError(clientMessage, exception);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(result);
+
+        assertThat(accessor.getCommand()).isEqualTo(StompCommand.ERROR);
+        assertThat(accessor.getMessage()).isEqualTo("delivery failed without cause");
+        assertThat(accessor.getContentType()).isNull();
+        assertThat(result.getPayload()).isEmpty();
+    }
+
     private Message<byte[]> clientMessage() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setLeaveMutable(true);
