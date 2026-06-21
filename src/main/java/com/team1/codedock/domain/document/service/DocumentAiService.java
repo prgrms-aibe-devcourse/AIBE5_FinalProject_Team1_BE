@@ -60,6 +60,9 @@ public class DocumentAiService {
             LocalDate startDate = request.startDate() != null ? request.startDate() : LocalDate.now().minusDays(30);
             LocalDate endDate = request.endDate() != null ? request.endDate() : LocalDate.now();
             commits = githubApiClient.fetchCommits(owner, repo, branch, token, startDate, endDate);
+            if (commits.isEmpty()) {
+                throw new BusinessException(ErrorCode.NO_COMMITS_IN_RANGE);
+            }
             sources = List.of();
         } else {
             sources = githubApiClient.fetchControllerSources(owner, repo, branch, token);

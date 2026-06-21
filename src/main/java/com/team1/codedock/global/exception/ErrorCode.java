@@ -58,7 +58,8 @@ public enum ErrorCode {
 
     // AI
     AI_SUMMARY_NOT_FOUND(HttpStatus.NOT_FOUND, "AI001", "AI 요약을 찾을 수 없습니다."),
-    AI_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "AI002", "AI 분석에 실패했습니다.");
+    AI_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "AI002", "AI 분석에 실패했습니다."),
+    NO_COMMITS_IN_RANGE(HttpStatus.BAD_REQUEST, "AI003", "해당 기간에 커밋이 없습니다.");
 
     private final HttpStatus status;
     private final String code;

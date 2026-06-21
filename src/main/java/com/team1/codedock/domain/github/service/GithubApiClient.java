@@ -24,20 +24,6 @@ public class GithubApiClient {
                 .build();
     }
 
-    public String detectLanguage(String owner, String repo, String branch, String token) {
-        GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
-        if (treeResponse == null || treeResponse.tree() == null) return "unknown";
-
-        List<String> paths = treeResponse.tree().stream()
-                .map(GithubTreeItem::path)
-                .toList();
-
-        if (paths.stream().anyMatch(p -> p.equals("pom.xml"))) return "java";
-        if (paths.stream().anyMatch(p -> p.equals("tsconfig.json"))) return "typescript";
-        if (paths.stream().anyMatch(p -> p.equals("package.json"))) return "javascript";
-        return "unknown";
-    }
-
     public List<String> fetchEntitySources(String owner, String repo, String branch, String token) {
         GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
         if (treeResponse == null || treeResponse.tree() == null) return List.of();
