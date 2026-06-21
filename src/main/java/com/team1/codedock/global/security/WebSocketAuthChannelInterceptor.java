@@ -35,6 +35,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String LOWERCASE_AUTHORIZATION_HEADER = "authorization";
+    private static final String ACCESS_TOKEN_HEADER = "access_token";
+    private static final String TOKEN_HEADER = "token";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String PERSONAL_NOTIFICATION_DESTINATION = "/user/queue/notifications";
     private static final String PERSONAL_ERROR_DESTINATION = "/user/queue/errors";
@@ -46,12 +48,16 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private static final String SESSION_CACHE_KEY_PREFIX = "session:";
     private static final Pattern CHANNEL_EVENTS_DESTINATION =
             Pattern.compile("^/topic/channels/(\\d+)/events$");
+    private static final Pattern CHANNEL_LEGACY_EVENTS_DESTINATION =
+            Pattern.compile("^/topic/channels/(\\d+)$");
     private static final Pattern CHANNEL_TYPING_DESTINATION =
             Pattern.compile("^/topic/channels/(\\d+)/typing$");
     private static final Pattern CHANNEL_TYPING_SEND_DESTINATION =
             Pattern.compile("^/app/channels/\\d+/typing$");
     private static final Pattern THREAD_EVENTS_DESTINATION =
             Pattern.compile("^/topic/threads/(\\d+)/events$");
+    private static final Pattern THREAD_LEGACY_EVENTS_DESTINATION =
+            Pattern.compile("^/topic/threads/(\\d+)$");
     private static final Pattern WORKSPACE_PRESENCE_DESTINATION =
             Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
     private static final Pattern WORKSPACE_MEMBERS_DESTINATION =
@@ -319,6 +325,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return channelRepository.findWorkspaceIdById(parseId(channelEventsMatcher.group(1)));
         }
 
+        Matcher legacyChannelEventsMatcher = CHANNEL_LEGACY_EVENTS_DESTINATION.matcher(destination);
+        if (legacyChannelEventsMatcher.matches()) {
+            return channelRepository.findWorkspaceIdById(parseId(legacyChannelEventsMatcher.group(1)));
+        }
+
         Matcher channelTypingMatcher = CHANNEL_TYPING_DESTINATION.matcher(destination);
         if (channelTypingMatcher.matches()) {
             return channelRepository.findWorkspaceIdById(parseId(channelTypingMatcher.group(1)));
@@ -332,6 +343,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         Matcher workspaceMembersMatcher = WORKSPACE_MEMBERS_DESTINATION.matcher(destination);
         if (workspaceMembersMatcher.matches()) {
             return Optional.of(parseId(workspaceMembersMatcher.group(1)));
+        }
+
+        Matcher legacyThreadEventsMatcher = THREAD_LEGACY_EVENTS_DESTINATION.matcher(destination);
+        if (legacyThreadEventsMatcher.matches()) {
+            return threadRepository.findWorkspaceIdById(parseId(legacyThreadEventsMatcher.group(1)));
         }
 
         return Optional.empty();
@@ -355,11 +371,46 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private String extractBearerToken(StompHeaderAccessor accessor) {
         String authorization = getAuthorizationHeader(accessor);
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
+        if (StringUtils.hasText(authorization)) {
+            return extractAuthorizationBearerToken(authorization);
+        }
+
+        String accessToken = getTokenHeader(accessor);
+        if (StringUtils.hasText(accessToken)) {
+            return normalizeRawToken(accessToken);
+        }
+
+        Object sessionToken = Optional.ofNullable(accessor.getSessionAttributes())
+                .map(attributes -> attributes.get(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE))
+                .orElse(null);
+        if (sessionToken instanceof String token) {
+            return normalizeRawToken(token);
+        }
+
+        throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
+    }
+
+    private String extractAuthorizationBearerToken(String authorization) {
+        if (!authorization.startsWith(BEARER_PREFIX)) {
             throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
         }
 
-        String token = authorization.substring(BEARER_PREFIX.length());
+        String token = authorization.substring(BEARER_PREFIX.length()).trim();
+        if (!StringUtils.hasText(token)) {
+            throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
+        }
+        return token;
+    }
+
+    private String normalizeRawToken(String rawToken) {
+        if (!StringUtils.hasText(rawToken)) {
+            throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
+        }
+
+        if (rawToken.startsWith(BEARER_PREFIX)) {
+            return extractAuthorizationBearerToken(rawToken);
+        }
+        String token = rawToken.trim();
         if (!StringUtils.hasText(token)) {
             throw new AccessDeniedException("WebSocket 인증 토큰이 필요합니다.");
         }
@@ -372,6 +423,14 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return authorization;
         }
         return accessor.getFirstNativeHeader(LOWERCASE_AUTHORIZATION_HEADER);
+    }
+
+    private String getTokenHeader(StompHeaderAccessor accessor) {
+        String accessToken = accessor.getFirstNativeHeader(ACCESS_TOKEN_HEADER);
+        if (StringUtils.hasText(accessToken)) {
+            return accessToken;
+        }
+        return accessor.getFirstNativeHeader(TOKEN_HEADER);
     }
 
     private CustomUserDetails loadUserDetails(String token) {

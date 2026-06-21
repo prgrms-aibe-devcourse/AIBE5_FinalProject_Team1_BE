@@ -90,6 +90,17 @@ class ReactionControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(ChatEventType.REACTION_UPDATED);
         assertThat(event.payload()).isEqualTo(response);
+
+        ArgumentCaptor<Object> legacyPayloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/channels/" + channelId),
+                legacyPayloadCaptor.capture()
+        );
+
+        assertThat(legacyPayloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
+        ChatEventResponse<?> legacyEvent = (ChatEventResponse<?>) legacyPayloadCaptor.getValue();
+        assertThat(legacyEvent.type()).isEqualTo(ChatEventType.REACTION_UPDATED);
+        assertThat(legacyEvent.payload()).isEqualTo(response);
         verify(reactionService).toggleReaction(channelId, USER_ID, request);
     }
 
