@@ -12,9 +12,21 @@ public record ThreadReplyResponse(
         Long threadId,
         Long senderMemberId,
         String senderName,
+        String senderAvatarUrl,
         String content,
         LocalDateTime createdAt
 ) {
+
+    public ThreadReplyResponse(
+            Long id,
+            Long threadId,
+            Long senderMemberId,
+            String senderName,
+            String content,
+            LocalDateTime createdAt
+    ) {
+        this(id, threadId, senderMemberId, senderName, null, content, createdAt);
+    }
 
     public static ThreadReplyResponse from(ThreadReply reply) {
         WorkspaceMember sender = reply.getWorkspaceMember();
@@ -25,6 +37,7 @@ public record ThreadReplyResponse(
                 reply.getThread().getId(),
                 sender.getId(),
                 resolveSenderName(user),
+                user.getAvatarUrl(),
                 ChatContentEmojiCodec.decode(reply.getContent()),
                 reply.getCreatedAt()
         );

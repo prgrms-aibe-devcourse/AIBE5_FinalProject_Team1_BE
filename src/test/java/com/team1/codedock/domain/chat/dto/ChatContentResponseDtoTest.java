@@ -26,6 +26,7 @@ class ChatContentResponseDtoTest {
         Workspace workspace = workspace(1L);
         Channel channel = channel(10L, workspace);
         WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        ReflectionTestUtils.setField(sender.getUser(), "avatarUrl", "https://example.com/sender.png");
         Thread message = message(
                 100L,
                 channel,
@@ -41,6 +42,7 @@ class ChatContentResponseDtoTest {
         assertThat(response.channelId()).isEqualTo(10L);
         assertThat(response.senderMemberId()).isEqualTo(20L);
         assertThat(response.senderName()).isEqualTo("보낸사람");
+        assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/sender.png");
         assertThat(response.content()).isEqualTo("배포 완료 👍🔥");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 0));
         assertThat(response.attachments()).isEmpty();
@@ -85,6 +87,7 @@ class ChatContentResponseDtoTest {
         Workspace workspace = workspace(1L);
         Channel channel = channel(10L, workspace);
         WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        ReflectionTestUtils.setField(sender.getUser(), "avatarUrl", "https://example.com/reply-sender.png");
         Thread message = message(100L, channel, sender, "parent", LocalDateTime.of(2026, 6, 18, 10, 0));
         ThreadReply reply = reply(
                 200L,
@@ -101,6 +104,7 @@ class ChatContentResponseDtoTest {
         assertThat(response.threadId()).isEqualTo(100L);
         assertThat(response.senderMemberId()).isEqualTo(20L);
         assertThat(response.senderName()).isEqualTo("보낸사람");
+        assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("수정했습니다 🔧✅");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 2));
     }
