@@ -62,10 +62,7 @@ public class DocumentAiService {
             commits = githubApiClient.fetchCommits(owner, repo, branch, token, startDate, endDate);
             sources = List.of();
         } else {
-            String language = githubApiClient.detectLanguage(owner, repo, branch, token);
-            sources = "java".equals(language)
-                    ? githubApiClient.fetchServiceSources(owner, repo, branch, token)
-                    : githubApiClient.fetchEntitySources(owner, repo, branch, token);
+            sources = githubApiClient.fetchControllerSources(owner, repo, branch, token);
             commits = List.of();
         }
 

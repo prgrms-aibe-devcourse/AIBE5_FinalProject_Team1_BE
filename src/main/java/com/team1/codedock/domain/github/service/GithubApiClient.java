@@ -49,17 +49,20 @@ public class GithubApiClient {
                 .toList();
     }
 
-    public List<String> fetchServiceSources(String owner, String repo, String branch, String token) {
+    public List<String> fetchControllerSources(String owner, String repo, String branch, String token) {
         GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
         if (treeResponse == null || treeResponse.tree() == null) return List.of();
+
+        boolean isJava = treeResponse.tree().stream()
+                .anyMatch(item -> "pom.xml".equals(item.path()));
+        if (!isJava) return List.of();
 
         return treeResponse.tree().stream()
                 .filter(item -> "blob".equals(item.type()) && item.path().endsWith(".java"))
                 .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
                 .filter(content -> content != null && (
-                        content.contains("@Controller") ||
                         content.contains("@RestController") ||
-                        content.contains("@Service")))
+                        content.contains("@Controller")))
                 .toList();
     }
 
@@ -76,6 +79,7 @@ public class GithubApiClient {
                         .queryParam("sha", branch)
                         .queryParam("since", since)
                         .queryParam("until", until)
+                        .queryParam("per_page", "100")
                         .build())
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
