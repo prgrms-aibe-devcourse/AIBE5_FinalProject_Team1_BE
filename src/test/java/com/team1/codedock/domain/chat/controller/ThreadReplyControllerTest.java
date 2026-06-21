@@ -86,6 +86,7 @@ class ThreadReplyControllerTest {
                 threadId,
                 20L,
                 "tester",
+                "https://example.com/reply-avatar.png",
                 "reply",
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
@@ -100,6 +101,7 @@ class ThreadReplyControllerTest {
                 .andExpect(jsonPath("$.data[0].threadId").value(threadId))
                 .andExpect(jsonPath("$.data[0].senderMemberId").value(20L))
                 .andExpect(jsonPath("$.data[0].senderName").value("tester"))
+                .andExpect(jsonPath("$.data[0].senderAvatarUrl").value("https://example.com/reply-avatar.png"))
                 .andExpect(jsonPath("$.data[0].content").value("reply"));
 
         verify(threadReplyService).getReplies(threadId, USER_ID);
@@ -115,6 +117,7 @@ class ThreadReplyControllerTest {
                 threadId,
                 20L,
                 "tester",
+                "https://example.com/reply-avatar.png",
                 "reply",
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
@@ -127,6 +130,7 @@ class ThreadReplyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(100L))
+                .andExpect(jsonPath("$.data.senderAvatarUrl").value("https://example.com/reply-avatar.png"))
                 .andExpect(jsonPath("$.data.content").value("reply"));
 
         verify(threadReplyService).createReply(threadId, USER_ID, request);

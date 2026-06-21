@@ -70,7 +70,9 @@ class ChatMessageServiceTest {
         Long senderMemberId = 10L;
         Workspace workspace = workspace(workspaceId);
         Channel channel = channel(channelId, workspace);
-        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        User senderUser = user("tester", "tester");
+        ReflectionTestUtils.setField(senderUser, "avatarUrl", "https://example.com/message-sender.png");
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, senderUser);
         ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
 
         when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
@@ -89,6 +91,7 @@ class ChatMessageServiceTest {
         assertThat(response.channelId()).isEqualTo(channelId);
         assertThat(response.senderMemberId()).isEqualTo(senderMemberId);
         assertThat(response.senderName()).isEqualTo("tester");
+        assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/message-sender.png");
         assertThat(response.content()).isEqualTo("hello");
         verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
         verify(mentionService).createMentionsForThread(

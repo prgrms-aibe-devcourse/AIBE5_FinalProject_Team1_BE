@@ -13,6 +13,7 @@ public record ChannelMessageResponse(
         Long channelId,
         Long senderMemberId,
         String senderName,
+        String senderAvatarUrl,
         String content,
         LocalDateTime createdAt,
         List<ThreadAttachmentResponse> attachments,
@@ -37,7 +38,20 @@ public record ChannelMessageResponse(
             String content,
             LocalDateTime createdAt
     ) {
-        this(id, channelId, senderMemberId, senderName, content, createdAt, List.of(), null);
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, List.of(), null);
+    }
+
+    public ChannelMessageResponse(
+            Long id,
+            Long channelId,
+            Long senderMemberId,
+            String senderName,
+            String content,
+            LocalDateTime createdAt,
+            List<ThreadAttachmentResponse> attachments,
+            ReplyToSummary replyTo
+    ) {
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, attachments, replyTo);
     }
 
     public static ChannelMessageResponse from(Thread thread) {
@@ -55,6 +69,7 @@ public record ChannelMessageResponse(
                 thread.getChannel().getId(),
                 sender.getId(),
                 resolveSenderName(user),
+                user.getAvatarUrl(),
                 ChatContentEmojiCodec.decode(thread.getContent()),
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
@@ -68,6 +83,7 @@ public record ChannelMessageResponse(
                 thread.getChannel().getId(),
                 null,
                 botName,
+                null,
                 thread.getContent(),
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,

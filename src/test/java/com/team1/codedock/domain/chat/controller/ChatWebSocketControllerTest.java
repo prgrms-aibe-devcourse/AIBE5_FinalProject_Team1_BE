@@ -67,8 +67,11 @@ class ChatWebSocketControllerTest {
                 channelId,
                 10L,
                 "tester",
+                "https://example.com/message-avatar.png",
                 "hello",
-                LocalDateTime.of(2026, 6, 8, 10, 0)
+                LocalDateTime.of(2026, 6, 8, 10, 0),
+                java.util.List.of(),
+                null
         );
 
         when(chatMessageService.createChannelMessage(channelId, userId, request)).thenReturn(response);
@@ -157,6 +160,7 @@ class ChatWebSocketControllerTest {
                 threadId,
                 20L,
                 "tester",
+                "https://example.com/reply-avatar.png",
                 "reply",
                 LocalDateTime.of(2026, 6, 9, 10, 0)
         );
@@ -383,6 +387,7 @@ class ChatWebSocketControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(expectedType);
         assertThat(event.payload()).isEqualTo(expectedPayload);
+        assertSenderAvatarUrl(event.payload(), expectedPayload);
 
         if (destination.endsWith("/events")) {
             ArgumentCaptor<Object> legacyPayloadCaptor = ArgumentCaptor.forClass(Object.class);
@@ -393,9 +398,21 @@ class ChatWebSocketControllerTest {
             ChatEventResponse<?> legacyEvent = (ChatEventResponse<?>) legacyPayloadCaptor.getValue();
             assertThat(legacyEvent.type()).isEqualTo(expectedType);
             assertThat(legacyEvent.payload()).isEqualTo(expectedPayload);
+            assertSenderAvatarUrl(legacyEvent.payload(), expectedPayload);
         }
 
         verifyNoMoreInteractions(messagingTemplate);
+    }
+
+    private void assertSenderAvatarUrl(Object actualPayload, Object expectedPayload) {
+        if (expectedPayload instanceof ChannelMessageResponse expected
+                && actualPayload instanceof ChannelMessageResponse actual) {
+            assertThat(actual.senderAvatarUrl()).isEqualTo(expected.senderAvatarUrl());
+        }
+        if (expectedPayload instanceof ThreadReplyResponse expected
+                && actualPayload instanceof ThreadReplyResponse actual) {
+            assertThat(actual.senderAvatarUrl()).isEqualTo(expected.senderAvatarUrl());
+        }
     }
 
     private static Principal principal(Long userId) {

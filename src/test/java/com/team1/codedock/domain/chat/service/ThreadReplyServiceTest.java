@@ -94,7 +94,9 @@ class ThreadReplyServiceTest {
         Long workspaceId = 2L;
         Long userId = 3L;
         Thread thread = thread(threadId, channel(10L, workspace(workspaceId)));
-        WorkspaceMember member = workspaceMember(20L, user("tester", "테스터"));
+        User senderUser = user("tester", "테스터");
+        ReflectionTestUtils.setField(senderUser, "avatarUrl", "https://example.com/reply-sender.png");
+        WorkspaceMember member = workspaceMember(20L, senderUser);
         ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("새 답글");
 
         when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
@@ -114,6 +116,7 @@ class ThreadReplyServiceTest {
         assertThat(response.threadId()).isEqualTo(threadId);
         assertThat(response.senderMemberId()).isEqualTo(20L);
         assertThat(response.senderName()).isEqualTo("테스터");
+        assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("새 답글");
         verify(workspaceMemberRepository).findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId);
         verify(threadReplyRepository).save(org.mockito.ArgumentMatchers.any(ThreadReply.class));

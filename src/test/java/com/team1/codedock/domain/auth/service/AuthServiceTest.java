@@ -10,6 +10,7 @@ import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.JwtProvider;
 import com.team1.codedock.global.security.GithubLinkTokenProvider;
+import com.team1.codedock.global.security.JwtValidationResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.List;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -194,7 +196,8 @@ class AuthServiceTest {
         User user = user(1L, "test@test.com", "testuser");
         RefreshToken saved = refreshToken(user, "old-refresh-token");
 
-        when(jwtProvider.validateRefreshToken("old-refresh-token")).thenReturn(true);
+        when(jwtProvider.validateRefreshTokenWithResult("old-refresh-token"))
+                .thenReturn(JwtValidationResult.VALID);
         when(refreshTokenRepository.findByToken("old-refresh-token")).thenReturn(Optional.of(saved));
         when(jwtProvider.generateAccessToken(1L)).thenReturn("new-access-token");
         when(jwtProvider.generateRefreshToken(1L)).thenReturn("new-refresh-token");
@@ -212,7 +215,8 @@ class AuthServiceTest {
     @Test
     @DisplayName("JWT 서명 검증 실패: INVALID_TOKEN 예외가 발생한다")
     void refresh_invalidJwt() {
-        when(jwtProvider.validateRefreshToken("bad-token")).thenReturn(false);
+        when(jwtProvider.validateRefreshTokenWithResult("bad-token"))
+                .thenReturn(JwtValidationResult.INVALID);
 
         assertThatThrownBy(() -> authService.refresh("bad-token"))
                 .isInstanceOf(BusinessException.class)
@@ -223,7 +227,8 @@ class AuthServiceTest {
     @Test
     @DisplayName("DB에 없는 토큰으로 재발급: INVALID_TOKEN 예외가 발생한다")
     void refresh_tokenNotInDb() {
-        when(jwtProvider.validateRefreshToken("unknown-token")).thenReturn(true);
+        when(jwtProvider.validateRefreshTokenWithResult("unknown-token"))
+                .thenReturn(JwtValidationResult.VALID);
         when(refreshTokenRepository.findByToken("unknown-token")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh("unknown-token"))
@@ -233,19 +238,49 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("이미 revoke된 토큰으로 재발급: EXPIRED_TOKEN 예외가 발생한다")
+    @DisplayName("JWT 자체가 만료된 refresh token으로 재발급: REFRESH_TOKEN_EXPIRED 예외가 발생한다")
+    void refresh_expiredJwt() {
+        when(jwtProvider.validateRefreshTokenWithResult("expired-token"))
+                .thenReturn(JwtValidationResult.EXPIRED);
+
+        assertThatThrownBy(() -> authService.refresh("expired-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.REFRESH_TOKEN_EXPIRED);
+    }
+
+    @Test
+    @DisplayName("이미 revoke된 토큰으로 재발급: REFRESH_TOKEN_EXPIRED 예외가 발생한다")
     void refresh_revokedToken() {
         User user = user(1L, "test@test.com", "testuser");
         RefreshToken revokedToken = refreshToken(user, "revoked-token");
         revokedToken.revoke();
 
-        when(jwtProvider.validateRefreshToken("revoked-token")).thenReturn(true);
+        when(jwtProvider.validateRefreshTokenWithResult("revoked-token"))
+                .thenReturn(JwtValidationResult.VALID);
         when(refreshTokenRepository.findByToken("revoked-token")).thenReturn(Optional.of(revokedToken));
 
         assertThatThrownBy(() -> authService.refresh("revoked-token"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.EXPIRED_TOKEN);
+                .isEqualTo(ErrorCode.REFRESH_TOKEN_EXPIRED);
+    }
+
+    @Test
+    @DisplayName("DB 저장 refresh token이 만료되었으면 REFRESH_TOKEN_EXPIRED 예외가 발생한다")
+    void refresh_savedTokenExpired() {
+        User user = user(1L, "test@test.com", "testuser");
+        RefreshToken expiredToken = refreshToken(user, "db-expired-token");
+        ReflectionTestUtils.setField(expiredToken, "expiresAt", LocalDateTime.now().minusSeconds(1));
+
+        when(jwtProvider.validateRefreshTokenWithResult("db-expired-token"))
+                .thenReturn(JwtValidationResult.VALID);
+        when(refreshTokenRepository.findByToken("db-expired-token")).thenReturn(Optional.of(expiredToken));
+
+        assertThatThrownBy(() -> authService.refresh("db-expired-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.REFRESH_TOKEN_EXPIRED);
     }
 
     // ── logout ────────────────────────────────────────────────────────────────

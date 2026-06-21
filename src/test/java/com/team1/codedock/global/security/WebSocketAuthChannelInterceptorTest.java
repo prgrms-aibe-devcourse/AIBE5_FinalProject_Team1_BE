@@ -100,7 +100,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "Bearer " + token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -125,7 +125,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "authorization", "Bearer " + token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -136,7 +136,7 @@ class WebSocketAuthChannelInterceptorTest {
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
 
-        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).validateAccessTokenWithResult(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
     }
@@ -155,7 +155,7 @@ class WebSocketAuthChannelInterceptorTest {
                 )
         );
 
-        when(jwtProvider.validateAccessToken(standardToken)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(standardToken)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(standardToken)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -165,8 +165,8 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(standardToken);
-        verify(jwtProvider, never()).validateAccessToken(lowercaseToken);
+        verify(jwtProvider).validateAccessTokenWithResult(standardToken);
+        verify(jwtProvider, never()).validateAccessTokenWithResult(lowercaseToken);
     }
 
     @Test
@@ -176,7 +176,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "access_token", token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -186,7 +186,7 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).validateAccessTokenWithResult(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
     }
@@ -201,7 +201,7 @@ class WebSocketAuthChannelInterceptorTest {
                 Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, token)
         );
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -211,7 +211,7 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).validateAccessTokenWithResult(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
     }
@@ -223,7 +223,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "token", token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -233,7 +233,7 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).validateAccessTokenWithResult(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
     }
@@ -245,7 +245,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "access_token", "Bearer " + token + "  ");
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -255,7 +255,7 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(token);
+        verify(jwtProvider).validateAccessTokenWithResult(token);
         verify(jwtProvider).getUserId(token);
         verify(userDetailsService).loadUserById(userId);
     }
@@ -275,7 +275,7 @@ class WebSocketAuthChannelInterceptorTest {
                 Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
         );
 
-        when(jwtProvider.validateAccessToken(authorizationToken)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(authorizationToken)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(authorizationToken)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -285,9 +285,9 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(authorizationToken);
-        verify(jwtProvider, never()).validateAccessToken(accessToken);
-        verify(jwtProvider, never()).validateAccessToken(sessionToken);
+        verify(jwtProvider).validateAccessTokenWithResult(authorizationToken);
+        verify(jwtProvider, never()).validateAccessTokenWithResult(accessToken);
+        verify(jwtProvider, never()).validateAccessTokenWithResult(sessionToken);
     }
 
     @Test
@@ -305,7 +305,7 @@ class WebSocketAuthChannelInterceptorTest {
                 Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
         );
 
-        when(jwtProvider.validateAccessToken(accessToken)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(accessToken)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(accessToken)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -315,9 +315,9 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(accessToken);
-        verify(jwtProvider, never()).validateAccessToken(tokenHeader);
-        verify(jwtProvider, never()).validateAccessToken(sessionToken);
+        verify(jwtProvider).validateAccessTokenWithResult(accessToken);
+        verify(jwtProvider, never()).validateAccessTokenWithResult(tokenHeader);
+        verify(jwtProvider, never()).validateAccessTokenWithResult(sessionToken);
     }
 
     @Test
@@ -333,7 +333,7 @@ class WebSocketAuthChannelInterceptorTest {
                 Map.of(WebSocketHandshakeAuthInterceptor.ACCESS_TOKEN_ATTRIBUTE, sessionToken)
         );
 
-        when(jwtProvider.validateAccessToken(sessionToken)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(sessionToken)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(sessionToken)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenReturn(userDetails);
         doReturn(List.of(new SimpleGrantedAuthority("ROLE_USER"))).when(userDetails).getAuthorities();
@@ -343,7 +343,7 @@ class WebSocketAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
         assertThat(accessor).isNotNull();
         assertThat(accessor.getUser()).isInstanceOf(UsernamePasswordAuthenticationToken.class);
-        verify(jwtProvider).validateAccessToken(sessionToken);
+        verify(jwtProvider).validateAccessTokenWithResult(sessionToken);
     }
 
     @Test
@@ -1477,11 +1477,27 @@ class WebSocketAuthChannelInterceptorTest {
         String token = "invalid-access-token";
         Message<?> message = stompMessage(StompCommand.CONNECT, "Bearer " + token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(false);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.INVALID);
 
         assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("유효하지 않은 WebSocket 인증 토큰입니다.");
+
+        verify(jwtProvider, never()).getUserId(token);
+        verifyNoInteractions(userDetailsService);
+    }
+
+    @Test
+    @DisplayName("CONNECT 요청의 JWT가 만료되면 만료 메시지로 거부한다")
+    void preSendWithExpiredAccessToken() {
+        String token = "expired-access-token";
+        Message<?> message = stompMessage(StompCommand.CONNECT, "Bearer " + token);
+
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.EXPIRED);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 인증 토큰이 만료되었습니다.");
 
         verify(jwtProvider, never()).getUserId(token);
         verifyNoInteractions(userDetailsService);
@@ -1494,7 +1510,7 @@ class WebSocketAuthChannelInterceptorTest {
         Long userId = 1L;
         Message<?> message = stompMessage(StompCommand.CONNECT, "Bearer " + token);
 
-        when(jwtProvider.validateAccessToken(token)).thenReturn(true);
+        when(jwtProvider.validateAccessTokenWithResult(token)).thenReturn(JwtValidationResult.VALID);
         when(jwtProvider.getUserId(token)).thenReturn(userId);
         when(userDetailsService.loadUserById(userId)).thenThrow(new IllegalArgumentException("unknown user"));
 
