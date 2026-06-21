@@ -5,6 +5,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.core.ParameterizedTypeReference;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
 
@@ -21,25 +24,67 @@ public class GithubApiClient {
                 .build();
     }
 
-    public List<String> fetchEntitySources(String owner, String repo, String branch, String token) {
-        GithubTreeResponse treeResponse = restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/repos/" + owner + "/" + repo + "/git/trees/" + branch)
-                        .queryParam("recursive", "1")
-                        .build())
-                .header("Authorization", "Bearer " + token)
-                .header("Accept", "application/vnd.github+json")
-                .retrieve()
-                .body(GithubTreeResponse.class);
+    public String detectLanguage(String owner, String repo, String branch, String token) {
+        GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
+        if (treeResponse == null || treeResponse.tree() == null) return "unknown";
 
-        if (treeResponse == null || treeResponse.tree() == null) {
-            return List.of();
-        }
+        List<String> paths = treeResponse.tree().stream()
+                .map(GithubTreeItem::path)
+                .toList();
+
+        if (paths.stream().anyMatch(p -> p.equals("pom.xml"))) return "java";
+        if (paths.stream().anyMatch(p -> p.equals("tsconfig.json"))) return "typescript";
+        if (paths.stream().anyMatch(p -> p.equals("package.json"))) return "javascript";
+        return "unknown";
+    }
+
+    public List<String> fetchEntitySources(String owner, String repo, String branch, String token) {
+        GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
+        if (treeResponse == null || treeResponse.tree() == null) return List.of();
 
         return treeResponse.tree().stream()
                 .filter(item -> "blob".equals(item.type()) && item.path().endsWith(".java"))
                 .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
                 .filter(content -> content != null && content.contains("@Entity"))
+                .toList();
+    }
+
+    public List<String> fetchServiceSources(String owner, String repo, String branch, String token) {
+        GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
+        if (treeResponse == null || treeResponse.tree() == null) return List.of();
+
+        return treeResponse.tree().stream()
+                .filter(item -> "blob".equals(item.type()) && item.path().endsWith(".java"))
+                .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
+                .filter(content -> content != null && (
+                        content.contains("@Controller") ||
+                        content.contains("@RestController") ||
+                        content.contains("@Service")))
+                .toList();
+    }
+
+    public List<String> fetchCommits(String owner, String repo, String branch, String token,
+                                     LocalDate startDate, LocalDate endDate) {
+        String since = startDate.atStartOfDay().atOffset(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        String until = endDate.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+
+        List<GithubCommit> commits = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/commits")
+                        .queryParam("sha", branch)
+                        .queryParam("since", since)
+                        .queryParam("until", until)
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubCommit>>() {});
+
+        if (commits == null) return List.of();
+        return commits.stream()
+                .map(c -> c.commit().message())
                 .toList();
     }
 
@@ -62,6 +107,18 @@ public class GithubApiClient {
                         .map(GithubEmail::email)
                         .findFirst())
                 .orElse(null);
+    }
+
+    private GithubTreeResponse fetchTree(String owner, String repo, String branch, String token) {
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/git/trees/" + branch)
+                        .queryParam("recursive", "1")
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(GithubTreeResponse.class);
     }
 
     private String fetchFileContent(String owner, String repo, String branch, String path, String token) {
@@ -92,4 +149,10 @@ public class GithubApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record GithubEmail(String email, boolean primary, boolean verified, String visibility) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record GithubCommit(GithubCommitDetail commit) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record GithubCommitDetail(String message) {}
 }
