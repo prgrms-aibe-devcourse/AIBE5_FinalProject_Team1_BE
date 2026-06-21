@@ -16,6 +16,8 @@ class ChatEventResponseTest {
                         ChatEventType.MESSAGE_UPDATED,
                         ChatEventType.MESSAGE_DELETED,
                         ChatEventType.THREAD_REPLY_CREATED,
+                        ChatEventType.THREAD_REPLY_UPDATED,
+                        ChatEventType.THREAD_REPLY_DELETED,
                         ChatEventType.REACTION_UPDATED,
                         ChatEventType.TYPING,
                         ChatEventType.NOTIFICATION_CREATED
