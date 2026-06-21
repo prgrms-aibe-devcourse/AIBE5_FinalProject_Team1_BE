@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -57,14 +58,26 @@ public class DocumentAiService {
         List<String> commits;
 
         if ("release".equals(request.category())) {
-            LocalDate startDate = request.startDate() != null ? request.startDate() : LocalDate.now().minusDays(30);
-            LocalDate endDate = request.endDate() != null ? request.endDate() : LocalDate.now();
+            if (request.startDate() == null || request.endDate() == null) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+            LocalDate startDate = request.startDate();
+            LocalDate endDate = request.endDate();
+            if (endDate.isBefore(startDate)) {
+                throw new BusinessException(ErrorCode.INVALID_DATE_RANGE);
+            }
+            if (ChronoUnit.DAYS.between(startDate, endDate) > 6) {
+                throw new BusinessException(ErrorCode.DATE_RANGE_TOO_LONG);
+            }
             commits = githubApiClient.fetchCommits(owner, repo, branch, token, startDate, endDate);
             if (commits.isEmpty()) {
                 throw new BusinessException(ErrorCode.NO_COMMITS_IN_RANGE);
             }
             sources = List.of();
         } else {
+            if (request.topic() == null || request.topic().isBlank()) {
+                throw new BusinessException(ErrorCode.TOPIC_REQUIRED);
+            }
             sources = githubApiClient.fetchControllerSources(owner, repo, branch, token);
             if (sources.isEmpty()) {
                 sources = githubApiClient.fetchSourcesByKeyword(owner, repo, branch, token, request.topic());
