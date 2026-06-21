@@ -59,12 +59,30 @@ public class JwtProvider {
      * refresh 토큰을 Authorization 헤더에 넣어도 거부됨.
      */
     public boolean validateAccessToken(String token) {
+        return validateAccessTokenWithResult(token) == JwtValidationResult.VALID;
+    }
+
+    public JwtValidationResult validateAccessTokenWithResult(String token) {
+        return validateTokenWithResult(token, "access");
+    }
+
+    public JwtValidationResult validateRefreshTokenWithResult(String token) {
+        return validateTokenWithResult(token, "refresh");
+    }
+
+    private JwtValidationResult validateTokenWithResult(String token, String expectedType) {
         try {
             Claims claims = parseClaims(token);
-            return "access".equals(claims.get("type", String.class));
+            if (expectedType.equals(claims.get("type", String.class))) {
+                return JwtValidationResult.VALID;
+            }
+            return JwtValidationResult.INVALID;
+        } catch (ExpiredJwtException e) {
+            log.debug("Expired {} token: {}", expectedType, e.getMessage());
+            return JwtValidationResult.EXPIRED;
         } catch (JwtException | IllegalArgumentException e) {
-            log.debug("Invalid access token: {}", e.getMessage());
-            return false;
+            log.debug("Invalid {} token: {}", expectedType, e.getMessage());
+            return JwtValidationResult.INVALID;
         }
     }
 
@@ -72,16 +90,11 @@ public class JwtProvider {
      * 재발급 전용 — refresh 타입 토큰만 통과.
      */
     public boolean validateRefreshToken(String token) {
-        try {
-            Claims claims = parseClaims(token);
-            return "refresh".equals(claims.get("type", String.class));
-        } catch (JwtException | IllegalArgumentException e) {
-            log.debug("Invalid refresh token: {}", e.getMessage());
-            return false;
-        }
+        return validateRefreshTokenWithResult(token) == JwtValidationResult.VALID;
     }
 
     /** @deprecated validateAccessToken() 사용 권장 */
+    @Deprecated
     public boolean validate(String token) {
         return validateAccessToken(token);
     }

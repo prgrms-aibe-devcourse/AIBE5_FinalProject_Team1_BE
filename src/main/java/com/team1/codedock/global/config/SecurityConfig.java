@@ -7,6 +7,8 @@ import com.team1.codedock.global.security.CookieOAuth2AuthorizationRequestReposi
 import com.team1.codedock.global.security.CustomUserDetailsService;
 import com.team1.codedock.global.security.JwtAuthFilter;
 import com.team1.codedock.global.security.JwtProvider;
+import com.team1.codedock.global.exception.ErrorCode;
+import com.team1.codedock.global.security.SecurityErrorResponseWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -124,16 +126,10 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint((req, res, e) -> {
-                            res.setStatus(401);
-                            res.setContentType("application/json;charset=UTF-8");
-                            res.getWriter().write("{\"success\":false,\"code\":\"C002\",\"message\":\"인증이 필요합니다.\"}");
-                        })
-                        .accessDeniedHandler((req, res, e) -> {
-                            res.setStatus(403);
-                            res.setContentType("application/json;charset=UTF-8");
-                            res.getWriter().write("{\"success\":false,\"code\":\"C003\",\"message\":\"접근 권한이 없습니다.\"}");
-                        })
+                        .authenticationEntryPoint((req, res, e) ->
+                                SecurityErrorResponseWriter.write(res, ErrorCode.UNAUTHORIZED))
+                        .accessDeniedHandler((req, res, e) ->
+                                SecurityErrorResponseWriter.write(res, ErrorCode.FORBIDDEN))
                 );
         return http.build();
     }
