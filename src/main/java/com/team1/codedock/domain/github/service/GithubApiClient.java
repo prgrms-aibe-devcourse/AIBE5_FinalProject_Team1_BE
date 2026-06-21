@@ -52,6 +52,14 @@ public class GithubApiClient {
                 .toList();
     }
 
+    private static final int KEYWORD_SOURCE_LIMIT = 10;
+    private static final List<String> SOURCE_EXTENSIONS = List.of(
+            ".java", ".kt", ".py", ".js", ".ts", ".jsx", ".tsx",
+            ".go", ".rb", ".php", ".cs", ".cpp", ".c", ".h",
+            ".swift", ".scala", ".rs", ".html", ".css", ".scss",
+            ".sql", ".yaml", ".yml", ".xml", ".json", ".md"
+    );
+
     public List<String> fetchSourcesByKeyword(String owner, String repo, String branch, String token, String topic) {
         if (topic == null || topic.isBlank()) return List.of();
 
@@ -62,6 +70,7 @@ public class GithubApiClient {
 
         return treeResponse.tree().stream()
                 .filter(item -> "blob".equals(item.type()))
+                .filter(item -> SOURCE_EXTENSIONS.stream().anyMatch(ext -> item.path().toLowerCase().endsWith(ext)))
                 .filter(item -> {
                     String lowerPath = item.path().toLowerCase();
                     for (String keyword : keywords) {
@@ -69,6 +78,7 @@ public class GithubApiClient {
                     }
                     return false;
                 })
+                .limit(KEYWORD_SOURCE_LIMIT)
                 .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
                 .filter(content -> content != null)
                 .toList();
