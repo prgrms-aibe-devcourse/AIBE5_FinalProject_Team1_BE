@@ -1,5 +1,7 @@
 package com.team1.codedock.domain.document.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.ai.service.GeminiClient;
 import com.team1.codedock.domain.document.dto.ApiSpecResponse;
 import com.team1.codedock.domain.document.entity.ApiSpec;
@@ -36,6 +38,7 @@ public class ApiSpecAiService {
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final GithubApiClient githubApiClient;
     private final GeminiClient geminiClient;
+    private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
 
     @Transactional
@@ -66,7 +69,8 @@ public class ApiSpecAiService {
         );
 
         String swaggerJson = fetchSwaggerJson(workspace.getSwaggerUrl());
-        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(swaggerJson, entitySources);
+        String compressedSwagger = compressSwaggerJson(swaggerJson);
+        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(compressedSwagger, entitySources);
 
         if (result == null || result.checklist() == null || result.checklist().isEmpty()) {
             return List.of();
@@ -87,6 +91,32 @@ public class ApiSpecAiService {
         return apiSpecRepository.saveAll(specs).stream()
                 .map(ApiSpecResponse::from)
                 .toList();
+    }
+
+    private String compressSwaggerJson(String swaggerJson) {
+        try {
+            JsonNode root = objectMapper.readTree(swaggerJson);
+            JsonNode paths = root.path("paths");
+            if (paths.isMissingNode()) return swaggerJson;
+
+            StringBuilder sb = new StringBuilder();
+            paths.fields().forEachRemaining(pathEntry -> {
+                String endpoint = pathEntry.getKey();
+                pathEntry.getValue().fields().forEachRemaining(methodEntry -> {
+                    String method = methodEntry.getKey().toUpperCase();
+                    JsonNode op = methodEntry.getValue();
+                    String title = op.path("operationId").asText(endpoint);
+                    String groupName = op.has("tags") && op.get("tags").size() > 0
+                            ? op.get("tags").get(0).asText() : "";
+                    sb.append(method).append(" ").append(endpoint)
+                            .append(" [").append(title).append("]")
+                            .append(" (").append(groupName).append(")\n");
+                });
+            });
+            return sb.toString();
+        } catch (Exception e) {
+            return swaggerJson;
+        }
     }
 
     private String fetchSwaggerJson(String swaggerUrl) {
