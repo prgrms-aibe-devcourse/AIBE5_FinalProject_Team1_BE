@@ -61,7 +61,7 @@ class WebSocketStompErrorHandlerTest {
     }
 
     @Test
-    @DisplayName("JWT 만료처럼 영문으로 내려온 토큰 오류도 인증 실패 code로 변환한다")
+    @DisplayName("JWT 만료처럼 영문으로 내려온 토큰 오류는 토큰 만료 code로 변환한다")
     void handleEnglishJwtExpiredAccessDeniedError() {
         Message<byte[]> clientMessage = clientMessage();
         MessageDeliveryException exception = new MessageDeliveryException(
@@ -75,8 +75,25 @@ class WebSocketStompErrorHandlerTest {
         String payload = new String(result.getPayload(), StandardCharsets.UTF_8);
 
         assertThat(payload)
-                .contains("\"code\":\"WS_AUTHENTICATION_FAILED\"")
+                .contains("\"code\":\"WS_TOKEN_EXPIRED\"")
                 .contains("\"message\":\"JWT expired at 2026-06-19T00:00:00Z\"");
+    }
+
+    @Test
+    @DisplayName("한글 만료 메시지도 토큰 만료 code로 변환한다")
+    void handleKoreanExpiredAccessDeniedError() {
+        Message<byte[]> clientMessage = clientMessage();
+        AccessDeniedException exception = new AccessDeniedException("WebSocket 인증 토큰이 만료되었습니다.");
+
+        Message<byte[]> result = errorHandler.handleClientMessageProcessingError(clientMessage, exception);
+
+        String payload = new String(result.getPayload(), StandardCharsets.UTF_8);
+
+        assertThat(payload)
+                .contains("\"code\":\"WS_TOKEN_EXPIRED\"")
+                .contains("\"message\":\"WebSocket 인증 토큰이 만료되었습니다.\"")
+                .doesNotContain("WS_AUTHENTICATION_FAILED")
+                .doesNotContain("WS_AUTHORIZATION_FAILED");
     }
 
     @Test
