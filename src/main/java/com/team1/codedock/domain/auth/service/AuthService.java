@@ -10,6 +10,7 @@ import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.JwtProvider;
 import com.team1.codedock.global.security.GithubLinkTokenProvider;
+import com.team1.codedock.global.security.JwtValidationResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -62,13 +63,17 @@ public class AuthService {
 
     @Transactional
     public TokenResponse refresh(String rawRefreshToken) {
-        if (!jwtProvider.validateRefreshToken(rawRefreshToken)) {
+        JwtValidationResult validationResult = jwtProvider.validateRefreshTokenWithResult(rawRefreshToken);
+        if (validationResult == JwtValidationResult.EXPIRED) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
+        }
+        if (validationResult != JwtValidationResult.VALID) {
             throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
         RefreshToken saved = refreshTokenRepository.findByToken(rawRefreshToken)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
         if (!saved.isValid()) {
-            throw new BusinessException(ErrorCode.EXPIRED_TOKEN);
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
         }
         User user = saved.getUser();
         saved.revoke();

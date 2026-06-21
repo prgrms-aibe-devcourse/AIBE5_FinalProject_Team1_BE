@@ -137,7 +137,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private void authenticateConnect(StompHeaderAccessor accessor) {
         String token = extractBearerToken(accessor);
-        if (!jwtProvider.validateAccessToken(token)) {
+        JwtValidationResult validationResult = jwtProvider.validateAccessTokenWithResult(token);
+        if (validationResult == JwtValidationResult.EXPIRED) {
+            throw new AccessDeniedException("WebSocket 인증 토큰이 만료되었습니다.");
+        }
+        if (validationResult != JwtValidationResult.VALID) {
             throw new AccessDeniedException("유효하지 않은 WebSocket 인증 토큰입니다.");
         }
 

@@ -5,6 +5,8 @@ import com.team1.codedock.domain.auth.dto.*;
 import com.team1.codedock.domain.auth.service.AuthService;
 import com.team1.codedock.domain.user.dto.UserResponse;
 import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -187,6 +189,36 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    @Test
+    @DisplayName("POST /refresh: refresh token이 만료되면 REFRESH_TOKEN_EXPIRED 401을 반환한다")
+    void refresh_expiredRefreshToken_401() throws Exception {
+        when(authService.refresh("expired-refresh-token"))
+                .thenThrow(new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest("expired-refresh-token"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_EXPIRED"))
+                .andExpect(jsonPath("$.message").value("Refresh token이 만료되었습니다."));
+    }
+
+    @Test
+    @DisplayName("POST /refresh: refresh token이 유효하지 않으면 INVALID_TOKEN 401을 반환한다")
+    void refresh_invalidRefreshToken_401() throws Exception {
+        when(authService.refresh("invalid-refresh-token"))
+                .thenThrow(new BusinessException(ErrorCode.INVALID_TOKEN));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest("invalid-refresh-token"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("INVALID_TOKEN"))
+                .andExpect(jsonPath("$.message").value("유효하지 않은 토큰입니다."));
     }
 
     // ── POST /api/v1/auth/logout ──────────────────────────────────────────────

@@ -53,4 +53,40 @@ class JwtProviderTest {
             assertThat(jwtProvider.getUserId(token)).isEqualTo(userId);
         });
     }
+
+    @Test
+    @DisplayName("access token 검증 결과는 정상, 만료, 무효 상태를 구분한다")
+    void validateAccessTokenWithResultDistinguishesFailureReason() {
+        JwtProvider expiredTokenProvider = new JwtProvider(SECRET, -1_000L, REFRESH_TOKEN_EXPIRY);
+        String validAccessToken = jwtProvider.generateAccessToken(1L);
+        String expiredAccessToken = expiredTokenProvider.generateAccessToken(1L);
+        String refreshToken = jwtProvider.generateRefreshToken(1L);
+
+        assertThat(jwtProvider.validateAccessTokenWithResult(validAccessToken))
+                .isEqualTo(JwtValidationResult.VALID);
+        assertThat(jwtProvider.validateAccessTokenWithResult(expiredAccessToken))
+                .isEqualTo(JwtValidationResult.EXPIRED);
+        assertThat(jwtProvider.validateAccessTokenWithResult(refreshToken))
+                .isEqualTo(JwtValidationResult.INVALID);
+        assertThat(jwtProvider.validateAccessTokenWithResult("not-a-jwt"))
+                .isEqualTo(JwtValidationResult.INVALID);
+    }
+
+    @Test
+    @DisplayName("refresh token 검증 결과는 정상, 만료, 무효 상태를 구분한다")
+    void validateRefreshTokenWithResultDistinguishesFailureReason() {
+        JwtProvider expiredTokenProvider = new JwtProvider(SECRET, ACCESS_TOKEN_EXPIRY, -1_000L);
+        String validRefreshToken = jwtProvider.generateRefreshToken(1L);
+        String expiredRefreshToken = expiredTokenProvider.generateRefreshToken(1L);
+        String accessToken = jwtProvider.generateAccessToken(1L);
+
+        assertThat(jwtProvider.validateRefreshTokenWithResult(validRefreshToken))
+                .isEqualTo(JwtValidationResult.VALID);
+        assertThat(jwtProvider.validateRefreshTokenWithResult(expiredRefreshToken))
+                .isEqualTo(JwtValidationResult.EXPIRED);
+        assertThat(jwtProvider.validateRefreshTokenWithResult(accessToken))
+                .isEqualTo(JwtValidationResult.INVALID);
+        assertThat(jwtProvider.validateRefreshTokenWithResult("not-a-jwt"))
+                .isEqualTo(JwtValidationResult.INVALID);
+    }
 }

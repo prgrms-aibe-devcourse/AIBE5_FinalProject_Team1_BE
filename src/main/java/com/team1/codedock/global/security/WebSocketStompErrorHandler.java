@@ -17,6 +17,7 @@ public class WebSocketStompErrorHandler extends StompSubProtocolErrorHandler {
 
     private static final String AUTHENTICATION_FAILED_CODE = "WS_AUTHENTICATION_FAILED";
     private static final String AUTHORIZATION_FAILED_CODE = "WS_AUTHORIZATION_FAILED";
+    private static final String TOKEN_EXPIRED_CODE = "WS_TOKEN_EXPIRED";
 
     @Override
     public Message<byte[]> handleClientMessageProcessingError(Message<byte[]> clientMessage, Throwable ex) {
@@ -37,7 +38,7 @@ public class WebSocketStompErrorHandler extends StompSubProtocolErrorHandler {
 
     private Message<byte[]> createAccessDeniedErrorMessage(AccessDeniedException exception) {
         String message = exception.getMessage();
-        String code = isAuthenticationFailure(message) ? AUTHENTICATION_FAILED_CODE : AUTHORIZATION_FAILED_CODE;
+        String code = resolveAccessDeniedCode(message);
 
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.ERROR);
         accessor.setMessage(message);
@@ -50,6 +51,25 @@ public class WebSocketStompErrorHandler extends StompSubProtocolErrorHandler {
                 """.formatted(code, escapeJson(message));
 
         return MessageBuilder.createMessage(payload.getBytes(StandardCharsets.UTF_8), accessor.getMessageHeaders());
+    }
+
+    private String resolveAccessDeniedCode(String message) {
+        if (isTokenExpired(message)) {
+            return TOKEN_EXPIRED_CODE;
+        }
+        if (isAuthenticationFailure(message)) {
+            return AUTHENTICATION_FAILED_CODE;
+        }
+        return AUTHORIZATION_FAILED_CODE;
+    }
+
+    private boolean isTokenExpired(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lowerCaseMessage = message.toLowerCase();
+        return message.contains("만료")
+                || lowerCaseMessage.contains("expired");
     }
 
     private boolean isAuthenticationFailure(String message) {
