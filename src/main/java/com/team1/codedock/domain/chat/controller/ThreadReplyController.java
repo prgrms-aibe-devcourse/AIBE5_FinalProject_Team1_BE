@@ -53,7 +53,9 @@ public class ThreadReplyController {
             @PathVariable Long replyId,
             @Valid @RequestBody ThreadReplyUpdateRequest request
     ) {
-        return ApiResponse.ok(threadReplyService.updateReply(threadId, replyId, SecurityUtils.getCurrentUserId(), request));
+        ThreadReplyResponse response = threadReplyService.updateReply(threadId, replyId, SecurityUtils.getCurrentUserId(), request);
+        broadcastThreadEvent(threadId, ChatEventType.THREAD_REPLY_UPDATED, response);
+        return ApiResponse.ok(response);
     }
 
     @DeleteMapping("/{replyId}")
@@ -61,7 +63,9 @@ public class ThreadReplyController {
             @PathVariable Long threadId,
             @PathVariable Long replyId
     ) {
-        return ApiResponse.ok(threadReplyService.deleteReply(threadId, replyId, SecurityUtils.getCurrentUserId()));
+        ThreadReplyResponse response = threadReplyService.deleteReply(threadId, replyId, SecurityUtils.getCurrentUserId());
+        broadcastThreadEvent(threadId, ChatEventType.THREAD_REPLY_DELETED, response);
+        return ApiResponse.ok(response);
     }
 
     private void broadcastThreadEvent(Long threadId, ChatEventType eventType, ThreadReplyResponse response) {
