@@ -66,6 +66,9 @@ public class DocumentAiService {
             sources = List.of();
         } else {
             sources = githubApiClient.fetchControllerSources(owner, repo, branch, token);
+            if (sources.isEmpty()) {
+                sources = githubApiClient.fetchSourcesByKeyword(owner, repo, branch, token, request.topic());
+            }
             commits = List.of();
         }
 

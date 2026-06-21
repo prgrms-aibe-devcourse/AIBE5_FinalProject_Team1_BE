@@ -52,6 +52,28 @@ public class GithubApiClient {
                 .toList();
     }
 
+    public List<String> fetchSourcesByKeyword(String owner, String repo, String branch, String token, String topic) {
+        if (topic == null || topic.isBlank()) return List.of();
+
+        GithubTreeResponse treeResponse = fetchTree(owner, repo, branch, token);
+        if (treeResponse == null || treeResponse.tree() == null) return List.of();
+
+        String[] keywords = topic.toLowerCase().split("\\s+");
+
+        return treeResponse.tree().stream()
+                .filter(item -> "blob".equals(item.type()))
+                .filter(item -> {
+                    String lowerPath = item.path().toLowerCase();
+                    for (String keyword : keywords) {
+                        if (lowerPath.contains(keyword)) return true;
+                    }
+                    return false;
+                })
+                .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
+                .filter(content -> content != null)
+                .toList();
+    }
+
     public List<String> fetchCommits(String owner, String repo, String branch, String token,
                                      LocalDate startDate, LocalDate endDate) {
         String since = startDate.atStartOfDay().atOffset(ZoneOffset.UTC)
