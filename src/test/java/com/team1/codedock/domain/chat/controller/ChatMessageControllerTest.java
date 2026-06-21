@@ -99,8 +99,11 @@ class ChatMessageControllerTest {
                 channelId,
                 20L,
                 "tester",
+                "https://example.com/avatar.png",
                 "hello",
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                List.of(),
+                null
         );
 
         when(chatMessageService.getChannelMessages(channelId, USER_ID, cursor, limit)).thenReturn(List.of(response));
@@ -112,6 +115,7 @@ class ChatMessageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(101L))
+                .andExpect(jsonPath("$.data[0].senderAvatarUrl").value("https://example.com/avatar.png"))
                 .andExpect(jsonPath("$.data[0].content").value("hello"));
 
         verify(chatMessageService).getChannelMessages(channelId, USER_ID, cursor, limit);
@@ -127,8 +131,11 @@ class ChatMessageControllerTest {
                 channelId,
                 20L,
                 "tester",
+                "https://example.com/avatar.png",
                 "hello",
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                List.of(),
+                null
         );
 
         when(chatMessageService.createChannelMessage(eq(channelId), eq(USER_ID), eq(request))).thenReturn(response);
@@ -139,6 +146,7 @@ class ChatMessageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(101L))
+                .andExpect(jsonPath("$.data.senderAvatarUrl").value("https://example.com/avatar.png"))
                 .andExpect(jsonPath("$.data.content").value("hello"));
 
         verify(chatMessageService).createChannelMessage(channelId, USER_ID, request);
