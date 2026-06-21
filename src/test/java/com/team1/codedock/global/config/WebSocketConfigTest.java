@@ -211,6 +211,8 @@ class WebSocketConfigTest {
             assertThat(simpleBroker.getHeartbeatValue()).containsExactly(10_000L, 10_000L);
             assertThat(taskScheduler).isInstanceOf(ThreadPoolTaskScheduler.class);
             assertThat(((ThreadPoolTaskScheduler) taskScheduler).getThreadNamePrefix()).isEqualTo("ws-heartbeat-");
+            assertThat(((ThreadPoolTaskScheduler) taskScheduler).getScheduledThreadPoolExecutor().getCorePoolSize())
+                    .isEqualTo(4);
             assertThat(registry.userDestinationPrefix()).isEqualTo("/user");
         } finally {
             if (taskScheduler instanceof ThreadPoolTaskScheduler scheduler) {

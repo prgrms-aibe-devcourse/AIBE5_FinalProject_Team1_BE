@@ -1470,6 +1470,88 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("워크스페이스 members 구독 권한 캐시는 다른 세션과 공유하지 않는다")
+    void subscribeWorkspaceMembersAuthorizationCacheIsSeparatedBySession() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage =
+                subscribeMessage("/topic/workspaces/100/members", authentication, "session-1");
+        Message<?> secondSessionMessage =
+                subscribeMessage("/topic/workspaces/100/members", authentication, "session-2");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("워크스페이스 members 구독 거부 결과는 캐시하지 않는다")
+    void subscribeWorkspaceMembersDeniedResultIsNotCached() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/workspaces/100/members", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L, 1L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("DISCONNECT는 워크스페이스 members 구독 권한 캐시를 정리한다")
+    void disconnectClearsWorkspaceMembersSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/workspaces/100/members", authentication, "session-1");
+        Message<?> disconnectMessage = disconnectMessage("session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        interceptor.preSend(disconnectMessage, messageChannel);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("SessionDisconnectEvent는 워크스페이스 members 구독 권한 캐시를 정리한다")
+    void sessionDisconnectEventClearsWorkspaceMembersSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/workspaces/100/members", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        interceptor.handleSessionDisconnect(sessionDisconnectEvent("session-1"));
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
     @DisplayName("비소속 사용자의 워크스페이스 members 구독은 거부한다")
     void subscribeWorkspaceMembersWithoutWorkspaceMember() {
         Message<?> message = subscribeMessage("/topic/workspaces/100/members", authenticatedPrincipal(1L));
