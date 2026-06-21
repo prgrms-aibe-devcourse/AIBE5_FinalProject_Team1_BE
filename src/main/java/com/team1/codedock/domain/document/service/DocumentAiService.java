@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.document.service;
 
 import com.team1.codedock.domain.ai.service.GeminiClient;
+import com.team1.codedock.domain.document.dto.DocumentAiGenerateRequest;
 import com.team1.codedock.domain.document.dto.DocumentResponse;
 import com.team1.codedock.domain.document.entity.Document;
 import com.team1.codedock.domain.document.repository.DocumentRepository;
@@ -18,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -32,7 +34,7 @@ public class DocumentAiService {
     private final GeminiClient geminiClient;
 
     @Transactional
-    public DocumentResponse generateDocument(Long workspaceId) {
+    public DocumentResponse generateDocument(Long workspaceId, DocumentAiGenerateRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();
 
         User user = userRepository.findById(userId)
@@ -46,18 +48,32 @@ public class DocumentAiService {
                 .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
-        List<String> entitySources = githubApiClient.fetchEntitySources(
-                githubRepo.getOwner(),
-                githubRepo.getName(),
-                githubRepo.getDefaultBranch(),
-                user.getGithubAccessToken()
-        );
+        String owner = githubRepo.getOwner();
+        String repo = githubRepo.getName();
+        String branch = githubRepo.getDefaultBranch();
+        String token = user.getGithubAccessToken();
 
-        GeminiClient.DocumentGenerationResult result = geminiClient.generateDocument(entitySources);
+        List<String> sources;
+        List<String> commits;
+
+        if ("release".equals(request.category())) {
+            LocalDate startDate = request.startDate() != null ? request.startDate() : LocalDate.now().minusDays(30);
+            LocalDate endDate = request.endDate() != null ? request.endDate() : LocalDate.now();
+            commits = githubApiClient.fetchCommits(owner, repo, branch, token, startDate, endDate);
+            sources = List.of();
+        } else {
+            String language = githubApiClient.detectLanguage(owner, repo, branch, token);
+            sources = "java".equals(language)
+                    ? githubApiClient.fetchServiceSources(owner, repo, branch, token)
+                    : githubApiClient.fetchEntitySources(owner, repo, branch, token);
+            commits = List.of();
+        }
+
+        GeminiClient.DocumentGenerationResult result = geminiClient.generateDocument(
+                sources, request.category(), request.topic(), commits);
 
         Document document = documentRepository.save(
-                Document.createFromAi(member.getWorkspace(), member, result.title(), result.content(), result.category())
-        );
+                Document.createFromAi(member.getWorkspace(), member, result.title(), result.content(), result.category()));
 
         return DocumentResponse.from(document);
     }
