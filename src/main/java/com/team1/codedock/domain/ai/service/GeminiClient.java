@@ -94,27 +94,29 @@ public class GeminiClient {
                 """.formatted(sourcesText);
     }
 
-    public DocumentGenerationResult generateDocument(List<String> entitySources) {
+    public DocumentGenerationResult generateDocument(List<String> sources, String category,
+                                                      String topic, List<String> commits) {
         try {
-            return objectMapper.readValue(callGroq(buildDocumentPrompt(entitySources)), DocumentGenerationResult.class);
+            String prompt = switch (category) {
+                case "release" -> buildReleasePrompt(commits);
+                case "faq"     -> buildFaqPrompt(sources, topic);
+                default        -> buildManualPrompt(sources, topic);
+            };
+            return objectMapper.readValue(callGroq(prompt), DocumentGenerationResult.class);
         } catch (Exception e) {
             throw new RuntimeException("AI 응답 파싱 실패: " + e.getMessage(), e);
         }
     }
 
-    private String buildDocumentPrompt(List<String> entitySources) {
-        String sourcesText = String.join("\n\n---\n\n", entitySources);
+    private String buildManualPrompt(List<String> sources, String topic) {
+        String sourcesText = String.join("\n\n---\n\n", sources);
+        String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
         return """
-                다음 Java Spring Boot @Entity 클래스들을 분석하여 외부 사용자(운영팀, CS팀, 비개발자 등)에게 제공할 문서 초안을 작성해주세요.
-                기술적인 내용보다는 서비스 기능과 사용 방법을 쉽게 설명하는 문서를 작성해주세요.
+                다음 소스코드를 분석하여 외부 사용자(운영팀, CS팀, 비개발자 등)가 이해할 수 있는 사용 설명서를 작성해주세요.
+                %s기술적인 내용보다는 서비스 기능과 사용 방법을 쉽게 설명해주세요.
 
-                [엔티티 소스코드]
+                [소스코드]
                 %s
-
-                category는 문서 내용에 따라 아래 중 가장 적합한 것을 선택해주세요:
-                - manual: 사용 설명서, 사용 가이드, 튜토리얼
-                - faq: 자주 묻는 질문
-                - release: 릴리즈 노트, 변경 이력
 
                 다음 JSON 형식으로 응답해주세요:
                 {
@@ -122,7 +124,44 @@ public class GeminiClient {
                   "content": "마크다운 형식의 문서 내용",
                   "category": "manual"
                 }
-                """.formatted(sourcesText);
+                """.formatted(topicLine, sourcesText);
+    }
+
+    private String buildFaqPrompt(List<String> sources, String topic) {
+        String sourcesText = String.join("\n\n---\n\n", sources);
+        String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
+        return """
+                다음 소스코드를 분석하여 사용자들이 자주 묻는 질문(FAQ)을 작성해주세요.
+                %s실제 사용자 관점에서 궁금해할 만한 질문과 명확한 답변을 작성해주세요.
+
+                [소스코드]
+                %s
+
+                다음 JSON 형식으로 응답해주세요:
+                {
+                  "title": "문서 제목",
+                  "content": "마크다운 형식의 문서 내용",
+                  "category": "faq"
+                }
+                """.formatted(topicLine, sourcesText);
+    }
+
+    private String buildReleasePrompt(List<String> commits) {
+        String commitsText = String.join("\n", commits);
+        return """
+                다음 커밋 메시지들을 분석하여 사용자가 이해하기 쉬운 릴리즈 노트를 작성해주세요.
+                개발 용어보다는 서비스 관점에서 변경된 기능을 설명해주세요.
+
+                [커밋 메시지]
+                %s
+
+                다음 JSON 형식으로 응답해주세요:
+                {
+                  "title": "문서 제목",
+                  "content": "마크다운 형식의 문서 내용",
+                  "category": "release"
+                }
+                """.formatted(commitsText);
     }
 
     public ApiSpecChecklistResult generateApiSpecChecklist(String swaggerJson, List<String> entitySources) {
