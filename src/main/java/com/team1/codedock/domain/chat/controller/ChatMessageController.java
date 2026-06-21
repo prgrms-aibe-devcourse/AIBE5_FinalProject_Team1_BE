@@ -106,9 +106,8 @@ public class ChatMessageController {
     }
 
     private void broadcastChannelEvent(Long channelId, ChatEventType eventType, ChannelMessageResponse response) {
-        messagingTemplate.convertAndSend(
-                "/topic/channels/" + channelId + "/events",
-                ChatEventResponse.of(eventType, response)
-        );
+        ChatEventResponse<ChannelMessageResponse> event = ChatEventResponse.of(eventType, response);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId + "/events", event);
+        messagingTemplate.convertAndSend("/topic/channels/" + channelId, event);
     }
 }
