@@ -33,6 +33,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,7 +55,7 @@ class ChannelReadStatusControllerTest {
     @BeforeEach
     void setUp() {
         CustomUserDetails userDetails = mock(CustomUserDetails.class);
-        when(userDetails.getUserId()).thenReturn(USER_ID);
+        lenient().when(userDetails.getUserId()).thenReturn(USER_ID);
         lenient().when(userDetails.getUsername()).thenReturn("reader@test.com");
         List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         SecurityContextHolder.getContext().setAuthentication(
@@ -103,6 +104,7 @@ class ChannelReadStatusControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(ChatEventType.CHANNEL_READ_STATUS_UPDATED);
         assertThat(event.payload()).isEqualTo(response);
+        verifyNoMoreInteractions(messagingTemplate);
     }
 
     @Test
@@ -118,5 +120,18 @@ class ChannelReadStatusControllerTest {
 
         verify(channelReadStatusService).markChannelAsRead(1L, USER_ID);
         verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("인증 사용자가 없으면 읽음 처리 서비스와 WebSocket 전송을 수행하지 않는다")
+    void markChannelAsReadWithoutAuthentication() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(put("/api/channels/{channelId}/read", 1L))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C002"));
+
+        verifyNoInteractions(channelReadStatusService, messagingTemplate);
     }
 }

@@ -40,6 +40,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -248,6 +249,7 @@ class WorkspaceGithubControllerTest {
 
         verify(githubRepositoryService).createRepositoryChannel(10L, USER_ID, request);
         assertChannelCreatedBroadcast(10L, response);
+        verifyNoMoreInteractions(messagingTemplate);
     }
 
     @Test
@@ -279,6 +281,23 @@ class WorkspaceGithubControllerTest {
 
         verify(githubRepositoryService).createRepositoryChannel(10L, USER_ID, request);
         assertChannelCreatedBroadcast(10L, response);
+        verifyNoMoreInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("repository 채널 생성 인증 사용자가 없으면 서비스와 WebSocket 전송을 수행하지 않는다")
+    void createRepositoryChannelWithoutAuthentication() throws Exception {
+        SecurityContextHolder.clearContext();
+        GithubRepositoryLinkRequest request = request();
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/github/repositories", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C002"));
+
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test

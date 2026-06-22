@@ -33,6 +33,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -56,7 +57,7 @@ class MentionControllerTest {
     @BeforeEach
     void setUp() {
         CustomUserDetails userDetails = mock(CustomUserDetails.class);
-        when(userDetails.getUserId()).thenReturn(USER_ID);
+        lenient().when(userDetails.getUserId()).thenReturn(USER_ID);
         lenient().when(userDetails.getUsername()).thenReturn("alice@test.com");
         List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         SecurityContextHolder.getContext().setAuthentication(
@@ -156,6 +157,7 @@ class MentionControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(ChatEventType.MENTION_DELETED);
         assertThat(event.payload()).isEqualTo(response);
+        verifyNoMoreInteractions(messagingTemplate);
     }
 
     @Test
@@ -186,6 +188,19 @@ class MentionControllerTest {
 
         verify(mentionService).deleteMention(300L, USER_ID);
         verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("인증 사용자가 없으면 멘션 삭제 서비스와 WebSocket 전송을 수행하지 않는다")
+    void deleteMentionWithoutAuthentication() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(delete("/api/mentions/{mentionId}", 300L))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C002"));
+
+        verifyNoInteractions(mentionService, messagingTemplate);
     }
 
     private MentionResponse response(boolean read) {
