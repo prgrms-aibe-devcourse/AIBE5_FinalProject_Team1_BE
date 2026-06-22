@@ -430,9 +430,14 @@ class ReactionServiceTest {
     }
 
     @Test
-    @DisplayName("채널 기준으로 메시지와 답글 리액션 집계를 함께 조회한다")
+    @DisplayName("채널 기준 리액션 집계는 현재 사용자의 reacted 여부를 함께 반환한다")
     void getReactionSummaries() {
         Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+        Long workspaceMemberId = 10L;
+        Channel channel = mockChannelForWorkspace(workspaceId);
+        WorkspaceMember workspaceMember = mock(WorkspaceMember.class);
         ReactionSummaryResponse threadSummary = new ReactionSummaryResponse(
                 Reaction.TARGET_TYPE_THREAD,
                 100L,
@@ -446,14 +451,108 @@ class ReactionServiceTest {
                 2L
         );
 
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember));
+        when(workspaceMember.getId()).thenReturn(workspaceMemberId);
         when(reactionRepository.findThreadReactionSummariesByChannelId(channelId))
                 .thenReturn(List.of(threadSummary));
         when(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId))
                 .thenReturn(List.of(replySummary));
+        when(reactionRepository.existsByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMemberId,
+                Reaction.TARGET_TYPE_THREAD,
+                100L,
+                "like"
+        )).thenReturn(true);
+        when(reactionRepository.existsByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMemberId,
+                Reaction.TARGET_TYPE_THREAD_REPLY,
+                200L,
+                "smile"
+        )).thenReturn(false);
 
-        List<ReactionSummaryResponse> summaries = reactionService.getReactionSummaries(channelId);
+        List<ReactionSummaryResponse> summaries = reactionService.getReactionSummaries(channelId, userId);
 
-        assertThat(summaries).containsExactly(threadSummary, replySummary);
+        assertThat(summaries).containsExactly(
+                new ReactionSummaryResponse(Reaction.TARGET_TYPE_THREAD, 100L, "like", 3L, true),
+                new ReactionSummaryResponse(Reaction.TARGET_TYPE_THREAD_REPLY, 200L, "smile", 2L, false)
+        );
+    }
+
+    @Test
+    @DisplayName("리액션 집계가 비어 있으면 reacted 조회를 수행하지 않는다")
+    void getReactionSummariesWithoutSummariesSkipsReactedLookup() {
+        Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+        WorkspaceMember workspaceMember = mock(WorkspaceMember.class);
+
+        Channel channel = mockChannelForWorkspace(workspaceId);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(workspaceMember));
+        when(reactionRepository.findThreadReactionSummariesByChannelId(channelId)).thenReturn(List.of());
+        when(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId)).thenReturn(List.of());
+
+        List<ReactionSummaryResponse> summaries = reactionService.getReactionSummaries(channelId, userId);
+
+        assertThat(summaries).isEmpty();
+        verify(reactionRepository, never()).existsByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("리액션 집계 조회 채널이 없으면 CHANNEL_NOT_FOUND 예외가 발생한다")
+    void getReactionSummariesWithMissingChannel() {
+        Long channelId = 999L;
+        when(entityManager.find(Channel.class, channelId)).thenReturn(null);
+
+        assertThatThrownBy(() -> reactionService.getReactionSummaries(channelId, 30L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CHANNEL_NOT_FOUND);
+
+        verifyNoInteractions(workspaceMemberRepository, reactionRepository);
+    }
+
+    @Test
+    @DisplayName("리액션 집계 조회 사용자 식별값이 없으면 UNAUTHORIZED 예외가 발생한다")
+    void getReactionSummariesWithoutUserId() {
+        Long channelId = 1L;
+        Channel channel = mock(Channel.class);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+
+        assertThatThrownBy(() -> reactionService.getReactionSummaries(channelId, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(workspaceMemberRepository, reactionRepository);
+    }
+
+    @Test
+    @DisplayName("리액션 집계 조회 사용자가 채널 워크스페이스 멤버가 아니면 FORBIDDEN 예외가 발생한다")
+    void getReactionSummariesWithForbiddenUser() {
+        Long channelId = 1L;
+        Long workspaceId = 5L;
+        Long userId = 30L;
+
+        Channel channel = mockChannelForWorkspace(workspaceId);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reactionService.getReactionSummaries(channelId, userId))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FORBIDDEN);
+
+        verifyNoInteractions(reactionRepository);
     }
 
     private void stubThreadTarget(Long channelId, Long targetId) {
@@ -488,6 +587,15 @@ class ReactionServiceTest {
         Workspace workspace = mock(Workspace.class);
 
         when(channel.getId()).thenReturn(channelId);
+        when(channel.getWorkspace()).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(workspaceId);
+        return channel;
+    }
+
+    private Channel mockChannelForWorkspace(Long workspaceId) {
+        Channel channel = mock(Channel.class);
+        Workspace workspace = mock(Workspace.class);
+
         when(channel.getWorkspace()).thenReturn(workspace);
         when(workspace.getId()).thenReturn(workspaceId);
         return channel;
