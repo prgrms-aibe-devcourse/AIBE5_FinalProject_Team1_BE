@@ -463,6 +463,19 @@ public class GithubWebhookService {
         return threadRepository.findChannelByGithubRepositoryId(repo.getId()).orElse(null);
     }
 
+    /**
+     * 현재 사용자가 레포지토리가 속한 워크스페이스의 활성 멤버인지 검증한다.
+     * 멤버가 아니면 FORBIDDEN. (PR 조회/동기화/승인/병합 등 사용자 토큰을 쓰는 작업의 공통 가드)
+     */
+    private WorkspaceMember validateRepositoryMember(GithubRepository repo, Long userId) {
+        if (repo.getWorkspace() == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return workspaceMemberRepository
+                .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
     private void saveLabels(GithubIssue issue, List<GithubIssueWebhookPayload.LabelDto> labelDtos) {
         if (labelDtos == null || labelDtos.isEmpty()) return;
         List<IssueLabel> labels = labelDtos.stream()
@@ -562,6 +575,7 @@ public class GithubWebhookService {
     public Map<String, Object> fetchPrBodyFromGithub(Long repositoryId, int prNumber, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        validateRepositoryMember(repo, userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         String token = user.getGithubAccessToken();
@@ -596,6 +610,7 @@ public class GithubWebhookService {
     public List<Map<String, Object>> fetchPrFilesFromGithub(Long repositoryId, int prNumber, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        validateRepositoryMember(repo, userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         String token = user.getGithubAccessToken();
@@ -624,31 +639,24 @@ public class GithubWebhookService {
 
     @Transactional
     public void approvePullRequest(Long repositoryId, int prNumber, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
         GithubPullRequest pr = githubPullRequestRepository
                 .findByRepository_IdAndPrNumber(repositoryId, prNumber)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
 
-        // WorkspaceMember 조회 실패해도 PR state 업데이트는 반드시 수행
-        try {
-            GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
-                    .orElse(null);
-            if (repo != null) {
-                workspaceMemberRepository
-                        .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
-                        .ifPresent(member ->
-                                pullRequestReviewRepository
-                                        .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
-                                        .ifPresentOrElse(
-                                                existing -> existing.updateState("approved"),
-                                                () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, "approved"))
-                                        )
-                        );
-            }
-        } catch (Exception e) {
-            log.warn("PR 리뷰 기록 저장 실패 (PR state 업데이트는 계속 진행) → prNumber={}, userId={}", prNumber, userId, e);
-        }
+        // 워크스페이스 멤버가 아니면 승인 불가 — 검증 실패 시 즉시 중단(상태 변경 안 함)
+        WorkspaceMember member = validateRepositoryMember(repo, userId);
 
-        // PR state는 무조건 "approved"로 저장 (syncAllPrStatuses에서 읽는 진실의 원천)
+        // 리뷰 기록 저장(있으면 갱신)
+        pullRequestReviewRepository
+                .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
+                .ifPresentOrElse(
+                        existing -> existing.updateState("approved"),
+                        () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, "approved"))
+                );
+
+        // PR state는 "approved"로 저장 (syncAllPrStatuses에서 읽는 진실의 원천)
         pr.updateState("approved");
         githubPullRequestRepository.save(pr);
 
@@ -656,8 +664,7 @@ public class GithubWebhookService {
         long approvedCount = pullRequestReviewRepository
                 .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
         final long finalApprovedCount = approvedCount;
-        GithubRepository repoForChannel = githubRepositoryRepository.findById(repositoryId).orElse(null);
-        Channel approveChannel = repoForChannel != null ? getRepoChannel(repoForChannel) : null;
+        Channel approveChannel = getRepoChannel(repo);
         if (approveChannel == null) return;
         threadAttachmentRepository.findAllPrByChannelId(approveChannel.getId())
                 .forEach(ta -> {
@@ -688,6 +695,8 @@ public class GithubWebhookService {
     public void mergePullRequestOnGithub(Long repositoryId, int prNumber, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        validateRepositoryMember(repo, userId);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -820,6 +829,8 @@ public class GithubWebhookService {
     public void syncPullRequestsFromGithub(Long repositoryId, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        validateRepositoryMember(repo, userId);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
