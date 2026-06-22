@@ -22,6 +22,8 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,12 +34,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -89,6 +95,41 @@ class GithubWebhookServiceTest {
                 workspaceMemberRepository,
                 pullRequestReviewRepository
         );
+    }
+
+    @Test
+    @DisplayName("secret이 없는 경우 signature 검증을 건너뛴다")
+    void verifySignature_secret없으면_검증_스킵() {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("secret이 있고 서명이 일치하면 검증을 통과한다")
+    void verifySignature_서명_일치하면_통과() throws Exception {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        repo.updateWebhook("1", "mysecret", "url", true);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        byte[] body = "payload".getBytes(StandardCharsets.UTF_8);
+        String signature = "sha256=" + hmac("mysecret", body);
+
+        githubWebhookService.verifySignature(20L, signature, body);
+    }
+
+    @Test
+    @DisplayName("secret이 있고 서명이 불일치하면 GITHUB_WEBHOOK_INVALID 예외가 발생한다")
+    void verifySignature_서명_불일치하면_예외() {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        repo.updateWebhook("1", "mysecret", "url", true);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(20L, "sha256=wrongsignature", "payload".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
     }
 
     @Test
@@ -213,6 +254,15 @@ class GithubWebhookServiceTest {
     private static ChannelMessageResponse assertChannelMessage(Object value) {
         assertThat(value).isInstanceOf(ChannelMessageResponse.class);
         return (ChannelMessageResponse) value;
+    }
+
+    private static String hmac(String secret, byte[] payload) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] raw = mac.doFinal(payload);
+        StringBuilder hex = new StringBuilder();
+        for (byte b : raw) hex.append(String.format("%02x", b));
+        return hex.toString();
     }
 
     private static GithubIssueWebhookPayload issuePayload(
