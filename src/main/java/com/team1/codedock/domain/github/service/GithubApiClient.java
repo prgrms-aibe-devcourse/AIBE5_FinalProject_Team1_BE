@@ -206,6 +206,17 @@ public class GithubApiClient {
         return result != null ? result : List.of();
     }
 
+    // PR merge
+    public void mergePullRequest(String owner, String repo, int pullNumber, String token) {
+        restClient.put()
+                .uri("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/merge")
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .body(java.util.Map.of("merge_method", "merge"))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     // 단일 PR 조회 (body 포함)
     public GithubPrItem fetchSinglePullRequest(String owner, String repo, int pullNumber, String token) {
         return restClient.get()
@@ -224,6 +235,20 @@ public class GithubApiClient {
                 .header("Accept", "application/vnd.github+json")
                 .retrieve()
                 .body(new ParameterizedTypeReference<List<GithubCommitItem>>() {});
+        return result != null ? result : List.of();
+    }
+
+    // [준우님 기능] 특정 PR의 변경 파일 목록 조회 (파일명/status/추가·삭제 수/patch)
+    public List<GithubPrFileItem> fetchPullRequestFiles(String owner, String repo, int pullNumber, String token) {
+        List<GithubPrFileItem> result = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/files")
+                        .queryParam("per_page", "100")
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubPrFileItem>>() {});
         return result != null ? result : List.of();
     }
 
@@ -316,6 +341,16 @@ public class GithubApiClient {
             @JsonProperty("merged_at") Instant mergedAt,
             @JsonProperty("created_at") Instant createdAt,
             @JsonProperty("updated_at") Instant updatedAt
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubPrFileItem(
+            String filename,
+            String status,
+            Integer additions,
+            Integer deletions,
+            Integer changes,
+            String patch
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

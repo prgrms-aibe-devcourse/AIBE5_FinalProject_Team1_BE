@@ -77,6 +77,29 @@ public class GithubWebhookController {
     }
 
     /**
+     * 특정 PR의 변경 파일 목록(파일명/status/추가·삭제 수/patch)을 GitHub API에서 가져옴
+     */
+    @GetMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/files")
+    public ApiResponse<java.util.List<java.util.Map<String, Object>>> getPrFiles(
+            @PathVariable Long repositoryId,
+            @PathVariable int prNumber
+    ) {
+        return ApiResponse.ok(githubWebhookService.fetchPrFilesFromGithub(repositoryId, prNumber, SecurityUtils.getCurrentUserId()));
+    }
+
+    /**
+     * PR을 GitHub에서 실제로 merge
+     */
+    @PostMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/merge")
+    public ApiResponse<Void> mergePullRequest(
+            @PathVariable Long repositoryId,
+            @PathVariable int prNumber
+    ) {
+        githubWebhookService.mergePullRequestOnGithub(repositoryId, prNumber, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok(null);
+    }
+
+    /**
      * 현재 유저가 PR을 승인
      */
     @PostMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/approve")
@@ -105,6 +128,15 @@ public class GithubWebhookController {
     @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-pull-requests")
     public ApiResponse<Void> syncPullRequests(@PathVariable Long repositoryId) {
         githubWebhookService.syncPullRequestsFromGithub(repositoryId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok(null);
+    }
+
+    /**
+     * DB 기반 PR 상태를 채팅 메시지 meta와 동기화 (GitHub API 호출 없음)
+     */
+    @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-pull-request-statuses")
+    public ApiResponse<Void> syncPullRequestStatuses(@PathVariable Long repositoryId) {
+        githubWebhookService.syncAllPrStatuses(repositoryId);
         return ApiResponse.ok(null);
     }
 

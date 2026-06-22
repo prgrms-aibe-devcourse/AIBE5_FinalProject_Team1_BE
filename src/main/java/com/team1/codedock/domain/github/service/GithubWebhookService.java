@@ -206,6 +206,14 @@ public class GithubWebhookService {
             GithubPullRequest pr = existing.get();
             if (ACTION_CLOSED.equals(action) || "reopened".equals(action)
                     || "synchronize".equals(action) || "edited".equals(action)) {
+                // merged: true이면 GithubPullRequest.mergedAt 저장 (syncAllPrStatuses의 진실의 원천)
+                if (Boolean.TRUE.equals(dto.merged()) && pr.getMergedAt() == null) {
+                    pr.updateMergedAt(dto.mergedAt() != null ? toLocalDateTime(dto.mergedAt()) : java.time.LocalDateTime.now());
+                    githubPullRequestRepository.save(pr);
+                } else if ("reopened".equals(action)) {
+                    pr.updateState("open");
+                    githubPullRequestRepository.save(pr);
+                }
                 broadcastPrStatusUpdate(pr, repo, channel, dto);
             }
         }
@@ -250,27 +258,74 @@ public class GithubWebhookService {
                                           GithubPullRequestWebhookPayload.PullRequestDto dto) {
         threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> {
+                    long approvedCount = pullRequestReviewRepository
+                            .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
+                    String resolvedStatus = resolvePrStatus(pr, approvedCount, dto.state());
+
                     List<ThreadAttachment> attachments = threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(thread.getId());
                     if (!attachments.isEmpty()) {
-                        attachments.get(0).updateMeta(buildPrMeta(repo, dto));
-                        threadAttachmentRepository.save(attachments.get(0));
+                        ThreadAttachment att = attachments.get(0);
+                        try {
+                            // 기존 meta를 보존한 채 변경 가능한 필드만 갱신한다.
+                            // (buildPrMeta로 통째 재생성하면 prStatus가 GitHub "open"으로,
+                            //  approved 카운트가 0으로 덮어써지는 버그가 있었음)
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> meta = att.getMeta() != null
+                                    ? objectMapper.readValue(att.getMeta(), Map.class)
+                                    : new HashMap<>();
+                            meta.put("prStatus", resolvedStatus);
+                            meta.put("approved", (int) approvedCount);
+                            meta.put("prTitle", dto.title());
+                            if (dto.body() != null) meta.put("prBody", dto.body());
+                            if (dto.additions() != null) meta.put("additions", dto.additions());
+                            if (dto.deletions() != null) meta.put("deletions", dto.deletions());
+                            if (dto.changedFiles() != null) meta.put("filesChanged", dto.changedFiles());
+                            att.updateMeta(objectMapper.writeValueAsString(meta));
+                            threadAttachmentRepository.save(att);
+                        } catch (Exception e) {
+                            log.warn("PR status meta 갱신 실패 → prId={}", pr.getId(), e);
+                        }
                     }
 
-                    List<ThreadAttachmentResponse> attachmentResponses = threadAttachmentRepository
-                            .findAllByThread_IdOrderByIdAsc(thread.getId())
-                            .stream()
-                            .map(ThreadAttachmentResponse::from)
-                            .toList();
-
-                    ChannelMessageResponse response = ChannelMessageResponse.fromBot(
-                            thread, "GitHub Bot", attachmentResponses
-                    );
-
-                    messagingTemplate.convertAndSend(
-                            "/topic/channels/" + channel.getId() + "/events",
-                            ChatEventResponse.of(ChatEventType.MESSAGE_UPDATED, response)
-                    );
+                    broadcastPrMessageUpdated(thread, channel);
                 });
+    }
+
+    /**
+     * PR 표시 상태의 단일 진실 원천(single source of truth).
+     * DB 엔티티 상태(mergedAt/state) + CodeDock 승인 기록을 우선하고,
+     * 그 외에는 GitHub 원본 상태(githubState: open/closed)를 따른다.
+     * GitHub의 "open"이 CodeDock의 merged/approved를 덮어쓰지 못하게 한다.
+     */
+    private String resolvePrStatus(GithubPullRequest pr, long approvedCount, String githubState) {
+        if (pr.getMergedAt() != null || "merged".equals(pr.getState())) {
+            return "merged";
+        }
+        if ("closed".equals(githubState)) {
+            return "closed";
+        }
+        if ("approved".equals(pr.getState()) || approvedCount > 0) {
+            return "approved";
+        }
+        return githubState != null ? githubState : pr.getState();
+    }
+
+    /** PR 스레드의 현재 첨부 상태를 MESSAGE_UPDATED로 브로드캐스트 (이슈 닫힘과 동일 패턴). */
+    private void broadcastPrMessageUpdated(Thread thread, Channel channel) {
+        List<ThreadAttachmentResponse> attachmentResponses = threadAttachmentRepository
+                .findAllByThread_IdOrderByIdAsc(thread.getId())
+                .stream()
+                .map(ThreadAttachmentResponse::from)
+                .toList();
+
+        ChannelMessageResponse response = ChannelMessageResponse.fromBot(
+                thread, "GitHub Bot", attachmentResponses
+        );
+
+        messagingTemplate.convertAndSend(
+                "/topic/channels/" + channel.getId() + "/events",
+                ChatEventResponse.of(ChatEventType.MESSAGE_UPDATED, response)
+        );
     }
 
     private String buildPrMeta(GithubRepository repo, GithubPullRequestWebhookPayload.PullRequestDto dto) {
@@ -538,31 +593,73 @@ public class GithubWebhookService {
         return result;
     }
 
-    @Transactional
-    public void approvePullRequest(Long repositoryId, int prNumber, Long userId) {
+    public List<Map<String, Object>> fetchPrFilesFromGithub(Long repositoryId, int prNumber, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String token = user.getGithubAccessToken();
+        if (token == null || token.isBlank()) {
+            return List.of();
+        }
 
+        try {
+            return githubApiClient.fetchPullRequestFiles(repo.getOwner(), repo.getName(), prNumber, token)
+                    .stream()
+                    .map(f -> {
+                        Map<String, Object> m = new HashMap<>();
+                        m.put("filename", f.filename());
+                        m.put("status", f.status());
+                        m.put("additions", f.additions() != null ? f.additions() : 0);
+                        m.put("deletions", f.deletions() != null ? f.deletions() : 0);
+                        m.put("patch", f.patch() != null ? f.patch() : "");
+                        return m;
+                    })
+                    .toList();
+        } catch (Exception e) {
+            log.warn("GitHub PR 파일 목록 fetch 실패 → pr#{}", prNumber, e);
+            return List.of();
+        }
+    }
+
+    @Transactional
+    public void approvePullRequest(Long repositoryId, int prNumber, Long userId) {
         GithubPullRequest pr = githubPullRequestRepository
                 .findByRepository_IdAndPrNumber(repositoryId, prNumber)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
 
-        WorkspaceMember member = workspaceMemberRepository
-                .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
+        // WorkspaceMember 조회 실패해도 PR state 업데이트는 반드시 수행
+        try {
+            GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                    .orElse(null);
+            if (repo != null) {
+                workspaceMemberRepository
+                        .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
+                        .ifPresent(member ->
+                                pullRequestReviewRepository
+                                        .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
+                                        .ifPresentOrElse(
+                                                existing -> existing.updateState("approved"),
+                                                () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, "approved"))
+                                        )
+                        );
+            }
+        } catch (Exception e) {
+            log.warn("PR 리뷰 기록 저장 실패 (PR state 업데이트는 계속 진행) → prNumber={}, userId={}", prNumber, userId, e);
+        }
 
-        pullRequestReviewRepository
-                .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
-                .ifPresentOrElse(
-                        existing -> existing.updateState("approved"),
-                        () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, "approved"))
-                );
-
-        // PR state를 "approved"로 업데이트
+        // PR state는 무조건 "approved"로 저장 (syncAllPrStatuses에서 읽는 진실의 원천)
         pr.updateState("approved");
+        githubPullRequestRepository.save(pr);
 
-        // 해당 채널의 PR ThreadAttachment meta에서 prStatus를 "approved"로 업데이트
-        threadAttachmentRepository.findAllPrByChannelId(pr.getChannel().getId())
+        // meta도 즉시 업데이트
+        long approvedCount = pullRequestReviewRepository
+                .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
+        final long finalApprovedCount = approvedCount;
+        GithubRepository repoForChannel = githubRepositoryRepository.findById(repositoryId).orElse(null);
+        Channel approveChannel = repoForChannel != null ? getRepoChannel(repoForChannel) : null;
+        if (approveChannel == null) return;
+        threadAttachmentRepository.findAllPrByChannelId(approveChannel.getId())
                 .forEach(ta -> {
                     if (ta.getMeta() == null) return;
                     try {
@@ -570,13 +667,75 @@ public class GithubWebhookService {
                         Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
                         Object num = meta.get("prNumber");
                         if (num != null && Integer.parseInt(num.toString()) == prNumber) {
-                            meta.put("prStatus", "approved");
+                            // 이미 병합된 PR은 "approved"로 다운그레이드하지 않는다.
+                            if (!"merged".equals(meta.get("prStatus"))) {
+                                meta.put("prStatus", "approved");
+                            }
+                            meta.put("approved", (int) finalApprovedCount);
                             ta.updateMeta(objectMapper.writeValueAsString(meta));
+                            threadAttachmentRepository.save(ta);
                         }
                     } catch (Exception e) {
                         log.warn("PR meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
                     }
                 });
+
+        // 승인 상태 변경을 실시간으로 메신저에 반영 (이슈 닫힘과 동일 패턴)
+        threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+                .ifPresent(thread -> broadcastPrMessageUpdated(thread, approveChannel));
+    }
+
+    public void mergePullRequestOnGithub(Long repositoryId, int prNumber, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        String token = user.getGithubAccessToken();
+        if (token == null || token.isBlank()) {
+            throw new BusinessException(ErrorCode.GITHUB_NOT_CONNECTED);
+        }
+
+        // GitHub API로 실제 merge
+        githubApiClient.mergePullRequest(repo.getOwner(), repo.getName(), prNumber, token);
+
+        // DB 및 meta 업데이트
+        updatePrToMerged(repositoryId, prNumber, repo);
+    }
+
+    @Transactional
+    public void updatePrToMerged(Long repositoryId, int prNumber, GithubRepository repo) {
+        GithubPullRequest pr = githubPullRequestRepository
+                .findByRepository_IdAndPrNumber(repositoryId, prNumber)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
+
+        pr.updateMerged();
+        githubPullRequestRepository.save(pr);
+
+        Channel channel = getRepoChannel(repo);
+        if (channel == null) return;
+
+        threadAttachmentRepository.findAllPrByChannelId(channel.getId())
+                .forEach(ta -> {
+                    if (ta.getMeta() == null) return;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                        Object num = meta.get("prNumber");
+                        if (num != null && Integer.parseInt(num.toString()) == prNumber) {
+                            meta.put("prStatus", "merged");
+                            ta.updateMeta(objectMapper.writeValueAsString(meta));
+                            threadAttachmentRepository.save(ta);
+                        }
+                    } catch (Exception e) {
+                        log.warn("PR merged meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
+                    }
+                });
+
+        // 병합됨 상태를 실시간으로 메신저에 반영
+        threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+                .ifPresent(thread -> broadcastPrMessageUpdated(thread, channel));
     }
 
     @Transactional(readOnly = true)
@@ -605,6 +764,46 @@ public class GithubWebhookService {
                         () -> result.put("reviewState", null)
                 );
         return result;
+    }
+
+    // 이슈 syncAllIssueStatuses와 동일 패턴: DB 엔티티 상태만 읽어서 meta 갱신, GitHub API 호출 없음
+    @Transactional
+    public void syncAllPrStatuses(Long repositoryId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        Channel channel = getRepoChannel(repo);
+        if (channel == null) return;
+
+        List<GithubPullRequest> prs = githubPullRequestRepository
+                .findAllByRepository_IdOrderByGithubCreatedAtDesc(repositoryId);
+
+        List<ThreadAttachment> allPrAttachments = threadAttachmentRepository.findAllPrByChannelId(channel.getId());
+
+        for (GithubPullRequest pr : prs) {
+            // merged인 경우만 meta를 업그레이드 — "open"으로는 절대 다운그레이드하지 않음
+            boolean isMergedInDb = pr.getMergedAt() != null || "merged".equals(pr.getState());
+            if (!isMergedInDb) continue; // open/approved 상태는 건드리지 않음
+
+            allPrAttachments.forEach(ta -> {
+                        if (ta.getMeta() == null) return;
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                            Object num = meta.get("prNumber");
+                            if (num == null || Integer.parseInt(num.toString()) != pr.getPrNumber()) return;
+
+                            String currentStatus = (String) meta.getOrDefault("prStatus", "open");
+                            if ("merged".equals(currentStatus)) return; // 이미 병합됨 — 스킵
+
+                            // DB에서 merged로 확인된 PR만 meta를 "merged"로 업데이트
+                            meta.put("prStatus", "merged");
+                            ta.updateMeta(objectMapper.writeValueAsString(meta));
+                            threadAttachmentRepository.save(ta);
+                        } catch (Exception e) {
+                            log.warn("PR status sync 실패 → prId={}", pr.getId(), e);
+                        }
+                    });
+        }
     }
 
     public List<Map<String, Object>> getPullRequestsAsMessages(Long repositoryId) {
@@ -676,41 +875,70 @@ public class GithubWebhookService {
             GithubPullRequest existingPr = existingOpt.get();
             existingPr.updateCommits(commitsJson);
             existingPr.updateDescription(item.body() != null ? item.body() : "");
+
+            // GitHub에서 merge됐으면 DB에 반영, 아직 open/closed이면 approved 상태는 보존
+            boolean githubMerged = Boolean.TRUE.equals(item.merged()) || item.mergedAt() != null;
+            if (githubMerged) {
+                existingPr.updateMergedAt(toLocalDateTime(item.mergedAt()));
+            } else if (!"approved".equals(existingPr.getState())) {
+                // approved 상태는 CodeDock이 관리 — GitHub "open"으로 덮어쓰지 않음
+                existingPr.updateState(item.state());
+            }
             githubPullRequestRepository.save(existingPr);
 
-            // ThreadAttachment meta 최신 데이터로 갱신 (prBody 포함)
-            threadRepository.findByThreadableTypeAndThreadableId(
-                    Thread.THREADABLE_TYPE_GITHUB_PR, existingPr.getId()
-            ).ifPresent(thread -> {
-                List<ThreadAttachment> attachments = threadAttachmentRepository
-                        .findAllByThread_IdOrderByIdAsc(thread.getId());
-                if (!attachments.isEmpty()) {
-                    Map<String, Object> updatedMeta = new HashMap<>();
-                    updatedMeta.put("prNumber", item.number());
-                    updatedMeta.put("prTitle", item.title());
-                    updatedMeta.put("prBody", item.body() != null ? item.body() : "");
-                    updatedMeta.put("prCommits", commitsJson);
-                    updatedMeta.put("prStatus", Boolean.TRUE.equals(item.merged()) ? "merged" : item.state());
-                    updatedMeta.put("prAuthor", item.user() != null ? item.user().login() : null);
-                    updatedMeta.put("prUrl", item.htmlUrl());
-                    updatedMeta.put("repository", repo.getName());
-                    updatedMeta.put("branch", item.head() != null ? item.head().ref() : null);
-                    updatedMeta.put("additions", item.additions() != null ? item.additions() : 0);
-                    updatedMeta.put("deletions", item.deletions() != null ? item.deletions() : 0);
-                    updatedMeta.put("filesChanged", item.changedFiles() != null ? item.changedFiles() : 0);
-                    updatedMeta.put("approved", 0);
-                    updatedMeta.put("pending", item.requestedReviewers() != null ? item.requestedReviewers().size() : 0);
-                    updatedMeta.put("aiRisk", "Medium");
-                    updatedMeta.put("passed", 0);
-                    updatedMeta.put("labels", List.of());
-                    try {
-                        attachments.get(0).updateMeta(objectMapper.writeValueAsString(updatedMeta));
-                        threadAttachmentRepository.save(attachments.get(0));
-                    } catch (JsonProcessingException e) {
-                        log.warn("PR attachment meta 업데이트 실패 → prId={}", existingPr.getId());
-                    }
+            // DB에서 실제 승인 수 조회
+            long approvedCount = pullRequestReviewRepository
+                    .countByGithubPullRequest_IdAndReviewState(existingPr.getId(), "approved");
+
+            // prStatus 결정: DB 엔티티 상태가 진실의 원천 (이슈 sync와 동일 패턴)
+            final String resolvedStatus;
+            if (existingPr.getMergedAt() != null) {
+                resolvedStatus = "merged";
+            } else if ("approved".equals(existingPr.getState()) || approvedCount > 0) {
+                resolvedStatus = "approved";
+            } else {
+                resolvedStatus = existingPr.getState();
+            }
+            final long finalApprovedCountSync = approvedCount;
+
+            // 이 PR에 해당하는 ThreadAttachment 찾아서 meta 업데이트
+            boolean foundAttachment = false;
+            for (ThreadAttachment ta : threadAttachmentRepository.findAllPrByChannelId(channel.getId())) {
+                if (ta.getMeta() == null) continue;
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                    Object num = meta.get("prNumber");
+                    if (num == null || Integer.parseInt(num.toString()) != item.number()) continue;
+                    foundAttachment = true;
+                    String cur = (String) meta.getOrDefault("prStatus", "open");
+                    if ("merged".equals(cur)) continue; // merged는 절대 덮어쓰지 않음
+                    if ("approved".equals(cur) && "open".equals(resolvedStatus)) continue; // approved → open 다운그레이드 금지
+                    meta.put("prStatus", resolvedStatus);
+                    meta.put("approved", (int) finalApprovedCountSync);
+                    meta.put("prTitle", item.title());
+                    meta.put("prBody", item.body() != null ? item.body() : meta.getOrDefault("prBody", ""));
+                    meta.put("prCommits", commitsJson);
+                    if (item.additions() != null) meta.put("additions", item.additions());
+                    if (item.deletions() != null) meta.put("deletions", item.deletions());
+                    if (item.changedFiles() != null) meta.put("filesChanged", item.changedFiles());
+                    ta.updateMeta(objectMapper.writeValueAsString(meta));
+                    threadAttachmentRepository.save(ta);
+                } catch (Exception e) {
+                    log.warn("PR sync meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
                 }
-            });
+            }
+
+            // Thread/ThreadAttachment가 없으면 생성 (webhook 실패 등으로 누락된 경우 복구)
+            if (!foundAttachment) {
+                boolean threadExists = threadRepository
+                        .findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, existingPr.getId())
+                        .isPresent();
+                if (!threadExists) {
+                    log.info("PR Thread 누락 감지 → 재생성 pr#{}", item.number());
+                    createPrThreadAndAttachment(repo, channel, existingPr, item, commitsJson, resolvedStatus, finalApprovedCountSync);
+                }
+            }
             return;
         }
 
@@ -725,13 +953,20 @@ public class GithubWebhookService {
                 item.additions(),
                 item.deletions(),
                 item.changedFiles(),
-                Boolean.TRUE.equals(item.merged()) ? toLocalDateTime(item.mergedAt()) : null,
+                (Boolean.TRUE.equals(item.merged()) || item.mergedAt() != null) ? toLocalDateTime(item.mergedAt()) : null,
                 toLocalDateTime(item.createdAt()),
                 toLocalDateTime(item.updatedAt()),
                 commitsJson
         );
         GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
 
+        String initialStatus = (Boolean.TRUE.equals(item.merged()) || item.mergedAt() != null) ? "merged" : item.state();
+        createPrThreadAndAttachment(repo, channel, savedPr, item, commitsJson, initialStatus, 0);
+    }
+
+    private void createPrThreadAndAttachment(GithubRepository repo, Channel channel, GithubPullRequest savedPr,
+                                              GithubApiClient.GithubPrItem item, String commitsJson,
+                                              String prStatus, long approvedCount) {
         String content = String.format("PR #%d opened by %s: %s",
                 item.number(),
                 item.user() != null ? item.user().login() : "unknown",
@@ -745,7 +980,7 @@ public class GithubWebhookService {
         meta.put("prNumber", item.number());
         meta.put("prTitle", item.title());
         meta.put("prBody", item.body() != null ? item.body() : "");
-        meta.put("prStatus", Boolean.TRUE.equals(item.merged()) ? "merged" : item.state());
+        meta.put("prStatus", prStatus);
         meta.put("prAuthor", item.user() != null ? item.user().login() : null);
         meta.put("prUrl", item.htmlUrl());
         meta.put("repository", repo.getName());
@@ -753,11 +988,12 @@ public class GithubWebhookService {
         meta.put("additions", item.additions() != null ? item.additions() : 0);
         meta.put("deletions", item.deletions() != null ? item.deletions() : 0);
         meta.put("filesChanged", item.changedFiles() != null ? item.changedFiles() : 0);
-        meta.put("approved", 0);
+        meta.put("approved", (int) approvedCount);
         meta.put("pending", item.requestedReviewers() != null ? item.requestedReviewers().size() : 0);
         meta.put("aiRisk", "Medium");
         meta.put("passed", 0);
         meta.put("labels", List.of());
+        meta.put("prCommits", commitsJson);
         String metaJson;
         try {
             metaJson = objectMapper.writeValueAsString(meta);
@@ -775,6 +1011,11 @@ public class GithubWebhookService {
     }
 
     private Map<String, Object> buildPrMessageMap(GithubRepository repo, GithubPullRequest pr) {
+        long approvedCount = pullRequestReviewRepository
+                .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
+
+        String prStatus = resolvePrStatus(pr, approvedCount, pr.getState());
+
         Map<String, Object> meta = new HashMap<>();
         meta.put("id", pr.getId());
         meta.put("user", "GitHub Bot");
@@ -784,7 +1025,7 @@ public class GithubWebhookService {
         meta.put("prTitle", pr.getTitle());
         meta.put("prBody", pr.getDescription() != null ? pr.getDescription() : "");
         meta.put("prCommits", pr.getCommitsJson() != null ? pr.getCommitsJson() : "[]");
-        meta.put("prStatus", pr.getMergedAt() != null ? "merged" : pr.getState());
+        meta.put("prStatus", prStatus);
         meta.put("prAuthor", pr.getAuthor());
         meta.put("prUrl", pr.getUrl());
         meta.put("repository", repo.getName());
@@ -792,7 +1033,7 @@ public class GithubWebhookService {
         meta.put("additions", pr.getAdditions());
         meta.put("deletions", pr.getDeletions());
         meta.put("filesChanged", pr.getChangedFilesCount());
-        meta.put("approved", 0);
+        meta.put("approved", (int) approvedCount);
         meta.put("pending", 0);
         meta.put("aiRisk", "Medium");
         meta.put("passed", 0);
