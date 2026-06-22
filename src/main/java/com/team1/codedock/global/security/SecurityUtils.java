@@ -20,4 +20,15 @@ public class SecurityUtils {
         }
         throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }
+
+    public static String getCurrentUserDestinationKey() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+        if (auth.getPrincipal() instanceof CustomUserDetails details) {
+            return details.getUsername();
+        }
+        throw new BusinessException(ErrorCode.UNAUTHORIZED);
+    }
 }

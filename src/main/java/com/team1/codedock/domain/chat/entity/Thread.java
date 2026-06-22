@@ -68,6 +68,10 @@ public class Thread extends BaseEntity {
         this.content = DELETED_MESSAGE_CONTENT;
     }
 
+    public boolean isDeleted() {
+        return DELETED_MESSAGE_CONTENT.equals(this.content);
+    }
+
     public static Thread createBotNotification(Channel channel, String content, String threadableType, Long threadableId) {
         Thread thread = new Thread();
         thread.channel = channel;

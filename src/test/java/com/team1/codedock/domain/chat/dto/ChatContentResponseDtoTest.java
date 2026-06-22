@@ -1,5 +1,7 @@
 package com.team1.codedock.domain.chat.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.entity.Bookmark;
 import com.team1.codedock.domain.chat.entity.Mention;
@@ -19,6 +21,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ChatContentResponseDtoTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     @DisplayName("채널 메시지 응답은 저장 토큰을 원문 이모지로 복원하고 첨부 null은 빈 목록으로 반환한다")
@@ -46,6 +50,7 @@ class ChatContentResponseDtoTest {
         assertThat(response.content()).isEqualTo("배포 완료 👍🔥");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 0));
         assertThat(response.attachments()).isEmpty();
+        assertThat(response.isDeleted()).isFalse();
     }
 
     @Test
@@ -124,6 +129,38 @@ class ChatContentResponseDtoTest {
         assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("수정했습니다 🔧✅");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 2));
+        assertThat(response.isDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("삭제된 채널 메시지 응답은 isDeleted를 true로 반환한다")
+    void channelMessageResponseMarksDeletedMessage() {
+        Workspace workspace = workspace(1L);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        Thread message = message(100L, channel, sender, "삭제 전 본문", LocalDateTime.of(2026, 6, 18, 10, 0));
+        message.markAsDeleted();
+
+        ChannelMessageResponse response = ChannelMessageResponse.from(message);
+
+        assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("삭제된 답글 응답은 isDeleted를 true로 반환한다")
+    void threadReplyResponseMarksDeletedReply() {
+        Workspace workspace = workspace(1L);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        Thread message = message(100L, channel, sender, "parent", LocalDateTime.of(2026, 6, 18, 10, 0));
+        ThreadReply reply = reply(200L, message, sender, "삭제 전 답글", LocalDateTime.of(2026, 6, 18, 10, 2));
+        reply.markAsDeleted();
+
+        ThreadReplyResponse response = ThreadReplyResponse.from(reply);
+
+        assertThat(response.content()).isEqualTo(ThreadReply.DELETED_REPLY_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
     }
 
     @Test
@@ -150,6 +187,51 @@ class ChatContentResponseDtoTest {
 
         assertThat(messageResponse.senderAvatarUrl()).isNull();
         assertThat(replyResponse.senderAvatarUrl()).isNull();
+        assertThat(messageResponse.isDeleted()).isFalse();
+        assertThat(replyResponse.isDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("채널 메시지 삭제 상태 JSON은 isDeleted 필드명으로 직렬화된다")
+    void channelMessageResponseSerializesIsDeletedFieldName() throws Exception {
+        ChannelMessageResponse response = new ChannelMessageResponse(
+                100L,
+                10L,
+                20L,
+                "보낸사람",
+                null,
+                Thread.DELETED_MESSAGE_CONTENT,
+                null,
+                List.of(),
+                null,
+                true,
+                null
+        );
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.get("isDeleted").asBoolean()).isTrue();
+        assertThat(json.has("deleted")).isFalse();
+    }
+
+    @Test
+    @DisplayName("답글 삭제 상태 JSON은 isDeleted 필드명으로 직렬화된다")
+    void threadReplyResponseSerializesIsDeletedFieldName() throws Exception {
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                200L,
+                100L,
+                20L,
+                "보낸사람",
+                null,
+                ThreadReply.DELETED_REPLY_CONTENT,
+                null,
+                true
+        );
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.get("isDeleted").asBoolean()).isTrue();
+        assertThat(json.has("deleted")).isFalse();
     }
 
     @Test
