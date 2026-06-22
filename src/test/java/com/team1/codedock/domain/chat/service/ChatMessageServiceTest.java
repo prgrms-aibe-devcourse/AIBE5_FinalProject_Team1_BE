@@ -817,6 +817,466 @@ class ChatMessageServiceTest {
         assertThat(responses.get(0).attachments()).isEmpty();
     }
 
+    // ---------------------------------------------------------------------
+    // clientMessageId 기반 멱등성 (issue #198)
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("WS: clientMessageId가 있으면 Thread에 저장하고 응답에 그대로 echo한다")
+    void createChannelMessageStoresAndEchoesClientMessageId() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", null, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.empty());
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.clientMessageId()).isEqualTo("cmid-1");
+        ArgumentCaptor<Thread> captor = ArgumentCaptor.forClass(Thread.class);
+        verify(threadRepository).save(captor.capture());
+        assertThat(captor.getValue().getClientMessageId()).isEqualTo("cmid-1");
+    }
+
+    @Test
+    @DisplayName("WS: 같은 clientMessageId가 이미 있으면 새로 저장하지 않고 기존 메시지를 반환한다(멱등)")
+    void createChannelMessageIsIdempotentForSameClientMessageId() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        Thread existing = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(existing, "clientMessageId", "cmid-1");
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", null, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.of(existing));
+        when(threadAttachmentService.getAttachments(100L)).thenReturn(List.of());
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.clientMessageId()).isEqualTo("cmid-1");
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(mentionService, never()).createMentionsForThread(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.any(WorkspaceMember.class),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("WS: clientMessageId가 없으면 멱등 조회 없이 바로 저장한다")
+    void createChannelMessageWithoutClientMessageIdSkipsLookup() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.clientMessageId()).isNull();
+        verify(threadRepository, never()).findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+        verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("WS: clientMessageId가 공백 문자열이면 멱등 조회를 건너뛴다")
+    void createChannelMessageWithBlankClientMessageIdSkipsLookup() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", null, "   ");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(threadRepository, never()).findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+        verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("REST: clientMessageId가 있으면 Thread에 저장하고 응답에 echo한다")
+    void createChannelMessageByRestStoresClientMessageId() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        ChannelMessageRestCreateRequest request =
+                new ChannelMessageRestCreateRequest("hello", List.of(), null, "cmid-rest");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-rest"))
+                .thenReturn(Optional.empty());
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+        when(threadAttachmentService.saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(List.of())
+        )).thenReturn(List.of());
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.clientMessageId()).isEqualTo("cmid-rest");
+        ArgumentCaptor<Thread> captor = ArgumentCaptor.forClass(Thread.class);
+        verify(threadRepository).save(captor.capture());
+        assertThat(captor.getValue().getClientMessageId()).isEqualTo("cmid-rest");
+    }
+
+    @Test
+    @DisplayName("REST: 같은 clientMessageId면 새로 저장하지 않고 기존 메시지(첨부 포함)를 반환한다")
+    void createChannelMessageByRestIsIdempotent() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        Thread existing = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(existing, "clientMessageId", "cmid-rest");
+        ThreadAttachmentResponse attachment = new ThreadAttachmentResponse(
+                1L, "link", null, "https://example.com", "example",
+                null, null, null, null, null, LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+        ChannelMessageRestCreateRequest request =
+                new ChannelMessageRestCreateRequest("hello", List.of(), null, "cmid-rest");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-rest"))
+                .thenReturn(Optional.of(existing));
+        when(threadAttachmentService.getAttachments(100L)).thenReturn(List.of(attachment));
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.clientMessageId()).isEqualTo("cmid-rest");
+        assertThat(response.attachments()).containsExactly(attachment);
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(threadAttachmentService, never()).saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.anyList()
+        );
+    }
+
+    @Test
+    @DisplayName("멱등 조회는 (channelId, senderMemberId, clientMessageId)로 수행한다")
+    void idempotentLookupUsesChannelSenderAndClientMessageId() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", null, "cmid-key");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-key"))
+                .thenReturn(Optional.empty());
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(threadRepository).findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-key");
+    }
+
+    @Test
+    @DisplayName("Thread.createChannelMessage는 clientMessageId를 저장하고, 기존 오버로드는 null로 둔다")
+    void threadFactoryStoresClientMessageId() {
+        Channel channel = channel(1L, workspace(2L));
+        WorkspaceMember sender = workspaceMember(10L, channel.getWorkspace(), true, user("tester", "tester"));
+
+        assertThat(Thread.createChannelMessage(channel, sender, "hi", null, "cmid-1").getClientMessageId())
+                .isEqualTo("cmid-1");
+        assertThat(Thread.createChannelMessage(channel, sender, "hi", null).getClientMessageId())
+                .isNull();
+        assertThat(Thread.createChannelMessage(channel, sender, "hi").getClientMessageId())
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("ChannelMessageResponse.from은 Thread의 clientMessageId를 echo하고, 봇 메시지는 null이다")
+    void responseEchoesClientMessageId() {
+        Channel channel = channel(1L, workspace(2L));
+        WorkspaceMember sender = workspaceMember(10L, channel.getWorkspace(), true, user("tester", "테스터"));
+        Thread thread = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(thread, "clientMessageId", "cmid-xyz");
+
+        assertThat(ChannelMessageResponse.from(thread).clientMessageId()).isEqualTo("cmid-xyz");
+        assertThat(ChannelMessageResponse.fromBot(thread, "GitHub Bot", List.of()).clientMessageId()).isNull();
+    }
+
+    @Test
+    @DisplayName("REST: clientMessageId가 없으면 멱등 조회 없이 저장한다")
+    void createChannelMessageByRestWithoutClientMessageIdSkipsLookup() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "tester"));
+        ChannelMessageRestCreateRequest request = new ChannelMessageRestCreateRequest("hello");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+        when(threadAttachmentService.saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(List.of())
+        )).thenReturn(List.of());
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(threadRepository, never()).findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+        verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("WS: 기존 메시지가 삭제 상태여도 멱등 응답은 삭제 내용을 반환하고 첨부는 조회하지 않는다")
+    void idempotentHitReturnsDeletedExistingWithoutAttachments() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        Thread existing = thread(100L, channel, sender, Thread.DELETED_MESSAGE_CONTENT, LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(existing, "clientMessageId", "cmid-1");
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", null, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.of(existing));
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.id()).isEqualTo(100L);
+        assertThat(response.clientMessageId()).isEqualTo("cmid-1");
+        assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(response.attachments()).isEmpty();
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(threadAttachmentService, never()).getAttachments(org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    @DisplayName("REST: 멱등 히트면 재전송된 첨부를 저장하지 않고 기존 첨부를 반환한다")
+    void restIdempotentIgnoresResentAttachments() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        Thread existing = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(existing, "clientMessageId", "cmid-1");
+        ThreadAttachmentRequest resentAttachment = new ThreadAttachmentRequest(
+                "image", null, "https://example.com/new.png", "new.png", null, null, null, "image/png", 100L
+        );
+        ThreadAttachmentResponse existingAttachment = new ThreadAttachmentResponse(
+                1L, "image", null, "https://example.com/original.png", "original.png",
+                null, null, null, "image/png", 100L, LocalDateTime.of(2026, 6, 9, 10, 0)
+        );
+        ChannelMessageRestCreateRequest request =
+                new ChannelMessageRestCreateRequest("hello", List.of(resentAttachment), null, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.of(existing));
+        when(threadAttachmentService.getAttachments(100L)).thenReturn(List.of(existingAttachment));
+
+        ChannelMessageResponse response = chatMessageService.createChannelMessage(channelId, userId, request);
+
+        assertThat(response.attachments()).containsExactly(existingAttachment);
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+        verify(threadAttachmentService, never()).saveAttachments(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.anyList()
+        );
+    }
+
+    @Test
+    @DisplayName("WS: 멱등 히트면 replyTo 해석(findById)을 수행하지 않는다")
+    void idempotentHitSkipsReplyToResolution() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        Thread existing = thread(100L, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        ReflectionTestUtils.setField(existing, "clientMessageId", "cmid-1");
+        // 재전송이 replyToMessageId를 포함해도 멱등 히트면 reply 해석을 건너뜀
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("hello", 55L, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.of(existing));
+        when(threadAttachmentService.getAttachments(100L)).thenReturn(List.of());
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(threadRepository, never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("WS: 새 메시지(멱등 미히트)는 clientMessageId가 있어도 멘션을 생성한다")
+    void freshSaveWithClientMessageIdStillCreatesMentions() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+        String content = "@tester 확인 부탁해요";
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest(content, null, "cmid-1");
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(channelId, senderMemberId, "cmid-1"))
+                .thenReturn(Optional.empty());
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(mentionService).createMentionsForThread(
+                org.mockito.ArgumentMatchers.any(Thread.class),
+                org.mockito.ArgumentMatchers.eq(sender),
+                org.mockito.ArgumentMatchers.eq(content)
+        );
+    }
+
+    @Test
+    @DisplayName("WS: 다른 clientMessageId는 멱등 대상이 아니라 각각 저장된다")
+    void differentClientMessageIdsAreNotDeduplicated() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, user("tester", "tester"));
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+                org.mockito.ArgumentMatchers.eq(channelId),
+                org.mockito.ArgumentMatchers.eq(senderMemberId),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(Optional.empty());
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, new ChannelMessageCreateRequest("hello", null, "cmid-1"));
+        chatMessageService.createChannelMessage(channelId, userId, new ChannelMessageCreateRequest("hello", null, "cmid-2"));
+
+        verify(threadRepository, org.mockito.Mockito.times(2)).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
     private static Thread thread(
             Long id,
             Channel channel,
