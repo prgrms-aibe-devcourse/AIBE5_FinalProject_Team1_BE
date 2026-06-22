@@ -97,7 +97,7 @@ class InlineWorkspaceLogoStorageServiceTest {
     }
 
     @Test
-    @DisplayName("SVG 로고 파일은 허용한다")
+    @DisplayName("SVG 로고 파일은 stored XSS 위험 때문에 거부한다")
     void storeWorkspaceLogoWithSvgFile() {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -106,9 +106,10 @@ class InlineWorkspaceLogoStorageServiceTest {
                 "<svg />".getBytes(java.nio.charset.StandardCharsets.UTF_8)
         );
 
-        String logoUrl = storageService.storeWorkspaceLogo(10L, file);
-
-        assertThat(logoUrl).startsWith("data:image/svg+xml;base64,");
+        assertThatThrownBy(() -> storageService.storeWorkspaceLogo(10L, file))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
     }
 
     @Test

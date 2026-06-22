@@ -17,8 +17,7 @@ public class InlineWorkspaceLogoStorageService implements WorkspaceLogoStorageSe
             "image/png",
             "image/jpeg",
             "image/webp",
-            "image/gif",
-            "image/svg+xml"
+            "image/gif"
     );
 
     @Override
