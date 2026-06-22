@@ -98,9 +98,30 @@ class GithubWebhookServiceTest {
     }
 
     @Test
-    @DisplayName("secret이 없는 경우 signature 검증을 건너뛴다")
-    void verifySignature_secret없으면_검증_스킵() {
+    @DisplayName("레포지토리가 없으면 GITHUB_REPO_NOT_FOUND 예외가 발생한다")
+    void verifySignature_레포_없으면_예외() {
+        when(githubRepositoryRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(99L, null, "body".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_REPO_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("secret이 null인 경우 signature 검증을 건너뛴다")
+    void verifySignature_secret_null이면_검증_스킵() {
         GithubRepository repo = githubRepository(workspace(10L), 20L);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("secret이 빈 문자열인 경우 signature 검증을 건너뛴다")
+    void verifySignature_secret_blank이면_검증_스킵() {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        repo.updateWebhook("1", "", "url", true);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
         githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8));
@@ -117,6 +138,32 @@ class GithubWebhookServiceTest {
         String signature = "sha256=" + hmac("mysecret", body);
 
         githubWebhookService.verifySignature(20L, signature, body);
+    }
+
+    @Test
+    @DisplayName("secret이 있는데 signatureHeader가 null이면 GITHUB_WEBHOOK_INVALID 예외가 발생한다")
+    void verifySignature_secret있는데_헤더_null이면_예외() {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        repo.updateWebhook("1", "mysecret", "url", true);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(20L, null, "payload".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
+    }
+
+    @Test
+    @DisplayName("secret이 있는데 signatureHeader 형식이 잘못됐으면 GITHUB_WEBHOOK_INVALID 예외가 발생한다")
+    void verifySignature_secret있는데_헤더_형식_잘못됐으면_예외() {
+        GithubRepository repo = githubRepository(workspace(10L), 20L);
+        repo.updateWebhook("1", "mysecret", "url", true);
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(20L, "md5=invalidsignature", "payload".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
     }
 
     @Test
