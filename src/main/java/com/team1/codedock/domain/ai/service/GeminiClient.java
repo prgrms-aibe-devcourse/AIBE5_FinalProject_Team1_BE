@@ -112,6 +112,7 @@ public class GeminiClient {
         String sourcesText = String.join("\n\n---\n\n", sources);
         String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
         return """
+                반드시 한국어로만 작성해주세요.
                 다음 소스코드를 분석하여 외부 사용자(운영팀, CS팀, 비개발자 등)가 이해할 수 있는 사용 설명서를 작성해주세요.
                 %s기술적인 내용보다는 서비스 기능과 사용 방법을 쉽게 설명해주세요.
 
@@ -131,6 +132,7 @@ public class GeminiClient {
         String sourcesText = String.join("\n\n---\n\n", sources);
         String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
         return """
+                반드시 한국어로만 작성해주세요.
                 다음 소스코드를 분석하여 사용자들이 자주 묻는 질문(FAQ)을 작성해주세요.
                 %s실제 사용자 관점에서 궁금해할 만한 질문과 명확한 답변을 작성해주세요.
 
@@ -149,6 +151,7 @@ public class GeminiClient {
     private String buildReleasePrompt(List<String> commits) {
         String commitsText = String.join("\n", commits);
         return """
+                반드시 한국어로만 작성해주세요.
                 다음 커밋 메시지들을 분석하여 사용자가 이해하기 쉬운 릴리즈 노트를 작성해주세요.
                 개발 용어보다는 서비스 관점에서 변경된 기능을 설명해주세요.
 

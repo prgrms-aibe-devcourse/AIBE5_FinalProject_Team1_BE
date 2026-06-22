@@ -190,6 +190,63 @@ class WebSocketStompErrorHandlerTest {
                 .contains("\"message\":\"\"");
     }
 
+    @Test
+    @DisplayName("AccessDeniedException이 아닌 예외는 Spring 기본 STOMP ERROR 처리로 위임한다")
+    void handleNonAccessDeniedErrorWithDefaultFallback() {
+        Message<byte[]> clientMessage = clientMessage();
+        IllegalStateException exception = new IllegalStateException("unexpected websocket failure");
+
+        Message<byte[]> result = errorHandler.handleClientMessageProcessingError(clientMessage, exception);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(result);
+        String payload = new String(result.getPayload(), StandardCharsets.UTF_8);
+
+        assertThat(accessor.getCommand()).isEqualTo(StompCommand.ERROR);
+        assertThat(accessor.getMessage()).isEqualTo("unexpected websocket failure");
+        assertThat(accessor.getContentType()).isNull();
+        assertThat(result.getPayload()).isEmpty();
+        assertThat(payload)
+                .doesNotContain("WS_AUTHENTICATION_FAILED")
+                .doesNotContain("WS_AUTHORIZATION_FAILED")
+                .doesNotContain("WS_TOKEN_EXPIRED");
+    }
+
+    @Test
+    @DisplayName("AccessDeniedException이 아닌 래핑 예외도 구조화 JSON으로 바꾸지 않는다")
+    void handleWrappedNonAccessDeniedErrorWithDefaultFallback() {
+        Message<byte[]> clientMessage = clientMessage();
+        MessageDeliveryException exception = new MessageDeliveryException(
+                clientMessage,
+                "client inbound failed",
+                new IllegalArgumentException("invalid payload")
+        );
+
+        Message<byte[]> result = errorHandler.handleClientMessageProcessingError(clientMessage, exception);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(result);
+
+        assertThat(accessor.getCommand()).isEqualTo(StompCommand.ERROR);
+        assertThat(accessor.getMessage()).isEqualTo("client inbound failed");
+        assertThat(accessor.getContentType()).isNull();
+        assertThat(result.getPayload()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("cause가 없는 MessageDeliveryException은 원본 예외를 Spring 기본 STOMP ERROR로 위임한다")
+    void handleMessageDeliveryExceptionWithoutCauseWithDefaultFallback() {
+        Message<byte[]> clientMessage = clientMessage();
+        MessageDeliveryException exception = new MessageDeliveryException(clientMessage, "delivery failed without cause");
+
+        Message<byte[]> result = errorHandler.handleClientMessageProcessingError(clientMessage, exception);
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(result);
+
+        assertThat(accessor.getCommand()).isEqualTo(StompCommand.ERROR);
+        assertThat(accessor.getMessage()).isEqualTo("delivery failed without cause");
+        assertThat(accessor.getContentType()).isNull();
+        assertThat(result.getPayload()).isEmpty();
+    }
+
     private Message<byte[]> clientMessage() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setLeaveMutable(true);

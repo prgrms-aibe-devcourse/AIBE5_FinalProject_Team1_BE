@@ -5,9 +5,14 @@ import com.team1.codedock.global.security.WebSocketHandshakeAuthInterceptor;
 import com.team1.codedock.global.security.WebSocketStompErrorHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.SubscribableChannel;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
 import org.springframework.messaging.simp.config.ChannelRegistration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -17,6 +22,7 @@ import org.springframework.web.socket.config.annotation.StompWebSocketEndpointRe
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -191,6 +197,31 @@ class WebSocketConfigTest {
     }
 
     @Test
+    @DisplayName("message broker는 앱 prefix, 구독 prefix, 개인 큐 prefix와 heartbeat scheduler를 설정한다")
+    void configureMessageBrokerRegistersPrefixesAndHeartbeatScheduler() {
+        TestMessageBrokerRegistry registry = new TestMessageBrokerRegistry();
+
+        webSocketConfig.configureMessageBroker(registry);
+        SimpleBrokerMessageHandler simpleBroker = registry.simpleBroker();
+        TaskScheduler taskScheduler = simpleBroker.getTaskScheduler();
+
+        try {
+            assertThat(registry.applicationDestinationPrefixes()).containsExactly("/app");
+            assertThat(simpleBroker.getDestinationPrefixes()).containsExactly("/topic", "/queue");
+            assertThat(simpleBroker.getHeartbeatValue()).containsExactly(10_000L, 10_000L);
+            assertThat(taskScheduler).isInstanceOf(ThreadPoolTaskScheduler.class);
+            assertThat(((ThreadPoolTaskScheduler) taskScheduler).getThreadNamePrefix()).isEqualTo("ws-heartbeat-");
+            assertThat(((ThreadPoolTaskScheduler) taskScheduler).getScheduledThreadPoolExecutor().getCorePoolSize())
+                    .isEqualTo(4);
+            assertThat(registry.userDestinationPrefix()).isEqualTo("/user");
+        } finally {
+            if (taskScheduler instanceof ThreadPoolTaskScheduler scheduler) {
+                scheduler.shutdown();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("WebSocket heartbeat scheduler는 복수 스레드로 동작한다")
     void heartbeatSchedulerUsesMultipleThreads() {
         ThreadPoolTaskScheduler scheduler = webSocketConfig.webSocketMessageBrokerTaskScheduler();
@@ -292,6 +323,40 @@ class WebSocketConfigTest {
 
         Integer sendTimeLimit() {
             return getSendTimeLimit();
+        }
+    }
+
+    private static class TestMessageBrokerRegistry extends MessageBrokerRegistry {
+
+        private final SubscribableChannel brokerChannel;
+
+        TestMessageBrokerRegistry() {
+            this(
+                    mock(SubscribableChannel.class),
+                    mock(MessageChannel.class),
+                    mock(SubscribableChannel.class)
+            );
+        }
+
+        private TestMessageBrokerRegistry(
+                SubscribableChannel clientInboundChannel,
+                MessageChannel clientOutboundChannel,
+                SubscribableChannel brokerChannel
+        ) {
+            super(clientInboundChannel, clientOutboundChannel);
+            this.brokerChannel = brokerChannel;
+        }
+
+        Collection<String> applicationDestinationPrefixes() {
+            return getApplicationDestinationPrefixes();
+        }
+
+        String userDestinationPrefix() {
+            return getUserDestinationPrefix();
+        }
+
+        SimpleBrokerMessageHandler simpleBroker() {
+            return getSimpleBroker(brokerChannel);
         }
     }
 }
