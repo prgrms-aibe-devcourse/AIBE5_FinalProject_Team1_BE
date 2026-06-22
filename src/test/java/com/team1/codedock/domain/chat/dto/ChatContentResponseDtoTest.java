@@ -1,5 +1,7 @@
 package com.team1.codedock.domain.chat.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.chat.entity.Bookmark;
 import com.team1.codedock.domain.chat.entity.Mention;
@@ -19,6 +21,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ChatContentResponseDtoTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     @DisplayName("채널 메시지 응답은 저장 토큰을 원문 이모지로 복원하고 첨부 null은 빈 목록으로 반환한다")
@@ -185,6 +189,49 @@ class ChatContentResponseDtoTest {
         assertThat(replyResponse.senderAvatarUrl()).isNull();
         assertThat(messageResponse.isDeleted()).isFalse();
         assertThat(replyResponse.isDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("채널 메시지 삭제 상태 JSON은 isDeleted 필드명으로 직렬화된다")
+    void channelMessageResponseSerializesIsDeletedFieldName() throws Exception {
+        ChannelMessageResponse response = new ChannelMessageResponse(
+                100L,
+                10L,
+                20L,
+                "보낸사람",
+                null,
+                Thread.DELETED_MESSAGE_CONTENT,
+                null,
+                List.of(),
+                null,
+                true,
+                null
+        );
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.get("isDeleted").asBoolean()).isTrue();
+        assertThat(json.has("deleted")).isFalse();
+    }
+
+    @Test
+    @DisplayName("답글 삭제 상태 JSON은 isDeleted 필드명으로 직렬화된다")
+    void threadReplyResponseSerializesIsDeletedFieldName() throws Exception {
+        ThreadReplyResponse response = new ThreadReplyResponse(
+                200L,
+                100L,
+                20L,
+                "보낸사람",
+                null,
+                ThreadReply.DELETED_REPLY_CONTENT,
+                null,
+                true
+        );
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.get("isDeleted").asBoolean()).isTrue();
+        assertThat(json.has("deleted")).isFalse();
     }
 
     @Test

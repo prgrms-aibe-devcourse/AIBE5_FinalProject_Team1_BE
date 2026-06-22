@@ -89,6 +89,7 @@ class MentionControllerTest {
                 .andExpect(jsonPath("$.data[0].read").value(false));
 
         verify(mentionService).getMyMentions(10L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -104,6 +105,7 @@ class MentionControllerTest {
                 .andExpect(jsonPath("$.data.read").value(true));
 
         verify(mentionService).markMentionAsRead(300L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -118,6 +120,7 @@ class MentionControllerTest {
                 .andExpect(jsonPath("$.code").value("C003"));
 
         verify(mentionService).markMentionAsRead(300L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -132,6 +135,7 @@ class MentionControllerTest {
                 .andExpect(jsonPath("$.code").value("C004"));
 
         verify(mentionService).markMentionAsRead(300L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test

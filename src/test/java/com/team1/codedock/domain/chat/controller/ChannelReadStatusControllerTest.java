@@ -123,6 +123,38 @@ class ChannelReadStatusControllerTest {
     }
 
     @Test
+    @DisplayName("읽을 메시지가 없어 lastReadThreadId가 null이어도 개인 WebSocket 이벤트를 전송한다")
+    void markChannelAsReadWithNoLastReadThreadBroadcastsNullPayloadField() throws Exception {
+        ChannelReadStatusResponse response = new ChannelReadStatusResponse(
+                1L,
+                20L,
+                null,
+                LocalDateTime.of(2026, 6, 11, 10, 0)
+        );
+
+        when(channelReadStatusService.markChannelAsRead(1L, USER_ID)).thenReturn(response);
+
+        mockMvc.perform(put("/api/channels/{channelId}/read", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.channelId").value(1L))
+                .andExpect(jsonPath("$.data.workspaceMemberId").value(20L))
+                .andExpect(jsonPath("$.data.lastReadThreadId").doesNotExist());
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSendToUser(
+                eq("reader@test.com"),
+                eq("/queue/notifications"),
+                payloadCaptor.capture()
+        );
+
+        ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
+        assertThat(event.type()).isEqualTo(ChatEventType.CHANNEL_READ_STATUS_UPDATED);
+        assertThat(event.payload()).isEqualTo(response);
+        verifyNoMoreInteractions(messagingTemplate);
+    }
+
+    @Test
     @DisplayName("인증 사용자가 없으면 읽음 처리 서비스와 WebSocket 전송을 수행하지 않는다")
     void markChannelAsReadWithoutAuthentication() throws Exception {
         SecurityContextHolder.clearContext();
