@@ -1,10 +1,10 @@
 package com.team1.codedock.domain.workspace.service;
 
 import com.team1.codedock.global.security.CustomUserDetails;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
@@ -21,6 +21,7 @@ import java.security.Principal;
 import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -39,88 +40,102 @@ class WebSocketPresenceTrackerTest {
     @Mock
     private WorkspaceService workspaceService;
 
-    @InjectMocks
     private WebSocketPresenceTracker tracker;
 
+    @BeforeEach
+    void setUp() {
+        // 세션 카운팅은 실제 PresenceRegistry로 구동하고, 브로드캐스트만 mock으로 검증한다.
+        tracker = new WebSocketPresenceTracker(workspaceService, new PresenceRegistry());
+    }
+
     @Test
-    @DisplayName("presence 토픽 첫 구독이면 고른 상태 브로드캐스트 + 스냅샷 전송, offline은 안 보낸다")
-    void subscribeBroadcastsOnlineAndSnapshot() {
+    @DisplayName("첫 세션 연결이면 모든 워크스페이스에 online 브로드캐스트한다")
+    void firstSessionBroadcastsOnline() {
+        Principal user = principal(10L, "alice");
+
+        tracker.onConnected(connectedEvent("s1", user));
+
+        verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, true);
+        verify(workspaceService, never()).broadcastUserPresenceToAllWorkspaces(anyLong(), eq(false));
+    }
+
+    @Test
+    @DisplayName("presence 토픽 구독 시 해당 워크스페이스 스냅샷을 구독자에게 전송한다")
+    void subscribeSendsSnapshot() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
+
         tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
 
-        verify(workspaceService).broadcastChosenPresence(1L, 10L);
         verify(workspaceService).sendPresenceSnapshot(eq(1L), eq("alice"), eq(Set.of(10L)));
-        verify(workspaceService, never()).broadcastPresence(any(), any(), any());
     }
 
     @Test
     @DisplayName("presence가 아닌 경로 구독은 무시한다")
-    void ignoresNonPresenceSubscription() {
+    void nonPresenceSubscribeIgnored() {
         Principal user = principal(10L, "alice");
-        tracker.onConnected(connectedEvent("s1", user));
+
         tracker.onSubscribe(subscribeEvent("s1", "/topic/channels/5/events", user));
 
         verifyNoInteractions(workspaceService);
     }
 
     @Test
-    @DisplayName("마지막 세션이 끊기면 offline을 브로드캐스트한다")
-    void disconnectBroadcastsOffline() {
+    @DisplayName("마지막 세션이 끊기면 모든 워크스페이스에 offline 브로드캐스트한다")
+    void lastSessionBroadcastsOffline() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
-        tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
 
         tracker.onDisconnect(disconnectEvent("s1"));
 
-        verify(workspaceService).broadcastPresence(1L, 10L, "offline");
+        verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, false);
     }
 
     @Test
-    @DisplayName("멀티 세션: 한 세션만 끊기면 offline을 보내지 않고, 모두 끊겨야 보낸다")
-    void multiSessionOffline() {
+    @DisplayName("멀티 세션: online은 1회, 한 세션만 끊기면 offline 없음, 모두 끊겨야 offline")
+    void multiSessionOnlineOnceOfflineOnLast() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
-        tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
         tracker.onConnected(connectedEvent("s2", user));
-        tracker.onSubscribe(subscribeEvent("s2", PRESENCE_DEST, user));
+
+        verify(workspaceService, times(1)).broadcastUserPresenceToAllWorkspaces(10L, true);
 
         tracker.onDisconnect(disconnectEvent("s1"));
-        verify(workspaceService, never()).broadcastPresence(any(), any(), eq("offline"));
+        verify(workspaceService, never()).broadcastUserPresenceToAllWorkspaces(anyLong(), eq(false));
 
         tracker.onDisconnect(disconnectEvent("s2"));
-        verify(workspaceService).broadcastPresence(1L, 10L, "offline");
+        verify(workspaceService, times(1)).broadcastUserPresenceToAllWorkspaces(10L, false);
     }
 
     @Test
-    @DisplayName("같은 세션이 같은 워크스페이스를 재구독해도 online 브로드캐스트는 1회, 스냅샷은 매번")
-    void resubscribeDoesNotDoubleCount() {
+    @DisplayName("같은 세션의 connect+subscribe는 세션을 1회만 등록한다(online 1회)")
+    void registerOncePerSession() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
         tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
-        tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
 
-        verify(workspaceService, times(1)).broadcastChosenPresence(1L, 10L);
-        verify(workspaceService, times(2)).sendPresenceSnapshot(eq(1L), eq("alice"), any());
+        verify(workspaceService, times(1)).broadcastUserPresenceToAllWorkspaces(10L, true);
     }
 
     @Test
     @DisplayName("알 수 없는 세션 disconnect는 아무 것도 하지 않는다")
-    void disconnectUnknownSession() {
+    void disconnectUnknownSessionNoop() {
         tracker.onDisconnect(disconnectEvent("ghost"));
 
         verifyNoInteractions(workspaceService);
     }
 
     @Test
-    @DisplayName("onConnected 없이 구독→끊김이어도 offline 처리된다(누수 방지)")
-    void disconnectWorksWithoutConnectedEvent() {
+    @DisplayName("onConnected 없이 구독→끊김이어도 online/스냅샷/offline이 모두 처리된다")
+    void subscribeWithoutConnectedStillWorks() {
         Principal user = principal(10L, "alice");
+
         tracker.onSubscribe(subscribeEvent("s1", PRESENCE_DEST, user));
+        verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, true);
+        verify(workspaceService).sendPresenceSnapshot(eq(1L), eq("alice"), eq(Set.of(10L)));
 
         tracker.onDisconnect(disconnectEvent("s1"));
-
-        verify(workspaceService).broadcastPresence(1L, 10L, "offline");
+        verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, false);
     }
 
     // --- event/principal builders ---

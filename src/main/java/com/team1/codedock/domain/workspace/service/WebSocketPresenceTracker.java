@@ -12,7 +12,6 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import org.springframework.web.socket.messaging.SessionSubscribeEvent;
 
 import java.security.Principal;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -20,15 +19,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * STOMP 세션 생명주기를 추적해 워크스페이스 presence의 "실시간 연결 여부"를 관리한다.
- * - preferences(WorkspaceMemberPreferences)는 사용자가 고른 상태(active/away/busy/offline)를 저장하고,
- * - 본 트래커는 "현재 접속 세션이 있는지"(연결 여부)를 관리한다.
+ * STOMP 세션 생명주기를 추적해 "사이트 접속 여부" 기준으로 워크스페이스 presence를 관리한다.
  *
- * 동작:
- * - 사용자가 워크스페이스 presence 토픽을 구독하면(=입장/재연결) 현재 멤버 presence 스냅샷을 그 사용자에게만 전송하고,
- *   처음 온라인이 된 경우(0→1 세션) 다른 멤버에게 고른 상태를 브로드캐스트한다.
- * - 세션이 끊기면(정상/비정상 모두) 같은 (workspace,user)의 다른 세션이 없을 때 offline을 브로드캐스트한다.
- *   → 탭 강제 종료/네트워크 끊김도 SessionDisconnectEvent로 감지되어 다른 멤버 화면에 offline로 반영된다.
+ * 모델: 사용자가 사이트에 WS로 접속해 있으면(세션 ≥ 1) 그 사용자가 속한 모든 워크스페이스에서 online으로 본다.
+ * - 첫 세션(0→1): 그 사용자가 속한 모든 워크스페이스 presence 토픽으로 고른 상태를 브로드캐스트.
+ * - 마지막 세션(1→0, 정상/비정상 종료 모두): 모든 워크스페이스로 offline 브로드캐스트.
+ * - presence 토픽 구독 시: 그 워크스페이스의 현재 presence 스냅샷을 구독자에게만 전송(접속 세션 보유 여부 기준).
+ *
+ * preferences(WorkspaceMemberPreferences)는 "고른 상태"(active/away/busy/offline)를 저장하고,
+ * 본 트래커는 "실제 접속 세션 유무"를 관리한다.
  */
 @Slf4j
 @Component
@@ -39,20 +38,14 @@ public class WebSocketPresenceTracker {
             Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
 
     private final WorkspaceService workspaceService;
+    private final PresenceRegistry presenceRegistry;
 
     private final ConcurrentMap<String, Long> sessionUserIds = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Set<Long>> sessionWorkspaceIds = new ConcurrentHashMap<>();
-    // "workspaceId:userId" -> 해당 (workspace,user)의 활성 세션 수 (멀티탭/멀티세션 고려)
-    private final ConcurrentMap<String, Integer> onlineSessionCounts = new ConcurrentHashMap<>();
 
     @EventListener
     public void onConnected(SessionConnectedEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
-        String sessionId = accessor.getSessionId();
-        Long userId = resolveUserId(event.getUser());
-        if (sessionId != null && userId != null) {
-            sessionUserIds.put(sessionId, userId);
-        }
+        registerSession(accessor.getSessionId(), resolveUserId(event.getUser()));
     }
 
     @EventListener
@@ -78,73 +71,52 @@ public class WebSocketPresenceTracker {
         if (userId == null) {
             return;
         }
-        // onConnected가 유실/경합되더라도 disconnect 시 userId를 찾아 offline 처리할 수 있게 여기서도 보관함.
-        sessionUserIds.putIfAbsent(sessionId, userId);
+        // onConnected가 유실/경합돼도 여기서 세션을 등록(카운트 1회 보장)
+        registerSession(sessionId, userId);
 
-        final Long wsId = workspaceId;
-        final Long uid = userId;
-
-        boolean firstForSession = sessionWorkspaceIds
-                .computeIfAbsent(sessionId, key -> ConcurrentHashMap.newKeySet())
-                .add(wsId);
-
-        String recipientName = principalName(event.getUser());
-        if (firstForSession) {
-            int before = onlineSessionCounts.getOrDefault(key(wsId, uid), 0);
-            onlineSessionCounts.merge(key(wsId, uid), 1, Integer::sum);
-            // 0→1: 이 사용자가 막 온라인이 됐으므로 다른 멤버에게 고른 상태를 알림(재연결 복원 포함)
-            if (before == 0) {
-                safelyRun(() -> workspaceService.broadcastChosenPresence(wsId, uid));
-            }
-        }
-        // 새 구독자에게 현재 워크스페이스 presence 스냅샷 전송(이미 접속 중이던 멤버 상태를 즉시 반영)
-        safelyRun(() -> workspaceService.sendPresenceSnapshot(wsId, recipientName, onlineUserIds(wsId)));
+        final Long ws = workspaceId;
+        final String recipient = principalName(event.getUser());
+        // 새 구독자에게 현재 워크스페이스 presence 스냅샷 전송(접속 세션 보유 멤버만 online)
+        safelyRun(() -> workspaceService.sendPresenceSnapshot(ws, recipient, onlineUserIds()));
     }
 
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
-        String sessionId = event.getSessionId();
-        Long userId = sessionUserIds.remove(sessionId);
-        Set<Long> workspaceIds = sessionWorkspaceIds.remove(sessionId);
-        if (userId == null || workspaceIds == null) {
+        Long userId = sessionUserIds.remove(event.getSessionId());
+        if (userId == null) {
             return;
         }
-        for (Long workspaceId : workspaceIds) {
-            int remaining = onlineSessionCounts.merge(key(workspaceId, userId), -1, Integer::sum);
-            if (remaining <= 0) {
-                onlineSessionCounts.remove(key(workspaceId, userId));
-                final Long ws = workspaceId;
-                final Long uid = userId;
-                safelyRun(() -> workspaceService.broadcastPresence(ws, uid, "offline"));
-            }
+        if (presenceRegistry.decrement(userId)) {
+            final Long uid = userId;
+            safelyRun(() -> workspaceService.broadcastUserPresenceToAllWorkspaces(uid, false));
         }
     }
 
-    private Set<Long> onlineUserIds(Long workspaceId) {
-        String prefix = workspaceId + ":";
-        Set<Long> ids = new HashSet<>();
-        onlineSessionCounts.forEach((key, count) -> {
-            if (count != null && count > 0 && key.startsWith(prefix)) {
-                Long uid = parseId(key.substring(prefix.length()));
-                if (uid != null) {
-                    ids.add(uid);
-                }
-            }
-        });
-        return ids;
+    // 세션을 1회만 등록하고, 그 사용자의 첫 세션이면(0→1) 모든 워크스페이스에 online 브로드캐스트.
+    private void registerSession(String sessionId, Long userId) {
+        if (sessionId == null || userId == null) {
+            return;
+        }
+        Long previous = sessionUserIds.putIfAbsent(sessionId, userId);
+        if (previous != null) {
+            return; // 이미 등록된 세션
+        }
+        if (presenceRegistry.increment(userId)) {
+            final Long uid = userId;
+            safelyRun(() -> workspaceService.broadcastUserPresenceToAllWorkspaces(uid, true));
+        }
+    }
+
+    private Set<Long> onlineUserIds() {
+        return presenceRegistry.onlineUserIds();
     }
 
     private void safelyRun(Runnable action) {
         try {
             action.run();
         } catch (RuntimeException e) {
-            // presence 브로드캐스트 실패가 세션 처리 자체를 막지 않도록 격리함
             log.warn("WebSocket presence 처리 중 오류", e);
         }
-    }
-
-    private String key(Long workspaceId, Long userId) {
-        return workspaceId + ":" + userId;
     }
 
     private Long resolveUserId(Principal principal) {
