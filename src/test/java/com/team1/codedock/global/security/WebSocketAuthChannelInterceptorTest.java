@@ -1607,6 +1607,98 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("워크스페이스 channels 구독은 해당 워크스페이스 활성 멤버에게 허용한다")
+    void subscribeWorkspaceChannelsWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authenticatedPrincipal(1L), "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("워크스페이스 channels 구독 권한은 세션별로 캐시한다")
+    void subscribeWorkspaceChannelsAuthorizationIsCachedBySession() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        clock.advance(Duration.ofMillis(29_999));
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(workspaceMemberRepository, times(1))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("비소속 사용자의 워크스페이스 channels 구독은 거부한다")
+    void subscribeWorkspaceChannelsWithoutWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authenticatedPrincipal(1L));
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("숫자가 아닌 workspaceId의 channels 구독은 허용하지 않는다")
+    void subscribeWorkspaceChannelsWithNonNumericWorkspaceId() {
+        Message<?> message = subscribeMessage("/topic/workspaces/not-number/channels", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("Long 범위를 넘는 workspaceId의 channels 구독은 거부한다")
+    void subscribeWorkspaceChannelsWithOverflowWorkspaceId() {
+        Message<?> message = subscribeMessage(
+                "/topic/workspaces/999999999999999999999999/channels",
+                authenticatedPrincipal(1L)
+        );
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 경로가 올바르지 않습니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("channels와 비슷하지만 다른 워크스페이스 토픽 구독은 허용하지 않는다")
+    void subscribeWorkspaceChannelsLikeDestination() {
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels-extra", authenticatedPrincipal(1L));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("허용되지 않은 WebSocket 구독 경로입니다.");
+
+        verifyNoInteractions(channelRepository, threadRepository, workspaceMemberRepository);
+    }
+
+    @Test
     @DisplayName("인증 Principal이 없는 구독은 거부한다")
     void subscribeWithoutPrincipal() {
         Message<?> message = subscribeMessage("/topic/channels/10/events", null);

@@ -3,6 +3,8 @@ package com.team1.codedock.domain.github.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.entity.Channel;
+import com.team1.codedock.domain.chat.dto.ChatEventResponse;
+import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
@@ -16,10 +18,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +33,7 @@ import org.springframework.web.filter.CharacterEncodingFilter;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -50,6 +55,9 @@ class WorkspaceGithubControllerTest {
     @Mock
     private GithubRepositoryService githubRepositoryService;
 
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -60,7 +68,7 @@ class WorkspaceGithubControllerTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userDetails, null, authorities));
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new WorkspaceGithubController(githubRepositoryService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new WorkspaceGithubController(githubRepositoryService, messagingTemplate))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
@@ -230,6 +238,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.data.isDeletable").value(false));
 
         verify(githubRepositoryService).createRepositoryChannel(10L, USER_ID, request);
+        assertChannelCreatedBroadcast(10L, response);
     }
 
     @Test
@@ -260,6 +269,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.data.channelType").value(Channel.TYPE_REPOSITORY));
 
         verify(githubRepositoryService).createRepositoryChannel(10L, USER_ID, request);
+        assertChannelCreatedBroadcast(10L, response);
     }
 
     @Test
@@ -275,6 +285,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C003"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -290,6 +302,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C006"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -305,6 +319,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C006"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -414,5 +430,18 @@ class WorkspaceGithubControllerTest {
                 true,
                 "main"
         );
+    }
+
+    private void assertChannelCreatedBroadcast(Long workspaceId, ChannelListResponse expectedPayload) {
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/workspaces/" + workspaceId + "/channels"),
+                payloadCaptor.capture()
+        );
+
+        assertThat(payloadCaptor.getValue()).isInstanceOf(ChatEventResponse.class);
+        ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
+        assertThat(event.type()).isEqualTo(ChatEventType.CHANNEL_CREATED);
+        assertThat(event.payload()).isEqualTo(expectedPayload);
     }
 }

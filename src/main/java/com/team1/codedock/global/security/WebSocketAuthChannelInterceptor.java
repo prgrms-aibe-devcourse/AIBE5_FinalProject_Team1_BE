@@ -62,6 +62,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
     private static final Pattern WORKSPACE_MEMBERS_DESTINATION =
             Pattern.compile("^/topic/workspaces/(\\d+)/members$");
+    private static final Pattern WORKSPACE_CHANNELS_DESTINATION =
+            Pattern.compile("^/topic/workspaces/(\\d+)/channels$");
 
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
@@ -347,6 +349,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         Matcher workspaceMembersMatcher = WORKSPACE_MEMBERS_DESTINATION.matcher(destination);
         if (workspaceMembersMatcher.matches()) {
             return Optional.of(parseId(workspaceMembersMatcher.group(1)));
+        }
+
+        Matcher workspaceChannelsMatcher = WORKSPACE_CHANNELS_DESTINATION.matcher(destination);
+        if (workspaceChannelsMatcher.matches()) {
+            return Optional.of(parseId(workspaceChannelsMatcher.group(1)));
         }
 
         Matcher legacyThreadEventsMatcher = THREAD_LEGACY_EVENTS_DESTINATION.matcher(destination);
