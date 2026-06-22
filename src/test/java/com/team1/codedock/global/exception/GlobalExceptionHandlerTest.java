@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.filter.CharacterEncodingFilter;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +46,11 @@ class GlobalExceptionHandlerTest {
         public ApiResponse<Void> throwDataIntegrityException() {
             throw new DataIntegrityViolationException("unique constraint violation");
         }
+
+        @GetMapping("/test/missing-request-part")
+        public ApiResponse<Void> throwMissingRequestPartException() throws MissingServletRequestPartException {
+            throw new MissingServletRequestPartException("file");
+        }
     }
 
     @Test
@@ -76,5 +82,16 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C006"));
+    }
+
+    @Test
+    @DisplayName("multipart 요청 파트가 누락되면 400 INVALID_INPUT 응답을 반환한다")
+    void handleMissingRequestPartException() throws Exception {
+        mockMvc.perform(get("/test/missing-request-part")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"))
+                .andExpect(jsonPath("$.message").value("필수 파일 또는 요청 파트가 누락되었습니다."));
     }
 }

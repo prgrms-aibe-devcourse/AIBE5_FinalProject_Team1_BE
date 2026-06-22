@@ -535,6 +535,32 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("숫자가 아닌 threadId의 스레드 typing SEND 경로는 일반 rate limit을 적용한다")
+    void threadTypingSendDestinationWithNonNumericThreadIdUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/threads/not-number/typing", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("스레드 typing SEND 경로에 trailing slash가 붙으면 일반 rate limit을 적용한다")
+    void threadTypingSendDestinationWithTrailingSlashUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/threads/20/typing/", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
     @DisplayName("typing SEND가 중간에 섞여도 일반 메시지 rate limit 카운트를 증가시키지 않는다")
     void typingSendBetweenNormalMessagesDoesNotConsumeGeneralRateLimit() {
         Authentication authentication = authenticatedPrincipal(1L);

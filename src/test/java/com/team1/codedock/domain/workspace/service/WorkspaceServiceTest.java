@@ -172,6 +172,35 @@ class WorkspaceServiceTest {
     }
 
     @Test
+    @DisplayName("워크스페이스 로고 저장에 실패하면 logoUrl과 이벤트를 변경하지 않는다")
+    void updateWorkspaceLogoWithStorageFailure() {
+        Workspace workspace = workspace(10L);
+        User adminUser = user(100L, "admin@test.com");
+        WorkspaceMember adminMember = workspaceMember(1L, workspace, adminUser, "admin");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "logo.png",
+                "image/png",
+                new byte[]{1, 2, 3}
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(adminUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, adminUser)).thenReturn(Optional.of(adminMember));
+        when(workspaceLogoStorageService.storeWorkspaceLogo(10L, file))
+                .thenThrow(new BusinessException(ErrorCode.INVALID_INPUT, "허용되지 않는 로고 파일입니다."));
+
+        assertThatThrownBy(() -> workspaceService.updateWorkspaceLogo(10L, file, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        assertThat(workspace.getLogoUrl()).isNull();
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(workspaceMemberRepository, never()).countByWorkspaceAndIsActiveTrue(workspace);
+    }
+
+    @Test
     @DisplayName("Active member role can be changed by workspace admin")
     void changeMemberRole() {
         Workspace workspace = workspace(10L);

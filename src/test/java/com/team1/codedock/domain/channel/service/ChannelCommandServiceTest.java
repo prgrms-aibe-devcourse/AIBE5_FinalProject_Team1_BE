@@ -236,6 +236,62 @@ class ChannelCommandServiceTest {
     }
 
     @Test
+    @DisplayName("채널 순서 변경은 요청 객체가 없으면 거부한다")
+    void updateChannelOrderWithNullRequest() {
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(10L, 100L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 빈 채널 목록이면 거부한다")
+    void updateChannelOrderWithEmptyChannelIds() {
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of())
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 null 채널 id가 있으면 거부한다")
+    void updateChannelOrderWithNullChannelId() {
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(java.util.Arrays.asList(1L, null, 2L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 0 이하 채널 id가 있으면 거부한다")
+    void updateChannelOrderWithNonPositiveChannelId() {
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(1L, 0L, -2L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
+    }
+
+    @Test
     @DisplayName("채널 순서 변경은 중복된 채널 id를 거부한다")
     void updateChannelOrderWithDuplicateChannelId() {
         assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
@@ -277,6 +333,8 @@ class ChannelCommandServiceTest {
         Workspace workspace = workspace(10L);
         Channel first = channel(1L, workspace, "general", false);
         Channel second = channel(2L, workspace, "docs", true);
+        first.updateDisplayOrder(4);
+        second.updateDisplayOrder(5);
 
         when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L))
                 .thenReturn(List.of(first, second));
@@ -288,6 +346,9 @@ class ChannelCommandServiceTest {
         ))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("다른 워크스페이스");
+
+        assertThat(first.getDisplayOrder()).isEqualTo(4);
+        assertThat(second.getDisplayOrder()).isEqualTo(5);
     }
 
     @Test

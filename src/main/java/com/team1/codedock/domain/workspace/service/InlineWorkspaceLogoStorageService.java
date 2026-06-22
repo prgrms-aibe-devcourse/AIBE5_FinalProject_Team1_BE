@@ -40,7 +40,8 @@ public class InlineWorkspaceLogoStorageService implements WorkspaceLogoStorageSe
         if (file.getSize() > MAX_LOGO_BYTES) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "워크스페이스 로고 파일은 1MB 이하만 업로드할 수 있습니다.");
         }
-        if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "워크스페이스 로고는 이미지 파일만 업로드할 수 있습니다.");
         }
     }

@@ -380,6 +380,34 @@ class ChatWebSocketControllerTest {
     }
 
     @Test
+    @DisplayName("스레드 typing WebSocket send는 Authentication 타입이 아닌 Principal을 거부한다")
+    void sendThreadTypingEventWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 CustomUserDetails가 없는 인증 객체를 거부한다")
+    void sendThreadTypingEventWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
     @DisplayName("WebSocket BusinessException은 사용자 에러 큐 응답 payload로 변환한다")
     void handleBusinessException() {
         BusinessException exception = new BusinessException(ErrorCode.FORBIDDEN, "WebSocket 구독 권한이 없습니다.");

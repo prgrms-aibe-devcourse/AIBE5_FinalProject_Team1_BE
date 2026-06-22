@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -222,6 +223,36 @@ class ChannelControllerTest {
                 .andExpect(jsonPath("$.data[0].displayOrder").value(0));
 
         verify(channelCommandService).updateChannelOrder(10L, USER_ID, request);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경 API는 빈 채널 목록이면 서비스 호출 전에 거부한다")
+    void updateChannelOrderWithEmptyChannelIds() throws Exception {
+        ChannelOrderUpdateRequest request = new ChannelOrderUpdateRequest(List.of());
+
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}/channels/order", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(channelCommandService);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경 API는 null 채널 id가 있으면 서비스 호출 전에 거부한다")
+    void updateChannelOrderWithNullChannelId() throws Exception {
+        String requestBody = "{\"channelIds\":[1,null,2]}";
+
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}/channels/order", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(channelCommandService);
     }
 
     @Test

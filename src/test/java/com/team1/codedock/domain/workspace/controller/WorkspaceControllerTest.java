@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -89,5 +90,16 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.data.logoUrl").value("data:image/png;base64,AQID"));
 
         verify(workspaceService).updateWorkspaceLogo(eq(10L), any(MultipartFile.class), eq(USER_ID));
+    }
+
+    @Test
+    @DisplayName("워크스페이스 로고 업로드 API는 파일 파트가 없으면 서비스 호출 전에 거부한다")
+    void updateWorkspaceLogoWithoutFilePart() throws Exception {
+        mockMvc.perform(multipart("/api/v1/workspaces/{workspaceId}/logo", 10L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(workspaceService);
     }
 }
