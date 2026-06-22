@@ -55,6 +55,7 @@ public enum ErrorCode {
 
     // ERD
     ERD_NOT_FOUND(HttpStatus.NOT_FOUND, "E001", "ERD를 찾을 수 없습니다."),
+    ERD_SOURCE_NOT_FOUND(HttpStatus.UNPROCESSABLE_ENTITY, "E002", "ERD 생성에 필요한 소스 파일을 찾을 수 없습니다."),
 
     // AI
     AI_SUMMARY_NOT_FOUND(HttpStatus.NOT_FOUND, "AI001", "AI 요약을 찾을 수 없습니다."),
