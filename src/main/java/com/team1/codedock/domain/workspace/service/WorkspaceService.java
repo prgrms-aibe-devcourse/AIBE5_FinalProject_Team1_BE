@@ -25,7 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
 import java.util.HashSet;
@@ -44,6 +46,7 @@ public class WorkspaceService {
     private final WorkspaceMemberPreferencesRepository preferencesRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final ApplicationEventPublisher eventPublisher;
+    private final PresenceRegistry presenceRegistry;
 
     private static final Set<String> ASSIGNABLE_ROLES = Set.of("admin", "editor", "viewer");
 
@@ -76,7 +79,18 @@ public class WorkspaceService {
                 .map(membership -> {
                     Workspace workspace = membership.getWorkspace();
                     int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
-                    return WorkspaceResponse.from(workspace, membership, count);
+                    // 실시간 접속 인원 중 "본인을 제외한" 다른 멤버 수만 계산한다.
+                    // 본인은 FE가 자신의 실시간 상태(userPresence)로 더한다 → REST/WS 등록 타이밍이나
+                    // 저장된(stale) presence와 무관하게 본인 카운트가 정확해짐.
+                    int othersOnline = (int) workspaceMemberRepository.findAllByWorkspace(workspace).stream()
+                            .filter(WorkspaceMember::isActive)
+                            .filter(member -> !member.getUser().getId().equals(currentUserId))
+                            .filter(member -> presenceRegistry.isOnline(member.getUser().getId()))
+                            .filter(member -> !"offline".equals(preferencesRepository.findByWorkspaceMember(member)
+                                    .map(WorkspaceMemberPreferences::getPresence)
+                                    .orElse("active")))
+                            .count();
+                    return WorkspaceResponse.from(workspace, membership, count, othersOnline);
                 })
                 .toList();
     }
@@ -107,27 +121,90 @@ public class WorkspaceService {
         return workspaceMemberRepository.findAllByWorkspace(workspace).stream()
                 .filter(WorkspaceMember::isActive)
                 .map(m -> {
-                    String presence = preferencesRepository.findByWorkspaceMember(m)
+                    // 접속 세션이 없는 멤버는 고른 상태와 무관하게 offline로 내려줌(목록 진입 시 깜빡임 방지).
+                    String chosen = preferencesRepository.findByWorkspaceMember(m)
                             .map(WorkspaceMemberPreferences::getPresence)
                             .orElse("active");
+                    String presence = presenceRegistry.isOnline(m.getUser().getId()) ? chosen : "offline";
                     return WorkspaceMemberResponse.from(m, presence);
                 })
                 .toList();
     }
 
     public void updatePresence(Long workspaceId, String presence, Long currentUserId) {
-        WorkspaceMember membership = getMembership(workspaceId, currentUserId);
-        WorkspaceMemberPreferences prefs = preferencesRepository.findByWorkspaceMember(membership)
-                .orElseGet(() -> WorkspaceMemberPreferences.create(membership));
-        prefs.updatePresence(presence);
-        preferencesRepository.save(prefs);
+        // presence는 사용자의 전역 상태로 취급한다. 요청 워크스페이스 멤버인지 검증한 뒤,
+        // 그 사용자의 모든 활성 멤버십에 동일 상태를 적용하고 각 워크스페이스 토픽으로 브로드캐스트한다.
+        // (한 워크스페이스에서 offline으로 바꾸면 다른 워크스페이스에서도 즉시 offline로 반영됨)
+        WorkspaceMember requesting = getMembership(workspaceId, currentUserId);
+        User user = requesting.getUser();
+        for (WorkspaceMember member : workspaceMemberRepository.findAllByUser(user)) {
+            if (!member.isActive()) {
+                continue;
+            }
+            WorkspaceMemberPreferences prefs = preferencesRepository.findByWorkspaceMember(member)
+                    .orElseGet(() -> WorkspaceMemberPreferences.create(member));
+            prefs.updatePresence(presence);
+            preferencesRepository.save(prefs);
+            publishPresenceEvent(member.getWorkspace().getId(), currentUserId, member, presence);
+        }
+    }
 
-        java.util.Map<String, Object> event = new java.util.HashMap<>();
+    // 새 구독자에게만 현재 워크스페이스 멤버들의 presence 스냅샷을 전송함.
+    // 접속 세션이 없는 멤버는 고른 상태와 무관하게 offline로 내려줌(실시간 연결 기준).
+    @Transactional(readOnly = true)
+    public void sendPresenceSnapshot(Long workspaceId, String recipientName, Set<Long> onlineUserIds) {
+        if (recipientName == null) {
+            return;
+        }
+        Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
+        if (workspace == null) {
+            return;
+        }
+        List<Map<String, Object>> snapshot = workspaceMemberRepository.findAllByWorkspace(workspace).stream()
+                .filter(WorkspaceMember::isActive)
+                .map(member -> {
+                    String chosen = preferencesRepository.findByWorkspaceMember(member)
+                            .map(WorkspaceMemberPreferences::getPresence)
+                            .orElse("active");
+                    boolean online = onlineUserIds.contains(member.getUser().getId());
+                    Map<String, Object> entry = new HashMap<>();
+                    entry.put("memberId", member.getId());
+                    entry.put("presence", online ? chosen : "offline");
+                    return entry;
+                })
+                .toList();
+        messagingTemplate.convertAndSendToUser(recipientName, "/queue/presence", snapshot);
+    }
+
+    // 사이트 접속(첫 세션)/완전 종료(마지막 세션) 시, 그 사용자가 속한 모든 활성 워크스페이스의
+    // presence 토픽으로 상태를 브로드캐스트함. ("워크스페이스를 보고 있지 않아도 사이트 접속=온라인" 모델)
+    @Transactional(readOnly = true)
+    public void broadcastUserPresenceToAllWorkspaces(Long userId, boolean online) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return;
+        }
+        for (WorkspaceMember member : workspaceMemberRepository.findAllByUser(user)) {
+            if (!member.isActive()) {
+                continue;
+            }
+            Long workspaceId = member.getWorkspace().getId();
+            String presence = online
+                    ? preferencesRepository.findByWorkspaceMember(member)
+                            .map(WorkspaceMemberPreferences::getPresence)
+                            .orElse("active")
+                    : "offline";
+            publishPresenceEvent(workspaceId, userId, member, presence);
+        }
+    }
+
+    private void publishPresenceEvent(Long workspaceId, Long userId, WorkspaceMember member, String presence) {
+        Map<String, Object> event = new HashMap<>();
         event.put("workspaceId", workspaceId);
-        event.put("memberId", membership.getId());
-        event.put("workspaceMemberId", membership.getId());
-        event.put("userId", currentUserId);
-        event.put("username", membership.getUser().getUsername());
+        event.put("memberId", member.getId());
+        event.put("workspaceMemberId", member.getId());
+        event.put("userId", userId);
+        event.put("username", member.getUser().getUsername());
         event.put("presence", presence);
         messagingTemplate.convertAndSend("/topic/workspaces/" + workspaceId + "/presence", event);
     }

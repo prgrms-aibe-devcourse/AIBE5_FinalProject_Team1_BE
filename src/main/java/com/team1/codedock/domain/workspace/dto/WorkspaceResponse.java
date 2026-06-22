@@ -17,12 +17,17 @@ public class WorkspaceResponse {
     private String description;
     private String myRole;
     private int memberCount;
+    private int membersOnline;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime lastActivityAt;
     private String logoUrl;
 
     public static WorkspaceResponse from(Workspace workspace, WorkspaceMember myMembership, int memberCount) {
+        return from(workspace, myMembership, memberCount, 0);
+    }
+
+    public static WorkspaceResponse from(Workspace workspace, WorkspaceMember myMembership, int memberCount, int membersOnline) {
         return WorkspaceResponse.builder()
                 .id(workspace.getId())
                 .name(workspace.getName())
@@ -30,6 +35,7 @@ public class WorkspaceResponse {
                 .description(workspace.getDescription())
                 .myRole(myMembership.getAuthority())
                 .memberCount(memberCount)
+                .membersOnline(membersOnline)
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
                 .lastActivityAt(workspace.getLastActivityAt())
