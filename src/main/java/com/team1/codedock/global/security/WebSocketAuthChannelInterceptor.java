@@ -41,6 +41,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private static final String PERSONAL_NOTIFICATION_DESTINATION = "/user/queue/notifications";
     private static final String PERSONAL_ERROR_DESTINATION = "/user/queue/errors";
     private static final String PERSONAL_WORKSPACE_DESTINATION = "/user/queue/workspace";
+    private static final String PERSONAL_PRESENCE_DESTINATION = "/user/queue/presence";
     private static final int SEND_RATE_LIMIT_CAPACITY = 20;
     private static final long SEND_RATE_LIMIT_WINDOW_MILLIS = 10_000L;
     private static final long SUBSCRIBE_AUTH_CACHE_TTL_MILLIS = 30_000L;
@@ -163,7 +164,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             denySubscribe(userId, destination, "WebSocket 구독 경로가 필요합니다.");
         }
 
-        if (PERSONAL_NOTIFICATION_DESTINATION.equals(destination) || PERSONAL_ERROR_DESTINATION.equals(destination) || PERSONAL_WORKSPACE_DESTINATION.equals(destination)) {
+        if (PERSONAL_NOTIFICATION_DESTINATION.equals(destination) || PERSONAL_ERROR_DESTINATION.equals(destination)
+                || PERSONAL_WORKSPACE_DESTINATION.equals(destination) || PERSONAL_PRESENCE_DESTINATION.equals(destination)) {
             return;
         }
 

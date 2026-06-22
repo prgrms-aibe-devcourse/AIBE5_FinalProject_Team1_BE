@@ -25,7 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
 import java.util.HashSet;
@@ -128,6 +130,64 @@ public class WorkspaceService {
         event.put("workspaceMemberId", membership.getId());
         event.put("userId", currentUserId);
         event.put("username", membership.getUser().getUsername());
+        event.put("presence", presence);
+        messagingTemplate.convertAndSend("/topic/workspaces/" + workspaceId + "/presence", event);
+    }
+
+    // WebSocketPresenceTracker가 호출: 지정한 presence를 워크스페이스 토픽으로 브로드캐스트함.
+    // (세션 종료 시 "offline" 등 실시간 연결 상태 변화를 다른 멤버에게 알리는 용도)
+    @Transactional(readOnly = true)
+    public void broadcastPresence(Long workspaceId, Long userId, String presence) {
+        workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .ifPresent(member -> publishPresenceEvent(workspaceId, userId, member, presence));
+    }
+
+    // (재)연결로 다시 온라인이 된 사용자의 "고른 상태"(preferences)를 브로드캐스트함.
+    @Transactional(readOnly = true)
+    public void broadcastChosenPresence(Long workspaceId, Long userId) {
+        workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .ifPresent(member -> {
+                    String chosen = preferencesRepository.findByWorkspaceMember(member)
+                            .map(WorkspaceMemberPreferences::getPresence)
+                            .orElse("active");
+                    publishPresenceEvent(workspaceId, userId, member, chosen);
+                });
+    }
+
+    // 새 구독자에게만 현재 워크스페이스 멤버들의 presence 스냅샷을 전송함.
+    // 접속 세션이 없는 멤버는 고른 상태와 무관하게 offline로 내려줌(실시간 연결 기준).
+    @Transactional(readOnly = true)
+    public void sendPresenceSnapshot(Long workspaceId, String recipientName, Set<Long> onlineUserIds) {
+        if (recipientName == null) {
+            return;
+        }
+        Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
+        if (workspace == null) {
+            return;
+        }
+        List<Map<String, Object>> snapshot = workspaceMemberRepository.findAllByWorkspace(workspace).stream()
+                .filter(WorkspaceMember::isActive)
+                .map(member -> {
+                    String chosen = preferencesRepository.findByWorkspaceMember(member)
+                            .map(WorkspaceMemberPreferences::getPresence)
+                            .orElse("active");
+                    boolean online = onlineUserIds.contains(member.getUser().getId());
+                    Map<String, Object> entry = new HashMap<>();
+                    entry.put("memberId", member.getId());
+                    entry.put("presence", online ? chosen : "offline");
+                    return entry;
+                })
+                .toList();
+        messagingTemplate.convertAndSendToUser(recipientName, "/queue/presence", snapshot);
+    }
+
+    private void publishPresenceEvent(Long workspaceId, Long userId, WorkspaceMember member, String presence) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("workspaceId", workspaceId);
+        event.put("memberId", member.getId());
+        event.put("workspaceMemberId", member.getId());
+        event.put("userId", userId);
+        event.put("username", member.getUser().getUsername());
         event.put("presence", presence);
         messagingTemplate.convertAndSend("/topic/workspaces/" + workspaceId + "/presence", event);
     }

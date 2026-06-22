@@ -429,6 +429,103 @@ class WorkspaceServiceTest {
         assertThat(invitation.getStatus()).isEqualTo("accepted");
     }
 
+    @Test
+    @DisplayName("broadcastPresence: 멤버를 찾아 지정 presence를 워크스페이스 토픽에 브로드캐스트한다")
+    void broadcastPresence() {
+        Workspace workspace = workspace(1L);
+        User user = user(10L, "alice@test.com");
+        WorkspaceMember member = workspaceMember(100L, workspace, user, "editor");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 10L))
+                .thenReturn(Optional.of(member));
+
+        workspaceService.broadcastPresence(1L, 10L, "offline");
+
+        assertPresenceBroadcast("/topic/workspaces/1/presence", 1L, member, user, "offline");
+    }
+
+    @Test
+    @DisplayName("broadcastPresence: 활성 멤버가 없으면 아무 것도 보내지 않는다")
+    void broadcastPresenceMemberNotFound() {
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 10L))
+                .thenReturn(Optional.empty());
+
+        workspaceService.broadcastPresence(1L, 10L, "offline");
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("broadcastChosenPresence: preferences의 고른 상태를 브로드캐스트한다")
+    void broadcastChosenPresence() {
+        Workspace workspace = workspace(1L);
+        User user = user(10L, "alice@test.com");
+        WorkspaceMember member = workspaceMember(100L, workspace, user, "editor");
+        WorkspaceMemberPreferences prefs = WorkspaceMemberPreferences.create(member);
+        prefs.updatePresence("away");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 10L))
+                .thenReturn(Optional.of(member));
+        when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.of(prefs));
+
+        workspaceService.broadcastChosenPresence(1L, 10L);
+
+        assertPresenceBroadcast("/topic/workspaces/1/presence", 1L, member, user, "away");
+    }
+
+    @Test
+    @DisplayName("broadcastChosenPresence: preferences가 없으면 active로 브로드캐스트한다")
+    void broadcastChosenPresenceDefaultsActive() {
+        Workspace workspace = workspace(1L);
+        User user = user(10L, "alice@test.com");
+        WorkspaceMember member = workspaceMember(100L, workspace, user, "editor");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 10L))
+                .thenReturn(Optional.of(member));
+        when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.empty());
+
+        workspaceService.broadcastChosenPresence(1L, 10L);
+
+        assertPresenceBroadcast("/topic/workspaces/1/presence", 1L, member, user, "active");
+    }
+
+    @Test
+    @DisplayName("sendPresenceSnapshot: 접속 세션 없는 멤버는 offline로, 개인 큐로 스냅샷을 보낸다")
+    @SuppressWarnings("unchecked")
+    void sendPresenceSnapshot() {
+        Workspace workspace = workspace(1L);
+        User a = user(10L, "a@test.com");
+        User b = user(20L, "b@test.com");
+        WorkspaceMember memberA = workspaceMember(100L, workspace, a, "editor");
+        WorkspaceMember memberB = workspaceMember(200L, workspace, b, "viewer");
+        ReflectionTestUtils.setField(memberA, "isActive", true);
+        ReflectionTestUtils.setField(memberB, "isActive", true);
+        WorkspaceMemberPreferences prefsA = WorkspaceMemberPreferences.create(memberA);
+        prefsA.updatePresence("away");
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findAllByWorkspace(workspace)).thenReturn(List.of(memberA, memberB));
+        when(preferencesRepository.findByWorkspaceMember(memberA)).thenReturn(Optional.of(prefsA));
+        when(preferencesRepository.findByWorkspaceMember(memberB)).thenReturn(Optional.empty());
+
+        // A만 접속(online), B는 세션 없음(offline로 내려가야 함)
+        workspaceService.sendPresenceSnapshot(1L, "alice", java.util.Set.of(10L));
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSendToUser(
+                org.mockito.ArgumentMatchers.eq("alice"),
+                org.mockito.ArgumentMatchers.eq("/queue/presence"),
+                payloadCaptor.capture()
+        );
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) payloadCaptor.getValue();
+        assertThat(snapshot).hasSize(2);
+        assertThat(snapshot.get(0)).containsEntry("memberId", 100L).containsEntry("presence", "away");
+        assertThat(snapshot.get(1)).containsEntry("memberId", 200L).containsEntry("presence", "offline");
+    }
+
+    @Test
+    @DisplayName("sendPresenceSnapshot: 수신자 이름이 없으면 보내지 않는다")
+    void sendPresenceSnapshotWithoutRecipient() {
+        workspaceService.sendPresenceSnapshot(1L, null, java.util.Set.of(10L));
+        verifyNoInteractions(messagingTemplate);
+    }
+
     private static User user(Long id, String email) {
         User user = User.create(email, "hashed-password", email);
         ReflectionTestUtils.setField(user, "id", id);
