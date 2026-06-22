@@ -27,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -73,6 +74,9 @@ class WorkspaceServiceTest {
     @Mock
     private PresenceRegistry presenceRegistry;
 
+    @Mock
+    private WorkspaceLogoStorageService workspaceLogoStorageService;
+
     @InjectMocks
     private WorkspaceService workspaceService;
 
@@ -110,6 +114,61 @@ class WorkspaceServiceTest {
         assertThat(defaultChannel.getName()).isEqualTo(Channel.DEFAULT_GENERAL_NAME);
         assertThat(defaultChannel.getChannelType()).isEqualTo(Channel.TYPE_GENERAL);
         assertThat(defaultChannel.isDeletable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("워크스페이스 관리자는 로고 파일을 업로드하고 logoUrl을 갱신할 수 있다")
+    void updateWorkspaceLogo() {
+        Workspace workspace = workspace(10L);
+        User adminUser = user(100L, "admin@test.com");
+        WorkspaceMember adminMember = workspaceMember(1L, workspace, adminUser, "admin");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "logo.png",
+                "image/png",
+                new byte[]{1, 2, 3}
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(adminUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, adminUser)).thenReturn(Optional.of(adminMember));
+        when(workspaceLogoStorageService.storeWorkspaceLogo(10L, file))
+                .thenReturn("data:image/png;base64,AQID");
+        when(workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace)).thenReturn(3);
+
+        WorkspaceResponse response = workspaceService.updateWorkspaceLogo(10L, file, 100L);
+
+        assertThat(response.getLogoUrl()).isEqualTo("data:image/png;base64,AQID");
+        assertThat(workspace.getLogoUrl()).isEqualTo("data:image/png;base64,AQID");
+        assertThat(response.getMemberCount()).isEqualTo(3);
+        verify(workspaceLogoStorageService).storeWorkspaceLogo(10L, file);
+        verify(eventPublisher).publishEvent(any(WorkspaceMemberEvent.class));
+    }
+
+    @Test
+    @DisplayName("워크스페이스 로고 업로드는 owner/admin이 아니면 거부한다")
+    void updateWorkspaceLogoByViewer() {
+        Workspace workspace = workspace(10L);
+        User viewerUser = user(100L, "viewer@test.com");
+        WorkspaceMember viewerMember = workspaceMember(1L, workspace, viewerUser, "viewer");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "logo.png",
+                "image/png",
+                new byte[]{1, 2, 3}
+        );
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(viewerUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, viewerUser)).thenReturn(Optional.of(viewerMember));
+
+        assertThatThrownBy(() -> workspaceService.updateWorkspaceLogo(10L, file, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verifyNoInteractions(workspaceLogoStorageService);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

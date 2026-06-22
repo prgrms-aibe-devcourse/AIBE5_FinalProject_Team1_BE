@@ -6,7 +6,9 @@ import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -38,6 +40,17 @@ public class WorkspaceController {
             @PathVariable Long workspaceId,
             @RequestBody @Valid WorkspaceUpdateRequest request) {
         return ApiResponse.ok(workspaceService.updateWorkspace(workspaceId, request, SecurityUtils.getCurrentUserId()));
+    }
+
+    @PostMapping(value = "/{workspaceId}/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<WorkspaceResponse> updateWorkspaceLogo(
+            @PathVariable Long workspaceId,
+            @RequestPart("file") MultipartFile file) {
+        return ApiResponse.ok(workspaceService.updateWorkspaceLogo(
+                workspaceId,
+                file,
+                SecurityUtils.getCurrentUserId()
+        ));
     }
 
     @GetMapping("/{workspaceId}/members")

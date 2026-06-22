@@ -23,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -47,6 +48,7 @@ public class WorkspaceService {
     private final SimpMessagingTemplate messagingTemplate;
     private final ApplicationEventPublisher eventPublisher;
     private final PresenceRegistry presenceRegistry;
+    private final WorkspaceLogoStorageService workspaceLogoStorageService;
 
     private static final Set<String> ASSIGNABLE_ROLES = Set.of("admin", "editor", "viewer");
 
@@ -110,6 +112,20 @@ public class WorkspaceService {
         Workspace workspace = membership.getWorkspace();
         String trimmedName = req.getName() != null ? req.getName().trim() : null;
         workspace.update(trimmedName, req.getDescription(), req.getLogoUrl());
+        publishMemberEvent(workspaceId, "WORKSPACE_UPDATED");
+        int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
+        return WorkspaceResponse.fromDetail(workspace, membership, count);
+    }
+
+    public WorkspaceResponse updateWorkspaceLogo(Long workspaceId, MultipartFile file, Long currentUserId) {
+        WorkspaceMember membership = getMembership(workspaceId, currentUserId);
+        if (!List.of("owner", "admin").contains(membership.getAuthority())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        Workspace workspace = membership.getWorkspace();
+        String logoUrl = workspaceLogoStorageService.storeWorkspaceLogo(workspaceId, file);
+        workspace.update(null, null, logoUrl);
         publishMemberEvent(workspaceId, "WORKSPACE_UPDATED");
         int count = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace);
         return WorkspaceResponse.fromDetail(workspace, membership, count);
