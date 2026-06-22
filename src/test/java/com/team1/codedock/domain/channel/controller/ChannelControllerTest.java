@@ -3,6 +3,7 @@ package com.team1.codedock.domain.channel.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.dto.ChannelCreateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.dto.ChannelOrderUpdateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.service.ChannelCommandService;
 import com.team1.codedock.domain.channel.service.ChannelQueryService;
@@ -82,6 +83,7 @@ class ChannelControllerTest {
                 "general",
                 "general",
                 false,
+                0,
                 "General channel",
                 "hello",
                 LocalDateTime.of(2026, 6, 11, 10, 0),
@@ -124,6 +126,7 @@ class ChannelControllerTest {
                 "team-chat",
                 "custom",
                 true,
+                1,
                 "Team chat",
                 null,
                 null,
@@ -168,6 +171,7 @@ class ChannelControllerTest {
                 "renamed",
                 "custom",
                 true,
+                1,
                 "Updated",
                 null,
                 null,
@@ -186,6 +190,38 @@ class ChannelControllerTest {
                 .andExpect(jsonPath("$.data.name").value("renamed"));
 
         verify(channelCommandService).updateChannel(10L, 2L, USER_ID, request);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경 API는 인증 사용자 기준으로 순서를 저장한다")
+    void updateChannelOrder() throws Exception {
+        ChannelOrderUpdateRequest request = new ChannelOrderUpdateRequest(List.of(3L, 1L, 2L));
+        ChannelListResponse first = new ChannelListResponse(
+                3L,
+                10L,
+                null,
+                "docs",
+                "custom",
+                true,
+                0,
+                null,
+                null,
+                null,
+                0L,
+                0L
+        );
+        when(channelCommandService.updateChannelOrder(eq(10L), eq(USER_ID), eq(request))).thenReturn(List.of(first));
+
+        mockMvc.perform(patch("/api/workspaces/{workspaceId}/channels/order", 10L)
+                        .header("X-User-Id", "999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].id").value(3L))
+                .andExpect(jsonPath("$.data[0].displayOrder").value(0));
+
+        verify(channelCommandService).updateChannelOrder(10L, USER_ID, request);
     }
 
     @Test

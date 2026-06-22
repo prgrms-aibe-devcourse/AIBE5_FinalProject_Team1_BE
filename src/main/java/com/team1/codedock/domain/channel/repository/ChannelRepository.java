@@ -10,7 +10,10 @@ import java.util.Optional;
 
 public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
-    List<Channel> findAllByWorkspace_IdOrderByIdAsc(Long workspaceId);
+    List<Channel> findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(Long workspaceId);
+
+    @Query("SELECT COALESCE(MAX(c.displayOrder), -1) FROM Channel c WHERE c.workspace.id = :workspaceId")
+    int findMaxDisplayOrderByWorkspaceId(@Param("workspaceId") Long workspaceId);
 
     @Query("SELECT c.workspace.id FROM Channel c WHERE c.id = :channelId")
     Optional<Long> findWorkspaceIdById(@Param("channelId") Long channelId);

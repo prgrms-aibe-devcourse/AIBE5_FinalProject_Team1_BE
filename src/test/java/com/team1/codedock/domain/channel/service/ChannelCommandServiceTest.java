@@ -2,6 +2,7 @@ package com.team1.codedock.domain.channel.service;
 
 import com.team1.codedock.domain.channel.dto.ChannelCreateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.dto.ChannelOrderUpdateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
@@ -27,9 +28,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -173,6 +176,7 @@ class ChannelCommandServiceTest {
 
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
         when(channelRepository.countByWorkspaceIdAndNameIgnoreCase(10L, "team-chat")).thenReturn(0L);
+        when(channelRepository.findMaxDisplayOrderByWorkspaceId(10L)).thenReturn(4);
         when(channelRepository.save(any(Channel.class))).thenReturn(saved);
 
         ChannelListResponse response =
@@ -181,6 +185,10 @@ class ChannelCommandServiceTest {
         assertThat(response.id()).isEqualTo(2L);
         assertThat(response.name()).isEqualTo("team-chat");
         assertThat(response.channelType()).isEqualTo("custom");
+
+        ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
+        verify(channelRepository).save(channelCaptor.capture());
+        assertThat(channelCaptor.getValue().getDisplayOrder()).isEqualTo(5);
     }
 
     @Test
@@ -201,6 +209,104 @@ class ChannelCommandServiceTest {
 
         assertThat(response.id()).isEqualTo(2L);
         assertThat(response.name()).isEqualTo("team-chat");
+    }
+
+    @Test
+    @DisplayName("채널 순서를 요청 순서대로 변경한다")
+    void updateChannelOrder() {
+        Workspace workspace = workspace(10L);
+        Channel first = channel(1L, workspace, "general", false);
+        Channel second = channel(2L, workspace, "repository", false);
+        Channel third = channel(3L, workspace, "docs", true);
+
+        when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L))
+                .thenReturn(List.of(first, second, third));
+
+        List<ChannelListResponse> responses = channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(3L, 1L, 2L))
+        );
+
+        assertThat(first.getDisplayOrder()).isEqualTo(1);
+        assertThat(second.getDisplayOrder()).isEqualTo(2);
+        assertThat(third.getDisplayOrder()).isZero();
+        assertThat(responses).extracting(ChannelListResponse::id).containsExactly(3L, 1L, 2L);
+        assertThat(responses).extracting(ChannelListResponse::displayOrder).containsExactly(0, 1, 2);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 중복된 채널 id를 거부한다")
+    void updateChannelOrderWithDuplicateChannelId() {
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(1L, 1L, 2L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("중복된 채널");
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 전체 채널 목록이 아니면 거부한다")
+    void updateChannelOrderWithMissingWorkspaceChannel() {
+        Workspace workspace = workspace(10L);
+        Channel first = channel(1L, workspace, "general", false);
+        Channel second = channel(2L, workspace, "docs", true);
+
+        when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L))
+                .thenReturn(List.of(first, second));
+
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(2L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("모든 채널");
+
+        assertThat(first.getDisplayOrder()).isZero();
+        assertThat(second.getDisplayOrder()).isZero();
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 다른 워크스페이스 채널 id를 거부한다")
+    void updateChannelOrderWithForeignChannelId() {
+        Workspace workspace = workspace(10L);
+        Channel first = channel(1L, workspace, "general", false);
+        Channel second = channel(2L, workspace, "docs", true);
+
+        when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L))
+                .thenReturn(List.of(first, second));
+
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(1L, 99L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("다른 워크스페이스");
+    }
+
+    @Test
+    @DisplayName("채널 순서 변경은 권한 없는 사용자를 거부한다")
+    void updateChannelOrderByViewer() {
+        WorkspaceMember viewer = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(viewer));
+
+        assertThatThrownBy(() -> channelCommandService.updateChannelOrder(
+                10L,
+                100L,
+                new ChannelOrderUpdateRequest(List.of(1L, 2L))
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
     }
 
     @Test
@@ -392,7 +498,7 @@ class ChannelCommandServiceTest {
 
     private Workspace workspace(Long id) {
         Workspace workspace = mock(Workspace.class);
-        when(workspace.getId()).thenReturn(id);
+        lenient().when(workspace.getId()).thenReturn(id);
         return workspace;
     }
 

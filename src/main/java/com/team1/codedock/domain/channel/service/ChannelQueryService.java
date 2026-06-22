@@ -31,7 +31,7 @@ public class ChannelQueryService {
     public List<ChannelListResponse> getChannels(Long workspaceId, Long userId) {
         WorkspaceMember member = findActiveWorkspaceMember(workspaceId, userId);
 
-        List<Channel> channels = channelRepository.findAllByWorkspace_IdOrderByIdAsc(workspaceId);
+        List<Channel> channels = channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(workspaceId);
         if (channels.isEmpty()) {
             return List.of();
         }

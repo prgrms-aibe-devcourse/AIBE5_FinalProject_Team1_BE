@@ -2,6 +2,7 @@ package com.team1.codedock.domain.channel.service;
 
 import com.team1.codedock.domain.channel.dto.ChannelCreateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.dto.ChannelOrderUpdateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
@@ -22,6 +23,12 @@ import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,7 +57,7 @@ public class ChannelCommandService {
         String name = normalizeName(request.name());
         validateNewChannelName(workspaceId, name);
 
-        Channel channel = Channel.createCustom(workspace, name, request.description());
+        Channel channel = Channel.createCustom(workspace, name, request.description(), nextDisplayOrder(workspaceId));
         return ChannelListResponse.from(channelRepository.save(channel));
     }
 
@@ -79,6 +86,29 @@ public class ChannelCommandService {
         channelRepository.delete(channel);
     }
 
+    public List<ChannelListResponse> updateChannelOrder(
+            Long workspaceId,
+            Long userId,
+            ChannelOrderUpdateRequest request
+    ) {
+        validateChannelManager(workspaceId, userId);
+        List<Long> requestedChannelIds = validateRequestedOrder(request);
+        List<Channel> channels = channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(workspaceId);
+        validateOrderContainsAllWorkspaceChannels(channels, requestedChannelIds);
+
+        Map<Long, Channel> channelsById = channels.stream()
+                .collect(Collectors.toMap(Channel::getId, Function.identity()));
+
+        for (int displayOrder = 0; displayOrder < requestedChannelIds.size(); displayOrder++) {
+            channelsById.get(requestedChannelIds.get(displayOrder)).updateDisplayOrder(displayOrder);
+        }
+
+        return requestedChannelIds.stream()
+                .map(channelsById::get)
+                .map(ChannelListResponse::from)
+                .toList();
+    }
+
     private Workspace findWorkspace(Long workspaceId) {
         return workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
@@ -102,6 +132,10 @@ public class ChannelCommandService {
         return AUTHORITY_OWNER.equals(normalizedAuthority) || AUTHORITY_ADMIN.equals(normalizedAuthority);
     }
 
+    private int nextDisplayOrder(Long workspaceId) {
+        return channelRepository.findMaxDisplayOrderByWorkspaceId(workspaceId) + 1;
+    }
+
     private Channel findWorkspaceChannel(Long workspaceId, Long channelId) {
         Channel channel = channelRepository.findById(channelId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_NOT_FOUND));
@@ -113,6 +147,36 @@ public class ChannelCommandService {
 
     private String normalizeName(String name) {
         return name.trim();
+    }
+
+    private List<Long> validateRequestedOrder(ChannelOrderUpdateRequest request) {
+        if (request == null || request.channelIds() == null || request.channelIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "채널 순서 목록은 비어 있을 수 없습니다.");
+        }
+
+        if (request.channelIds().stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "채널 id는 양수여야 합니다.");
+        }
+
+        LinkedHashSet<Long> uniqueChannelIds = new LinkedHashSet<>(request.channelIds());
+        if (uniqueChannelIds.size() != request.channelIds().size()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "채널 순서 목록에 중복된 채널이 있습니다.");
+        }
+
+        return request.channelIds();
+    }
+
+    private void validateOrderContainsAllWorkspaceChannels(List<Channel> channels, List<Long> requestedChannelIds) {
+        if (channels.size() != requestedChannelIds.size()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "워크스페이스의 모든 채널을 순서 목록에 포함해야 합니다.");
+        }
+
+        var workspaceChannelIds = channels.stream()
+                .map(Channel::getId)
+                .collect(Collectors.toSet());
+        if (!workspaceChannelIds.containsAll(requestedChannelIds)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "다른 워크스페이스의 채널은 정렬할 수 없습니다.");
+        }
     }
 
     private void validateNewChannelName(Long workspaceId, String name) {
