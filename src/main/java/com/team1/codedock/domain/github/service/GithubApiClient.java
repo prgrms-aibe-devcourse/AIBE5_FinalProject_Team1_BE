@@ -37,8 +37,10 @@ public class GithubApiClient {
     }
 
     private static final List<String> ORM_FOLDERS = List.of(
-            "/models/", "/model/", "/db/", "/database/",
-            "/data/", "/entities/", "/entity/", "/schemas/"
+            "/models/", "models/", "/model/", "model/",
+            "/db/", "db/", "/database/", "database/",
+            "/data/", "data/", "/entities/", "entities/",
+            "/entity/", "entity/", "/schemas/", "schemas/"
     );
 
     private static final List<String> ORM_EXTENSIONS = List.of(
@@ -46,8 +48,9 @@ public class GithubApiClient {
     );
 
     private static final List<String> MIGRATION_FOLDERS = List.of(
-            "/migrations/", "/alembic/versions/", "/migrate/", "/db/migrate/",
-            "/flyway/", "/liquibase/"
+            "/migrations/", "migrations/", "/alembic/versions/", "alembic/versions/",
+            "/migrate/", "migrate/", "/db/migrate/", "db/migrate/",
+            "/flyway/", "flyway/", "/liquibase/", "liquibase/"
     );
 
     public List<String> fetchRepoSources(String owner, String repo, String branch, String token) {
