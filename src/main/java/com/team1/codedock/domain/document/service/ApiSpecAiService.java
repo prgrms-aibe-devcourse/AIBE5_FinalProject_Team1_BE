@@ -61,7 +61,7 @@ public class ApiSpecAiService {
                 .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
-        List<String> entitySources = githubApiClient.fetchEntitySources(
+        List<String> repoSources = githubApiClient.fetchRepoSources(
                 githubRepo.getOwner(),
                 githubRepo.getName(),
                 githubRepo.getDefaultBranch(),
@@ -70,7 +70,7 @@ public class ApiSpecAiService {
 
         String swaggerJson = fetchSwaggerJson(workspace.getSwaggerUrl());
         String compressedSwagger = compressSwaggerJson(swaggerJson);
-        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(compressedSwagger, entitySources);
+        GeminiClient.ApiSpecChecklistResult result = geminiClient.generateApiSpecChecklist(compressedSwagger, repoSources);
 
         if (result == null || result.checklist() == null || result.checklist().isEmpty()) {
             return List.of();
