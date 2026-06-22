@@ -7,6 +7,7 @@ import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.dto.ThreadReplyCreateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
 import com.team1.codedock.domain.chat.dto.ThreadReplyWebSocketCreateRequest;
+import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
@@ -317,6 +318,88 @@ class ChatWebSocketControllerTest {
         TypingEventRequest request = new TypingEventRequest(true);
 
         assertThatThrownBy(() -> chatWebSocketController.sendTypingEvent(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 TYPING 이벤트를 브로드캐스트한다")
+    void sendThreadTypingEvent() {
+        Long threadId = 1L;
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        TypingEventRequest request = new TypingEventRequest(true);
+        ThreadTypingEventResponse response = new ThreadTypingEventResponse(threadId, 10L, "tester", true);
+
+        when(chatMessageService.createThreadTypingEventResponse(threadId, userId, request)).thenReturn(response);
+
+        chatWebSocketController.sendThreadTypingEvent(threadId, principal, request);
+
+        verify(chatMessageService).createThreadTypingEventResponse(threadId, userId, request);
+        assertBroadcastEvent(
+                "/topic/threads/" + threadId + "/typing",
+                ChatEventType.TYPING,
+                response
+        );
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 서비스 실패 시 브로드캐스트하지 않는다")
+    void sendThreadTypingEventDoesNotBroadcastWhenServiceFails() {
+        Long threadId = 1L;
+        Long userId = 10L;
+        Principal principal = principal(userId);
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        when(chatMessageService.createThreadTypingEventResponse(threadId, userId, request))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "스레드 접근 권한이 없습니다."));
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(threadId, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(chatMessageService).createThreadTypingEventResponse(threadId, userId, request);
+        verifyNoInteractions(threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 Principal이 없으면 거부한다")
+    void sendThreadTypingEventWithoutPrincipal() {
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(1L, null, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 Authentication 타입이 아닌 Principal을 거부한다")
+    void sendThreadTypingEventWithNonAuthenticationPrincipal() {
+        Principal principal = () -> "tester";
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(1L, principal, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(chatMessageService, threadReplyService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("스레드 typing WebSocket send는 CustomUserDetails가 없는 인증 객체를 거부한다")
+    void sendThreadTypingEventWithInvalidAuthenticationPrincipal() {
+        Principal principal = new UsernamePasswordAuthenticationToken("tester", null);
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        assertThatThrownBy(() -> chatWebSocketController.sendThreadTypingEvent(1L, principal, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);

@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageResponse;
 import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
+import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
@@ -65,6 +66,15 @@ public class ChatMessageService {
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
         return TypingEventResponse.of(channelId, sender, request);
+    }
+
+    @Transactional(readOnly = true)
+    public ThreadTypingEventResponse createThreadTypingEventResponse(Long threadId, Long userId, TypingEventRequest request) {
+        Thread thread = threadRepository.findById(threadId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "스레드를 찾을 수 없습니다."));
+        WorkspaceMember sender = findActiveWorkspaceMember(thread.getChannel(), userId);
+
+        return ThreadTypingEventResponse.of(threadId, sender, request);
     }
 
     @Transactional

@@ -50,6 +50,7 @@ class ChannelQueryServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = Channel.createCustom(workspace, "team-chat", "Team chat");
         ReflectionTestUtils.setField(channel, "id", 1L);
+        ReflectionTestUtils.setField(channel, "displayOrder", 4);
         Thread latestMessage = Thread.createChannelMessage(channel, mock(WorkspaceMember.class), "latest");
         ReflectionTestUtils.setField(latestMessage, "id", 11L);
         ReflectionTestUtils.setField(latestMessage, "createdAt", LocalDateTime.of(2026, 6, 11, 10, 0));
@@ -59,7 +60,7 @@ class ChannelQueryServiceTest {
 
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
                 .thenReturn(Optional.of(member));
-        when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
+        when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L)).thenReturn(List.of(channel));
         when(threadRepository.countByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE))
                 .thenReturn(List.of(messageCount));
         when(threadRepository.countUnreadByChannelIdsAndThreadType(List.of(1L), Thread.TYPE_USER_MESSAGE, 200L))
@@ -72,6 +73,7 @@ class ChannelQueryServiceTest {
         assertThat(response).hasSize(1);
         assertThat(response.get(0).id()).isEqualTo(1L);
         assertThat(response.get(0).name()).isEqualTo("team-chat");
+        assertThat(response.get(0).displayOrder()).isEqualTo(4);
         assertThat(response.get(0).lastMessage()).isEqualTo("latest");
         assertThat(response.get(0).lastMessageAt()).isEqualTo(LocalDateTime.of(2026, 6, 11, 10, 0));
         assertThat(response.get(0).messageCount()).isEqualTo(3L);
@@ -88,7 +90,7 @@ class ChannelQueryServiceTest {
 
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
                 .thenReturn(Optional.of(member));
-        when(channelRepository.findAllByWorkspace_IdOrderByIdAsc(10L)).thenReturn(List.of(channel));
+        when(channelRepository.findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L)).thenReturn(List.of(channel));
         when(threadRepository.countByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE))
                 .thenReturn(List.of());
         when(threadRepository.countUnreadByChannelIdsAndThreadType(List.of(2L), Thread.TYPE_USER_MESSAGE, 200L))
@@ -113,7 +115,7 @@ class ChannelQueryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
-        verify(channelRepository, never()).findAllByWorkspace_IdOrderByIdAsc(10L);
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
     }
 
     @Test
@@ -127,7 +129,7 @@ class ChannelQueryServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
 
-        verify(channelRepository, never()).findAllByWorkspace_IdOrderByIdAsc(10L);
+        verify(channelRepository, never()).findAllByWorkspace_IdOrderByDisplayOrderAscIdAsc(10L);
     }
 
     private Workspace workspace(Long id) {

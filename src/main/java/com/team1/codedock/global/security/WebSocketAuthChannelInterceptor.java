@@ -59,6 +59,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Pattern.compile("^/topic/threads/(\\d+)/events$");
     private static final Pattern THREAD_LEGACY_EVENTS_DESTINATION =
             Pattern.compile("^/topic/threads/(\\d+)$");
+    private static final Pattern THREAD_TYPING_DESTINATION =
+            Pattern.compile("^/topic/threads/(\\d+)/typing$");
+    private static final Pattern THREAD_TYPING_SEND_DESTINATION =
+            Pattern.compile("^/app/threads/\\d+/typing$");
     private static final Pattern WORKSPACE_PRESENCE_DESTINATION =
             Pattern.compile("^/topic/workspaces/(\\d+)/presence$");
     private static final Pattern WORKSPACE_MEMBERS_DESTINATION =
@@ -202,7 +206,9 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     }
 
     private boolean isTypingSendDestination(String destination) {
-        return StringUtils.hasText(destination) && CHANNEL_TYPING_SEND_DESTINATION.matcher(destination).matches();
+        return StringUtils.hasText(destination)
+                && (CHANNEL_TYPING_SEND_DESTINATION.matcher(destination).matches()
+                || THREAD_TYPING_SEND_DESTINATION.matcher(destination).matches());
     }
 
     private void clearSessionState(StompHeaderAccessor accessor) {
@@ -346,6 +352,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         Matcher threadEventsMatcher = THREAD_EVENTS_DESTINATION.matcher(destination);
         if (threadEventsMatcher.matches()) {
             return threadRepository.findWorkspaceIdById(parseId(threadEventsMatcher.group(1)));
+        }
+
+        Matcher threadTypingMatcher = THREAD_TYPING_DESTINATION.matcher(destination);
+        if (threadTypingMatcher.matches()) {
+            return threadRepository.findWorkspaceIdById(parseId(threadTypingMatcher.group(1)));
         }
 
         Matcher workspaceMembersMatcher = WORKSPACE_MEMBERS_DESTINATION.matcher(destination);

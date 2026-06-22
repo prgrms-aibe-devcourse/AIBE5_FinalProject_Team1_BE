@@ -2,6 +2,7 @@ package com.team1.codedock.domain.channel.controller;
 
 import com.team1.codedock.domain.channel.dto.ChannelCreateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
+import com.team1.codedock.domain.channel.dto.ChannelOrderUpdateRequest;
 import com.team1.codedock.domain.channel.dto.ChannelUpdateRequest;
 import com.team1.codedock.domain.channel.service.ChannelCommandService;
 import com.team1.codedock.domain.channel.service.ChannelQueryService;
@@ -47,6 +48,18 @@ public class ChannelController {
             @Valid @RequestBody ChannelCreateRequest request
     ) {
         return ApiResponse.ok(channelCommandService.createChannel(workspaceId, SecurityUtils.getCurrentUserId(), request));
+    }
+
+    @PatchMapping("/order")
+    public ApiResponse<List<ChannelListResponse>> updateChannelOrder(
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody ChannelOrderUpdateRequest request
+    ) {
+        return ApiResponse.ok(channelCommandService.updateChannelOrder(
+                workspaceId,
+                SecurityUtils.getCurrentUserId(),
+                request
+        ));
     }
 
     @PatchMapping("/{channelId}")

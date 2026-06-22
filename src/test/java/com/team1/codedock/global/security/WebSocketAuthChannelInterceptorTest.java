@@ -421,6 +421,20 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("스레드 typing SEND도 일반 메시지 rate limit에서 제외한다")
+    void threadTypingSendMessageIsExcludedFromGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> typingMessage = sendMessage("/app/threads/20/typing", authentication, "session-1");
+        Message<?> normalMessage = sendMessage("/app/threads/20/replies", authentication, "session-1");
+
+        for (int i = 0; i < 50; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+    }
+
+    @Test
     @DisplayName("typing SEND도 인증 Principal이 없으면 거부한다")
     void typingSendWithoutPrincipalIsRejected() {
         Message<?> message = sendMessage("/app/channels/10/typing", null, "session-1");
@@ -463,6 +477,24 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("일반 SEND 예산이 소진되어도 스레드 typing SEND는 drop하지 않는다")
+    void threadTypingSendPassesEvenWhenGeneralRateLimitIsExhausted() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> normalMessage = sendMessage("/app/threads/20/replies", authentication, "session-1");
+        Message<?> typingMessage = sendMessage("/app/threads/20/typing", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(normalMessage, messageChannel)).isSameAs(normalMessage);
+        }
+
+        assertThat(interceptor.preSend(normalMessage, messageChannel)).isNull();
+
+        for (int i = 0; i < 10; i++) {
+            assertThat(interceptor.preSend(typingMessage, messageChannel)).isSameAs(typingMessage);
+        }
+    }
+
+    @Test
     @DisplayName("세션 id가 없는 typing SEND도 사용자 fallback rate limit 예산을 소모하지 않는다")
     void typingSendWithoutSessionDoesNotConsumeUserFallbackRateLimit() {
         Authentication authentication = authentication(1L);
@@ -494,6 +526,32 @@ class WebSocketAuthChannelInterceptorTest {
     void typingSendDestinationWithTrailingSlashUsesGeneralRateLimit() {
         Authentication authentication = authenticatedPrincipal(1L);
         Message<?> message = sendMessage("/app/channels/10/typing/", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("숫자가 아닌 threadId의 스레드 typing SEND 경로는 일반 rate limit을 적용한다")
+    void threadTypingSendDestinationWithNonNumericThreadIdUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/threads/not-number/typing", authentication, "session-1");
+
+        for (int i = 0; i < 20; i++) {
+            assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+        }
+
+        assertThat(interceptor.preSend(message, messageChannel)).isNull();
+    }
+
+    @Test
+    @DisplayName("스레드 typing SEND 경로에 trailing slash가 붙으면 일반 rate limit을 적용한다")
+    void threadTypingSendDestinationWithTrailingSlashUsesGeneralRateLimit() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = sendMessage("/app/threads/20/typing/", authentication, "session-1");
 
         for (int i = 0; i < 20; i++) {
             assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
@@ -754,6 +812,20 @@ class WebSocketAuthChannelInterceptorTest {
     @DisplayName("스레드 이벤트 구독은 스레드가 속한 워크스페이스 활성 멤버만 허용한다")
     void subscribeThreadEventsWithWorkspaceMember() {
         Message<?> message = subscribeMessage("/topic/threads/20/events", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        Message<?> result = interceptor.preSend(message, messageChannel);
+
+        assertThat(result).isSameAs(message);
+    }
+
+    @Test
+    @DisplayName("스레드 typing 구독은 스레드가 속한 워크스페이스 활성 멤버만 허용한다")
+    void subscribeThreadTypingWithWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/threads/20/typing", authenticatedPrincipal(1L));
 
         when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
         when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
@@ -1264,6 +1336,39 @@ class WebSocketAuthChannelInterceptorTest {
         verify(channelRepository).findWorkspaceIdById(10L);
         verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
         verifyNoInteractions(threadRepository);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 스레드 typing 구독은 거부한다")
+    void subscribeMissingThreadTyping() {
+        Message<?> message = subscribeMessage("/topic/threads/20/typing", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("WebSocket");
+
+        verify(threadRepository).findWorkspaceIdById(20L);
+        verifyNoInteractions(channelRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("비소속 워크스페이스 스레드 typing 구독은 거부한다")
+    void subscribeThreadTypingWithoutWorkspaceMember() {
+        Message<?> message = subscribeMessage("/topic/threads/20/typing", authenticatedPrincipal(1L));
+
+        when(threadRepository.findWorkspaceIdById(20L)).thenReturn(Optional.of(100L));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("WebSocket");
+
+        verify(threadRepository).findWorkspaceIdById(20L);
+        verify(workspaceMemberRepository).countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository);
     }
 
     @Test

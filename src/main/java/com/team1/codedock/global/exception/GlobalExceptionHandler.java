@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -31,6 +32,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .badRequest()
                 .body(ApiResponse.fail(ErrorCode.INVALID_INPUT.getCode(), message));
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingRequestPart(MissingServletRequestPartException e) {
+        return ResponseEntity
+                .badRequest()
+                .body(ApiResponse.fail(ErrorCode.INVALID_INPUT.getCode(), "필수 파일 또는 요청 파트가 누락되었습니다."));
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)

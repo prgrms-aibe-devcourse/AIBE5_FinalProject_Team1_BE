@@ -168,9 +168,18 @@ public class GithubRepositoryService {
                 .orElseGet(() -> {
                     String channelName = resolveRepositoryChannelName(githubRepository);
                     // 레포지토리 채널이 없을 때만 생성해서 중복 채널을 방지함.
-                    Channel channel = Channel.createRepository(githubRepository.getWorkspace(), githubRepository, channelName);
+                    Channel channel = Channel.createRepository(
+                            githubRepository.getWorkspace(),
+                            githubRepository,
+                            channelName,
+                            nextDisplayOrder(workspaceId)
+                    );
                     return channelRepository.save(channel);
                 });
+    }
+
+    private int nextDisplayOrder(Long workspaceId) {
+        return channelRepository.findMaxDisplayOrderByWorkspaceId(workspaceId) + 1;
     }
 
     private Workspace findWorkspace(Long workspaceId) {
