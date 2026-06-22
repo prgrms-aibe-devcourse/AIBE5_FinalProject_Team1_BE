@@ -110,7 +110,7 @@ class ErdServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
         when(geminiClient.generateErd(any())).thenReturn(result);
         when(erdDocumentRepository.findByWorkspace_IdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(erdDocumentRepository.save(any(ErdDocument.class))).thenReturn(savedDoc);
@@ -135,7 +135,7 @@ class ErdServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
         when(geminiClient.generateErd(any())).thenReturn(result);
         when(erdDocumentRepository.findByWorkspace_IdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(existingDoc));
 
@@ -159,7 +159,7 @@ class ErdServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class User {}"));
         when(geminiClient.generateErd(any())).thenReturn(result);
         when(erdDocumentRepository.findByWorkspace_IdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(erdDocumentRepository.save(any(ErdDocument.class))).thenReturn(savedDoc);
@@ -168,6 +168,24 @@ class ErdServiceTest {
 
         verify(erdTableRepository).deleteAllByWorkspace_Id(1L);
         verify(erdTableRepository, never()).save(any(ErdTable.class));
+    }
+
+    @Test
+    @DisplayName("레포에서 소스를 찾을 수 없으면 ERD_SOURCE_NOT_FOUND 예외가 발생한다")
+    void generateErd_소스_없으면_예외() {
+        User user = mockUser();
+        GithubRepository githubRepo = mockGithubRepo();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(mock(WorkspaceMember.class)));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> erdService.generateErd(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.ERD_SOURCE_NOT_FOUND.getMessage());
+
+        verify(geminiClient, never()).generateErd(any());
     }
 
     @Test
