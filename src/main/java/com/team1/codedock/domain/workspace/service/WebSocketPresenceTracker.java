@@ -87,6 +87,7 @@ public class WebSocketPresenceTracker {
             return;
         }
         if (presenceRegistry.decrement(userId)) {
+            presenceRegistry.markOffline(userId);
             final Long uid = userId;
             safelyRun(() -> workspaceService.broadcastUserPresenceToAllWorkspaces(uid, false));
         }

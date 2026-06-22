@@ -153,6 +153,11 @@ public class WorkspaceService {
         // (한 워크스페이스에서 offline으로 바꾸면 다른 워크스페이스에서도 즉시 offline로 반영됨)
         WorkspaceMember requesting = getMembership(workspaceId, currentUserId);
         User user = requesting.getUser();
+        if ("offline".equals(presence)) {
+            presenceRegistry.markOffline(currentUserId);
+        } else if (!presenceRegistry.hasConnectedSession(currentUserId)) {
+            presenceRegistry.markOnline(currentUserId);
+        }
         for (WorkspaceMember member : workspaceMemberRepository.findAllByUser(user)) {
             if (!member.isActive()) {
                 continue;

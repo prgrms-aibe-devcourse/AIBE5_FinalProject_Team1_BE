@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentMap;
 public class PresenceRegistry {
 
     private final ConcurrentMap<Long, Integer> userSessionCounts = new ConcurrentHashMap<>();
+    private final Set<Long> manuallyOnlineUserIds = ConcurrentHashMap.newKeySet();
 
     /** 세션 +1. 이 호출로 offline→online이 되면 true. */
     public boolean increment(Long userId) {
@@ -48,10 +49,42 @@ public class PresenceRegistry {
             return false;
         }
         Integer count = userSessionCounts.get(userId);
-        return count != null && count > 0;
+        return (count != null && count > 0) || manuallyOnlineUserIds.contains(userId);
     }
 
     public Set<Long> onlineUserIds() {
-        return new HashSet<>(userSessionCounts.keySet());
+        Set<Long> onlineUserIds = new HashSet<>(manuallyOnlineUserIds);
+        userSessionCounts.forEach((userId, count) -> {
+            if (count != null && count > 0) {
+                onlineUserIds.add(userId);
+            }
+        });
+        return onlineUserIds;
+    }
+
+    public boolean hasConnectedSession(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        Integer count = userSessionCounts.get(userId);
+        return count != null && count > 0;
+    }
+
+    public boolean markOnline(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        boolean wasOnline = isOnline(userId);
+        manuallyOnlineUserIds.add(userId);
+        return !wasOnline;
+    }
+
+    public boolean markOffline(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        boolean wasOnline = isOnline(userId);
+        manuallyOnlineUserIds.remove(userId);
+        return wasOnline && !isOnline(userId);
     }
 }
