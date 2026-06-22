@@ -16,8 +16,12 @@ import com.team1.codedock.domain.issue.entity.GithubIssue;
 import com.team1.codedock.domain.issue.entity.IssueLabel;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.issue.repository.IssueLabelRepository;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,11 +55,21 @@ class GithubWebhookServiceTest {
     @Mock
     private IssueLabelRepository issueLabelRepository;
     @Mock
+    private GithubPullRequestRepository githubPullRequestRepository;
+    @Mock
     private ThreadRepository threadRepository;
     @Mock
     private ThreadAttachmentRepository threadAttachmentRepository;
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private GithubApiClient githubApiClient;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private WorkspaceMemberRepository workspaceMemberRepository;
+    @Mock
+    private PullRequestReviewRepository pullRequestReviewRepository;
 
     private GithubWebhookService githubWebhookService;
 
@@ -65,10 +79,15 @@ class GithubWebhookServiceTest {
                 githubRepositoryRepository,
                 githubIssueRepository,
                 issueLabelRepository,
+                githubPullRequestRepository,
                 threadRepository,
                 threadAttachmentRepository,
                 messagingTemplate,
-                new ObjectMapper()
+                new ObjectMapper(),
+                githubApiClient,
+                userRepository,
+                workspaceMemberRepository,
+                pullRequestReviewRepository
         );
     }
 

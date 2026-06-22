@@ -336,7 +336,7 @@ class GithubApiClientTest {
     @SuppressWarnings("unchecked")
     void fetchCommits_커밋_목록_반환() {
         var commit = new GithubApiClient.GithubCommit(
-                new GithubApiClient.GithubCommitDetail("feat: 로그인 기능 추가"));
+                new GithubApiClient.GithubCommitDetailSimple("feat: 로그인 기능 추가"));
         when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(List.of(commit));
 
         List<String> result = githubApiClient.fetchCommits(
