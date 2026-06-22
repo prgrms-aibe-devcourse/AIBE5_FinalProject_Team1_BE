@@ -7,6 +7,7 @@ import com.team1.codedock.domain.chat.dto.ChannelMessageRestCreateRequest;
 import com.team1.codedock.domain.chat.dto.ChannelMessageUpdateRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentRequest;
 import com.team1.codedock.domain.chat.dto.ThreadAttachmentResponse;
+import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
@@ -267,6 +268,75 @@ class ChatMessageServiceTest {
         assertThat(response.workspaceMemberId()).isEqualTo(workspaceMemberId);
         assertThat(response.senderName()).isEqualTo("tester");
         assertThat(response.typing()).isTrue();
+    }
+
+    @Test
+    @DisplayName("스레드 typing 이벤트는 인증 사용자 기준으로 스레드 멤버 정보를 채운다")
+    void createThreadTypingEventResponse() {
+        Long threadId = 100L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember member = workspaceMember(10L, workspace, true, user("tester", "테스터"));
+        Thread thread = thread(threadId, channel, member, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+        TypingEventRequest request = new TypingEventRequest(true);
+
+        when(threadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+
+        ThreadTypingEventResponse response = chatMessageService.createThreadTypingEventResponse(threadId, userId, request);
+
+        assertThat(response.threadId()).isEqualTo(threadId);
+        assertThat(response.workspaceMemberId()).isEqualTo(10L);
+        assertThat(response.senderName()).isEqualTo("테스터");
+        assertThat(response.typing()).isTrue();
+    }
+
+    @Test
+    @DisplayName("스레드 typing 이벤트는 존재하지 않는 스레드를 거부한다")
+    void createThreadTypingEventResponseWithMissingThread() {
+        when(threadRepository.findById(100L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatMessageService.createThreadTypingEventResponse(
+                100L,
+                3L,
+                new TypingEventRequest(true)
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.NOT_FOUND);
+
+        verify(workspaceMemberRepository, never()).findByWorkspace_IdAndUser_IdAndIsActiveTrue(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+    }
+
+    @Test
+    @DisplayName("스레드 typing 이벤트는 비소속 사용자를 거부한다")
+    void createThreadTypingEventResponseWithForbiddenUser() {
+        Long threadId = 100L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(10L, workspace, true, user("tester", "테스터"));
+        Thread thread = thread(threadId, channel, sender, "hello", LocalDateTime.of(2026, 6, 9, 10, 0));
+
+        when(threadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatMessageService.createThreadTypingEventResponse(
+                threadId,
+                userId,
+                new TypingEventRequest(true)
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
     }
 
     @Test

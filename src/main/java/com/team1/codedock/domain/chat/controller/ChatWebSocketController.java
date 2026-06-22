@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.dto.ThreadReplyResponse;
 import com.team1.codedock.domain.chat.dto.ThreadReplyWebSocketCreateRequest;
+import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.service.ChatMessageService;
@@ -76,6 +77,21 @@ public class ChatWebSocketController {
 
         messagingTemplate.convertAndSend(
                 "/topic/channels/" + channelId + "/typing",
+                ChatEventResponse.of(ChatEventType.TYPING, response)
+        );
+    }
+
+    @MessageMapping("/threads/{threadId}/typing")
+    public void sendThreadTypingEvent(
+            @DestinationVariable Long threadId,
+            Principal principal,
+            @Valid TypingEventRequest request
+    ) {
+        Long userId = getCurrentUserId(principal);
+        ThreadTypingEventResponse response = chatMessageService.createThreadTypingEventResponse(threadId, userId, request);
+
+        messagingTemplate.convertAndSend(
+                "/topic/threads/" + threadId + "/typing",
                 ChatEventResponse.of(ChatEventType.TYPING, response)
         );
     }
