@@ -71,6 +71,7 @@ class ChatWebSocketControllerTest {
                 "hello",
                 LocalDateTime.of(2026, 6, 8, 10, 0),
                 java.util.List.of(),
+                null,
                 null
         );
 
