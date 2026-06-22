@@ -103,6 +103,7 @@ class ChatMessageControllerTest {
                 "hello",
                 LocalDateTime.of(2026, 6, 9, 10, 0),
                 List.of(),
+                null,
                 null
         );
 
@@ -135,6 +136,7 @@ class ChatMessageControllerTest {
                 "hello",
                 LocalDateTime.of(2026, 6, 9, 10, 0),
                 List.of(),
+                null,
                 null
         );
 

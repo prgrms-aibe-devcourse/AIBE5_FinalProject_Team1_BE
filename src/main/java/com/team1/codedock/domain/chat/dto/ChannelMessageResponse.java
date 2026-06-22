@@ -17,7 +17,8 @@ public record ChannelMessageResponse(
         String content,
         LocalDateTime createdAt,
         List<ThreadAttachmentResponse> attachments,
-        ReplyToSummary replyTo
+        ReplyToSummary replyTo,
+        String clientMessageId
 ) {
 
     private static final int REPLY_PREVIEW_MAX_LENGTH = 100;
@@ -38,7 +39,7 @@ public record ChannelMessageResponse(
             String content,
             LocalDateTime createdAt
     ) {
-        this(id, channelId, senderMemberId, senderName, null, content, createdAt, List.of(), null);
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, List.of(), null, null);
     }
 
     public ChannelMessageResponse(
@@ -51,7 +52,7 @@ public record ChannelMessageResponse(
             List<ThreadAttachmentResponse> attachments,
             ReplyToSummary replyTo
     ) {
-        this(id, channelId, senderMemberId, senderName, null, content, createdAt, attachments, replyTo);
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, attachments, replyTo, null);
     }
 
     public static ChannelMessageResponse from(Thread thread) {
@@ -73,7 +74,8 @@ public record ChannelMessageResponse(
                 ChatContentEmojiCodec.decode(thread.getContent()),
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
-                toReplyToSummary(thread.getReplyTo())
+                toReplyToSummary(thread.getReplyTo()),
+                thread.getClientMessageId()
         );
     }
 
@@ -87,6 +89,7 @@ public record ChannelMessageResponse(
                 thread.getContent(),
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
+                null,
                 null
         );
     }

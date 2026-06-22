@@ -22,6 +22,13 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
     // 채널 읽음 처리 기준으로 읽을 최신 사용자 메시지 조회함
     Optional<Thread> findFirstByChannel_IdAndThreadTypeOrderByIdDesc(Long channelId, String threadType);
 
+    // 낙관적 전송 멱등 처리용: 같은 (channel, 작성자, clientMessageId) 메시지가 이미 있으면 재사용함
+    Optional<Thread> findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+            Long channelId,
+            Long createdById,
+            String clientMessageId
+    );
+
     List<Thread> findAllByChannel_IdAndThreadTypeOrderByIdDesc(
             Long channelId,
             String threadType,

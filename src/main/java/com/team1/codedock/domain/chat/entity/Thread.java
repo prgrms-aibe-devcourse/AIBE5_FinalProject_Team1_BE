@@ -54,6 +54,11 @@ public class Thread extends BaseEntity {
     @Column
     private String content;
 
+    // 클라이언트가 생성한 멱등 키. 같은 (channel, createdBy, clientMessageId)면 동일 메시지로 간주함.
+    // 봇/레거시 메시지는 null. (channel_id, created_by_id, client_message_id) 유니크 인덱스로 중복 방지.
+    @Column(name = "client_message_id", length = 64)
+    private String clientMessageId;
+
     public void updateContent(String content) {
         this.content = content;
     }
@@ -76,7 +81,7 @@ public class Thread extends BaseEntity {
     }
 
     public static Thread createChannelMessage(Channel channel, WorkspaceMember createdBy, String content) {
-        return createChannelMessage(channel, createdBy, content, null);
+        return createChannelMessage(channel, createdBy, content, null, null);
     }
 
     public static Thread createChannelMessage(
@@ -84,6 +89,16 @@ public class Thread extends BaseEntity {
             WorkspaceMember createdBy,
             String content,
             Thread replyTo
+    ) {
+        return createChannelMessage(channel, createdBy, content, replyTo, null);
+    }
+
+    public static Thread createChannelMessage(
+            Channel channel,
+            WorkspaceMember createdBy,
+            String content,
+            Thread replyTo,
+            String clientMessageId
     ) {
         Thread thread = new Thread();
         thread.channel = channel;
@@ -94,6 +109,7 @@ public class Thread extends BaseEntity {
         thread.threadableId = null;
         thread.title = null;
         thread.content = content;
+        thread.clientMessageId = clientMessageId;
         return thread;
     }
 }

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -45,9 +46,16 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         // 클라이언트 senderMemberId를 믿지 않고 인증 userId로 채널 멤버 조회함
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
-        Thread replyTo = resolveReplyTo(channel, request.replyToMessageId());
 
-        return saveChannelMessage(channel, sender, request.content(), replyTo);
+        // 멱등 처리: 같은 clientMessageId로 이미 저장된 메시지가 있으면 새로 만들지 않고 그대로 반환함
+        Optional<Thread> existing = findExistingByClientMessageId(channel, sender, request.clientMessageId());
+        if (existing.isPresent()) {
+            return responseWithAttachments(existing.get());
+        }
+
+        Thread replyTo = resolveReplyTo(channel, request.replyToMessageId());
+        Thread saved = saveChannelMessageEntity(channel, sender, request.content(), replyTo, request.clientMessageId());
+        return ChannelMessageResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -65,8 +73,14 @@ public class ChatMessageService {
         Channel channel = findChannel(channelId);
         WorkspaceMember sender = findActiveWorkspaceMember(channel, userId);
 
+        // 멱등 처리: STOMP→REST 폴백 등으로 같은 clientMessageId가 다시 들어오면 기존 메시지를 반환함
+        Optional<Thread> existing = findExistingByClientMessageId(channel, sender, request.clientMessageId());
+        if (existing.isPresent()) {
+            return responseWithAttachments(existing.get());
+        }
+
         Thread replyTo = resolveReplyTo(channel, request.replyToMessageId());
-        Thread savedThread = saveChannelMessageEntity(channel, sender, request.content(), replyTo);
+        Thread savedThread = saveChannelMessageEntity(channel, sender, request.content(), replyTo, request.clientMessageId());
         List<ThreadAttachmentResponse> attachments =
                 threadAttachmentService.saveAttachments(savedThread, request.attachments());
         return ChannelMessageResponse.from(savedThread, attachments);
@@ -98,13 +112,20 @@ public class ChatMessageService {
         return responseWithAttachments(message);
     }
 
-    private ChannelMessageResponse saveChannelMessage(
+    // clientMessageId가 있을 때만 멱등 조회. 동시 중복 전송은 threads의 유니크 인덱스가 최종 방어선.
+    private Optional<Thread> findExistingByClientMessageId(
             Channel channel,
             WorkspaceMember sender,
-            String content,
-            Thread replyTo
+            String clientMessageId
     ) {
-        return ChannelMessageResponse.from(saveChannelMessageEntity(channel, sender, content, replyTo));
+        if (clientMessageId == null || clientMessageId.isBlank()) {
+            return Optional.empty();
+        }
+        return threadRepository.findFirstByChannel_IdAndCreatedBy_IdAndClientMessageId(
+                channel.getId(),
+                sender.getId(),
+                clientMessageId
+        );
     }
 
     private Thread resolveReplyTo(Channel channel, Long replyToMessageId) {
@@ -132,7 +153,8 @@ public class ChatMessageService {
             Channel channel,
             WorkspaceMember sender,
             String content,
-            Thread replyTo
+            Thread replyTo,
+            String clientMessageId
     ) {
         String encodedContent = ChatContentEmojiCodec.encode(content);
         Thread thread =
@@ -140,7 +162,8 @@ public class ChatMessageService {
                         channel,
                         sender,
                         encodedContent,
-                        replyTo
+                        replyTo,
+                        clientMessageId
                 );
 
         Thread savedThread = threadRepository.save(thread);
