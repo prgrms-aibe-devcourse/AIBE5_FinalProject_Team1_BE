@@ -5,9 +5,14 @@ import jakarta.validation.constraints.Size;
 
 public record ChannelMessageCreateRequest(
         @NotBlank @Size(max = 4000) String content,
-        Long replyToMessageId
+        Long replyToMessageId,
+        @Size(max = 64) String clientMessageId
 ) {
     public ChannelMessageCreateRequest(String content) {
-        this(content, null);
+        this(content, null, null);
+    }
+
+    public ChannelMessageCreateRequest(String content, Long replyToMessageId) {
+        this(content, replyToMessageId, null);
     }
 }
