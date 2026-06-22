@@ -118,7 +118,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(result);
         when(apiSpecRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -129,6 +129,32 @@ class ApiSpecAiServiceTest {
         assertThat(responses.get(0).method()).isEqualTo("GET");
         assertThat(responses.get(0).sourceType()).isEqualTo("AI");
         verify(apiSpecRepository).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("repoSources가 비어 있어도 예외 없이 Swagger만으로 체크리스트를 생성한다")
+    void generateChecklist_repoSources_비어있어도_정상_동작() {
+        Workspace workspace = mockWorkspace();
+        User user = mockUser();
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        GithubRepository githubRepo = mockGithubRepo();
+        GeminiClient.ApiSpecChecklistItem item = new GeminiClient.ApiSpecChecklistItem(
+                "누락 API", "POST", "/api/items", "Item", "아이템 생성", null);
+        GeminiClient.ApiSpecChecklistResult result = new GeminiClient.ApiSpecChecklistResult(List.of(item));
+
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of());
+        when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
+        when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(result);
+        when(apiSpecRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<ApiSpecResponse> responses = apiSpecAiService.generateChecklist(1L);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).method()).isEqualTo("POST");
     }
 
     @Test
@@ -214,7 +240,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(null);
 
@@ -237,7 +263,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(nullChecklistResult);
 
@@ -260,7 +286,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(emptyResult);
 
@@ -282,7 +308,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenThrow(new RuntimeException("Connection refused"));
 
         assertThatThrownBy(() -> apiSpecAiService.generateChecklist(1L))
@@ -312,7 +338,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(result);
         when(apiSpecRepository.saveAll(any())).thenReturn(List.of());
@@ -337,7 +363,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(result);
         when(apiSpecRepository.saveAll(any())).thenReturn(List.of());
@@ -362,7 +388,7 @@ class ApiSpecAiServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(githubRepo));
-        when(githubApiClient.fetchEntitySources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
+        when(githubApiClient.fetchRepoSources(any(), any(), any(), any())).thenReturn(List.of("@Entity public class Item {}"));
         when(responseSpec.body(String.class)).thenReturn("{\"paths\":{}}");
         when(geminiClient.generateApiSpecChecklist(any(), any())).thenReturn(result);
         when(apiSpecRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
