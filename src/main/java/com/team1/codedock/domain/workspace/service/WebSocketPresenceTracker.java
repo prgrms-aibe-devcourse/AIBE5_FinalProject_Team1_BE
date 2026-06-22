@@ -19,15 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * STOMP 세션 생명주기를 추적해 "사이트 접속 여부" 기준으로 워크스페이스 presence를 관리한다.
- *
- * 모델: 사용자가 사이트에 WS로 접속해 있으면(세션 ≥ 1) 그 사용자가 속한 모든 워크스페이스에서 online으로 본다.
- * - 첫 세션(0→1): 그 사용자가 속한 모든 워크스페이스 presence 토픽으로 고른 상태를 브로드캐스트.
- * - 마지막 세션(1→0, 정상/비정상 종료 모두): 모든 워크스페이스로 offline 브로드캐스트.
- * - presence 토픽 구독 시: 그 워크스페이스의 현재 presence 스냅샷을 구독자에게만 전송(접속 세션 보유 여부 기준).
- *
- * preferences(WorkspaceMemberPreferences)는 "고른 상태"(active/away/busy/offline)를 저장하고,
- * 본 트래커는 "실제 접속 세션 유무"를 관리한다.
+ * Tracks STOMP sessions and manages workspace presence based on active site connections.
  */
 @Slf4j
 @Component
@@ -56,6 +48,16 @@ public class WebSocketPresenceTracker {
         if (destination == null || sessionId == null) {
             return;
         }
+        Long userId = sessionUserIds.get(sessionId);
+        if (userId == null) {
+            userId = resolveUserId(event.getUser());
+        }
+        if (userId == null) {
+            return;
+        }
+        // A global workspace subscription is enough to consider the user connected.
+        registerSession(sessionId, userId);
+
         Matcher matcher = PRESENCE_DESTINATION.matcher(destination);
         if (!matcher.matches()) {
             return;
@@ -64,19 +66,10 @@ public class WebSocketPresenceTracker {
         if (workspaceId == null) {
             return;
         }
-        Long userId = sessionUserIds.get(sessionId);
-        if (userId == null) {
-            userId = resolveUserId(event.getUser());
-        }
-        if (userId == null) {
-            return;
-        }
-        // onConnected가 유실/경합돼도 여기서 세션을 등록(카운트 1회 보장)
-        registerSession(sessionId, userId);
 
         final Long ws = workspaceId;
         final String recipient = principalName(event.getUser());
-        // 새 구독자에게 현재 워크스페이스 presence 스냅샷 전송(접속 세션 보유 멤버만 online)
+        // Presence subscribers additionally receive the current workspace snapshot.
         safelyRun(() -> workspaceService.sendPresenceSnapshot(ws, recipient, onlineUserIds()));
     }
 
@@ -93,14 +86,13 @@ public class WebSocketPresenceTracker {
         }
     }
 
-    // 세션을 1회만 등록하고, 그 사용자의 첫 세션이면(0→1) 모든 워크스페이스에 online 브로드캐스트.
     private void registerSession(String sessionId, Long userId) {
         if (sessionId == null || userId == null) {
             return;
         }
         Long previous = sessionUserIds.putIfAbsent(sessionId, userId);
         if (previous != null) {
-            return; // 이미 등록된 세션
+            return;
         }
         if (presenceRegistry.increment(userId)) {
             final Long uid = userId;
@@ -116,7 +108,7 @@ public class WebSocketPresenceTracker {
         try {
             action.run();
         } catch (RuntimeException e) {
-            log.warn("WebSocket presence 처리 중 오류", e);
+            log.warn("WebSocket presence handling failed", e);
         }
     }
 
