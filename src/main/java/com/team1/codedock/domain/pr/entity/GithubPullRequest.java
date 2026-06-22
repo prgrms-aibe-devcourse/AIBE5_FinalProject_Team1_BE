@@ -81,4 +81,56 @@ public class GithubPullRequest extends BaseEntity {
 
     @Column(name = "github_updated_at")
     private LocalDateTime githubUpdatedAt;
+
+    @Lob
+    @Column(name = "commits_json")
+    private String commitsJson;
+
+    public static GithubPullRequest create(
+            GithubRepository repository,
+            Channel channel,
+            String githubPrId,
+            Integer prNumber,
+            String title,
+            String description,
+            String state,
+            String url,
+            String author,
+            String headBranch,
+            String baseBranch,
+            String labels,
+            Integer additions,
+            Integer deletions,
+            Integer changedFilesCount,
+            LocalDateTime mergedAt,
+            LocalDateTime githubCreatedAt,
+            LocalDateTime githubUpdatedAt,
+            String commitsJson
+    ) {
+        GithubPullRequest pr = new GithubPullRequest();
+        pr.repository = repository;
+        pr.channel = channel;
+        pr.githubPrId = githubPrId;
+        pr.prNumber = prNumber;
+        pr.title = title;
+        pr.description = description;
+        pr.state = state;
+        pr.url = url;
+        pr.author = author;
+        pr.headBranch = headBranch;
+        pr.baseBranch = baseBranch;
+        pr.labels = labels;
+        pr.additions = additions != null ? additions : 0;
+        pr.deletions = deletions != null ? deletions : 0;
+        pr.changedFilesCount = changedFilesCount != null ? changedFilesCount : 0;
+        pr.mergedAt = mergedAt;
+        pr.githubCreatedAt = githubCreatedAt;
+        pr.githubUpdatedAt = githubUpdatedAt;
+        pr.commitsJson = commitsJson;
+        return pr;
+    }
+
+    public void updateCommits(String commitsJson) {
+        this.commitsJson = commitsJson;
+    }
 }

@@ -2,6 +2,7 @@ package com.team1.codedock.domain.github.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.github.dto.GithubIssueWebhookPayload;
+import com.team1.codedock.domain.github.dto.GithubPullRequestWebhookPayload;
 import com.team1.codedock.domain.github.dto.GithubWebhookRegisterResponse;
 import com.team1.codedock.domain.github.service.GithubWebhookRegistrationService;
 import com.team1.codedock.domain.github.service.GithubWebhookService;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class GithubWebhookController {
 
     private static final String EVENT_ISSUES = "issues";
+    private static final String EVENT_PULL_REQUEST = "pull_request";
 
     private final GithubWebhookService githubWebhookService;
     private final GithubWebhookRegistrationService githubWebhookRegistrationService;
@@ -43,7 +45,33 @@ public class GithubWebhookController {
             } catch (Exception e) {
                 log.warn("이슈 Webhook 처리 실패 → repoId={}", repositoryId, e);
             }
+        } else if (EVENT_PULL_REQUEST.equals(event)) {
+            try {
+                GithubPullRequestWebhookPayload payload = objectMapper.readValue(rawBody, GithubPullRequestWebhookPayload.class);
+                githubWebhookService.processPullRequestEvent(repositoryId, payload);
+            } catch (Exception e) {
+                log.warn("PR Webhook 처리 실패 → repoId={}", repositoryId, e);
+            }
         }
+    }
+
+    /**
+     * 레포지토리의 기존 PR 목록을 메신저 메시지 포맷으로 반환
+     */
+    @GetMapping("/api/v1/github/repositories/{repositoryId}/pull-requests")
+    public ApiResponse<java.util.List<java.util.Map<String, Object>>> getPullRequests(
+            @PathVariable Long repositoryId
+    ) {
+        return ApiResponse.ok(githubWebhookService.getPullRequestsAsMessages(repositoryId));
+    }
+
+    /**
+     * GitHub API로 기존 PR 목록을 가져와 DB에 동기화
+     */
+    @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-pull-requests")
+    public ApiResponse<Void> syncPullRequests(@PathVariable Long repositoryId) {
+        githubWebhookService.syncPullRequestsFromGithub(repositoryId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok(null);
     }
 
     /**
