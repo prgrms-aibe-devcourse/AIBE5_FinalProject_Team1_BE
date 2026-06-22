@@ -81,7 +81,7 @@ public class GithubWebhookService {
 
         String secret = repo.getWebhookSecret();
         if (secret == null || secret.isBlank()) {
-            throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
+            return;
         }
         if (signatureHeader == null || !signatureHeader.startsWith("sha256=")) {
             throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
