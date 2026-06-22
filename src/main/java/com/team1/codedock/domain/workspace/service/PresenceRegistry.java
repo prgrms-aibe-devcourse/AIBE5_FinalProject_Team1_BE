@@ -18,8 +18,10 @@ import java.util.concurrent.ConcurrentMap;
 @Component
 public class PresenceRegistry {
 
+    private static final long MANUAL_ONLINE_TTL_MILLIS = 90_000L;
+
     private final ConcurrentMap<Long, Integer> userSessionCounts = new ConcurrentHashMap<>();
-    private final Set<Long> manuallyOnlineUserIds = ConcurrentHashMap.newKeySet();
+    private final ConcurrentMap<Long, Long> manualOnlineExpiresAtByUserId = new ConcurrentHashMap<>();
 
     /** 세션 +1. 이 호출로 offline→online이 되면 true. */
     public boolean increment(Long userId) {
@@ -48,12 +50,14 @@ public class PresenceRegistry {
         if (userId == null) {
             return false;
         }
+        clearExpiredManualOnline(userId);
         Integer count = userSessionCounts.get(userId);
-        return (count != null && count > 0) || manuallyOnlineUserIds.contains(userId);
+        return (count != null && count > 0) || manualOnlineExpiresAtByUserId.containsKey(userId);
     }
 
     public Set<Long> onlineUserIds() {
-        Set<Long> onlineUserIds = new HashSet<>(manuallyOnlineUserIds);
+        clearExpiredManualOnline();
+        Set<Long> onlineUserIds = new HashSet<>(manualOnlineExpiresAtByUserId.keySet());
         userSessionCounts.forEach((userId, count) -> {
             if (count != null && count > 0) {
                 onlineUserIds.add(userId);
@@ -75,7 +79,7 @@ public class PresenceRegistry {
             return false;
         }
         boolean wasOnline = isOnline(userId);
-        manuallyOnlineUserIds.add(userId);
+        manualOnlineExpiresAtByUserId.put(userId, System.currentTimeMillis() + MANUAL_ONLINE_TTL_MILLIS);
         return !wasOnline;
     }
 
@@ -84,7 +88,19 @@ public class PresenceRegistry {
             return false;
         }
         boolean wasOnline = isOnline(userId);
-        manuallyOnlineUserIds.remove(userId);
+        manualOnlineExpiresAtByUserId.remove(userId);
         return wasOnline && !isOnline(userId);
+    }
+
+    private void clearExpiredManualOnline(Long userId) {
+        Long expiresAt = manualOnlineExpiresAtByUserId.get(userId);
+        if (expiresAt != null && expiresAt <= System.currentTimeMillis()) {
+            manualOnlineExpiresAtByUserId.remove(userId, expiresAt);
+        }
+    }
+
+    private void clearExpiredManualOnline() {
+        long now = System.currentTimeMillis();
+        manualOnlineExpiresAtByUserId.entrySet().removeIf(entry -> entry.getValue() <= now);
     }
 }
