@@ -133,4 +133,12 @@ public class GithubPullRequest extends BaseEntity {
     public void updateCommits(String commitsJson) {
         this.commitsJson = commitsJson;
     }
+
+    public void updateDescription(String description) {
+        this.description = description;
+    }
+
+    public void updateState(String state) {
+        this.state = state;
+    }
 }

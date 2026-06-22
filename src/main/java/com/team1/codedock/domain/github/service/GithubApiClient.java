@@ -128,6 +128,16 @@ public class GithubApiClient {
         return result != null ? result : List.of();
     }
 
+    // 단일 PR 조회 (body 포함)
+    public GithubPrItem fetchSinglePullRequest(String owner, String repo, int pullNumber, String token) {
+        return restClient.get()
+                .uri("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber)
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(GithubPrItem.class);
+    }
+
     // [준우님 기능] 특정 PR의 커밋 목록 조회
     public List<GithubCommitItem> fetchPullRequestCommits(String owner, String repo, int pullNumber, String token) {
         List<GithubCommitItem> result = restClient.get()

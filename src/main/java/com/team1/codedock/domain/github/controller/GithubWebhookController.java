@@ -66,6 +66,40 @@ public class GithubWebhookController {
     }
 
     /**
+     * 특정 PR body를 GitHub API에서 실시간으로 가져옴
+     */
+    @GetMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/body")
+    public ApiResponse<java.util.Map<String, Object>> getPrBody(
+            @PathVariable Long repositoryId,
+            @PathVariable int prNumber
+    ) {
+        return ApiResponse.ok(githubWebhookService.fetchPrBodyFromGithub(repositoryId, prNumber, SecurityUtils.getCurrentUserId()));
+    }
+
+    /**
+     * 현재 유저가 PR을 승인
+     */
+    @PostMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/approve")
+    public ApiResponse<Void> approvePullRequest(
+            @PathVariable Long repositoryId,
+            @PathVariable int prNumber
+    ) {
+        githubWebhookService.approvePullRequest(repositoryId, prNumber, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok(null);
+    }
+
+    /**
+     * 현재 유저의 PR 리뷰 상태 조회
+     */
+    @GetMapping("/api/v1/github/repositories/{repositoryId}/pull-requests/{prNumber}/my-review")
+    public ApiResponse<java.util.Map<String, Object>> getMyReview(
+            @PathVariable Long repositoryId,
+            @PathVariable int prNumber
+    ) {
+        return ApiResponse.ok(githubWebhookService.getMyReview(repositoryId, prNumber, SecurityUtils.getCurrentUserId()));
+    }
+
+    /**
      * GitHub API로 기존 PR 목록을 가져와 DB에 동기화
      */
     @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-pull-requests")

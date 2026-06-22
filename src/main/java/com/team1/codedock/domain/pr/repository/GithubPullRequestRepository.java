@@ -16,6 +16,8 @@ public interface GithubPullRequestRepository extends JpaRepository<GithubPullReq
 
     List<GithubPullRequest> findAllByRepository_IdOrderByGithubCreatedAtDesc(Long repositoryId);
 
+    Optional<GithubPullRequest> findByRepository_IdAndPrNumber(Long repositoryId, Integer prNumber);
+
     @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.channel.id = :channelId")
     long countByChannelId(@Param("channelId") Long channelId);
 }

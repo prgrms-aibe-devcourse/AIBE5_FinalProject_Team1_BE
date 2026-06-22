@@ -18,7 +18,9 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.entity.PullRequestReview;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
 import com.team1.codedock.domain.issue.entity.GithubIssue;
@@ -71,6 +73,7 @@ public class GithubWebhookService {
     private final GithubApiClient githubApiClient;
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final PullRequestReviewRepository pullRequestReviewRepository;
 
     public void verifySignature(Long repositoryId, String signatureHeader, byte[] rawBody) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
@@ -201,7 +204,8 @@ public class GithubWebhookService {
             broadcastPrBotNotification(repo, channel, savedPr, dto);
         } else {
             GithubPullRequest pr = existing.get();
-            if (ACTION_CLOSED.equals(action) || "reopened".equals(action) || "synchronize".equals(action)) {
+            if (ACTION_CLOSED.equals(action) || "reopened".equals(action)
+                    || "synchronize".equals(action) || "edited".equals(action)) {
                 broadcastPrStatusUpdate(pr, repo, channel, dto);
             }
         }
@@ -500,6 +504,109 @@ public class GithubWebhookService {
         }
     }
 
+    public Map<String, Object> fetchPrBodyFromGithub(Long repositoryId, int prNumber, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String token = user.getGithubAccessToken();
+
+        Map<String, Object> result = new HashMap<>();
+        if (token == null || token.isBlank()) {
+            result.put("prBody", "");
+            result.put("prCommits", "[]");
+            return result;
+        }
+
+        try {
+            GithubApiClient.GithubPrItem pr = githubApiClient.fetchSinglePullRequest(
+                    repo.getOwner(), repo.getName(), prNumber, token);
+            if (pr != null) {
+                result.put("prBody", pr.body() != null ? pr.body() : "");
+                List<GithubApiClient.GithubCommitItem> commits = githubApiClient.fetchPullRequestCommits(
+                        repo.getOwner(), repo.getName(), prNumber, token);
+                result.put("prCommits", buildCommitsJson(commits));
+            } else {
+                result.put("prBody", "");
+                result.put("prCommits", "[]");
+            }
+        } catch (Exception e) {
+            log.warn("GitHub 단일 PR fetch 실패 → pr#{}", prNumber, e);
+            result.put("prBody", "");
+            result.put("prCommits", "[]");
+        }
+        return result;
+    }
+
+    @Transactional
+    public void approvePullRequest(Long repositoryId, int prNumber, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        GithubPullRequest pr = githubPullRequestRepository
+                .findByRepository_IdAndPrNumber(repositoryId, prNumber)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
+
+        WorkspaceMember member = workspaceMemberRepository
+                .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
+
+        pullRequestReviewRepository
+                .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
+                .ifPresentOrElse(
+                        existing -> existing.updateState("approved"),
+                        () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, "approved"))
+                );
+
+        // PR state를 "approved"로 업데이트
+        pr.updateState("approved");
+
+        // 해당 채널의 PR ThreadAttachment meta에서 prStatus를 "approved"로 업데이트
+        threadAttachmentRepository.findAllPrByChannelId(pr.getChannel().getId())
+                .forEach(ta -> {
+                    if (ta.getMeta() == null) return;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                        Object num = meta.get("prNumber");
+                        if (num != null && Integer.parseInt(num.toString()) == prNumber) {
+                            meta.put("prStatus", "approved");
+                            ta.updateMeta(objectMapper.writeValueAsString(meta));
+                        }
+                    } catch (Exception e) {
+                        log.warn("PR meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
+                    }
+                });
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getMyReview(Long repositoryId, int prNumber, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        GithubPullRequest pr = githubPullRequestRepository
+                .findByRepository_IdAndPrNumber(repositoryId, prNumber)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
+
+        WorkspaceMember member = workspaceMemberRepository
+                .findByWorkspace_IdAndUser_IdAndIsActiveTrue(repo.getWorkspace().getId(), userId)
+                .orElse(null);
+
+        Map<String, Object> result = new HashMap<>();
+        if (member == null) {
+            result.put("reviewState", null);
+            return result;
+        }
+
+        pullRequestReviewRepository
+                .findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
+                .ifPresentOrElse(
+                        review -> result.put("reviewState", review.getReviewState()),
+                        () -> result.put("reviewState", null)
+                );
+        return result;
+    }
+
     public List<Map<String, Object>> getPullRequestsAsMessages(Long repositoryId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
@@ -511,7 +618,6 @@ public class GithubWebhookService {
                 .toList();
     }
 
-    @Transactional
     public void syncPullRequestsFromGithub(Long repositoryId, Long userId) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
@@ -530,82 +636,142 @@ public class GithubWebhookService {
             return;
         }
 
-        List<GithubApiClient.GithubPrItem> prs = githubApiClient.fetchPullRequests(repo.getOwner(), repo.getName(), token);
-        for (GithubApiClient.GithubPrItem item : prs) {
-            String githubPrId = String.valueOf(item.id());
-            Optional<GithubPullRequest> existingOpt = githubPullRequestRepository
-                    .findByRepository_IdAndGithubPrId(repositoryId, githubPrId);
+        List<GithubApiClient.GithubPrItem> prs;
+        try {
+            prs = githubApiClient.fetchPullRequests(repo.getOwner(), repo.getName(), token);
+        } catch (Exception e) {
+            log.warn("GitHub PR 목록 fetch 실패 → repoId={}", repositoryId, e);
+            return;
+        }
 
-            // 커밋 목록 fetch (신규/기존 모두)
+        for (GithubApiClient.GithubPrItem item : prs) {
+            try {
+                syncSinglePullRequest(repo, channel, repositoryId, item, token);
+            } catch (Exception e) {
+                log.warn("PR 동기화 실패 → pr#{}", item.number(), e);
+            }
+        }
+    }
+
+    @Transactional
+    public void syncSinglePullRequest(GithubRepository repo, Channel channel, Long repositoryId,
+                                       GithubApiClient.GithubPrItem item, String token) {
+        String githubPrId = String.valueOf(item.id());
+        Optional<GithubPullRequest> existingOpt = githubPullRequestRepository
+                .findByRepository_IdAndGithubPrId(repositoryId, githubPrId);
+
+        // 커밋 목록 fetch
+        String commitsJsonRaw;
+        try {
             List<GithubApiClient.GithubCommitItem> commits = githubApiClient.fetchPullRequestCommits(
                     repo.getOwner(), repo.getName(), item.number(), token);
-            String commitsJson = buildCommitsJson(commits);
+            commitsJsonRaw = buildCommitsJson(commits);
+        } catch (Exception e) {
+            log.warn("PR 커밋 fetch 실패 → pr#{}, 커밋 없이 진행", item.number());
+            commitsJsonRaw = "[]";
+        }
+        final String commitsJson = commitsJsonRaw;
 
             if (existingOpt.isPresent()) {
-                existingOpt.get().updateCommits(commitsJson);
-                githubPullRequestRepository.save(existingOpt.get());
-                continue;
-            }
+            GithubPullRequest existingPr = existingOpt.get();
+            existingPr.updateCommits(commitsJson);
+            existingPr.updateDescription(item.body() != null ? item.body() : "");
+            githubPullRequestRepository.save(existingPr);
 
-            GithubPullRequest pr = GithubPullRequest.create(
-                    repo, channel, githubPrId, item.number(), item.title(), item.body(),
-                    item.state(),
-                    item.htmlUrl(),
-                    item.user() != null ? item.user().login() : null,
-                    item.head() != null ? item.head().ref() : null,
-                    item.base() != null ? item.base().ref() : null,
-                    null,
-                    item.additions(),
-                    item.deletions(),
-                    item.changedFiles(),
-                    Boolean.TRUE.equals(item.merged()) ? toLocalDateTime(item.mergedAt()) : null,
-                    toLocalDateTime(item.createdAt()),
-                    toLocalDateTime(item.updatedAt()),
-                    commitsJson
-            );
-            GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
-
-            String content = String.format("PR #%d opened by %s: %s",
-                    item.number(),
-                    item.user() != null ? item.user().login() : "unknown",
-                    item.title());
-
-            Thread thread = Thread.createBotNotification(
-                    channel, content, Thread.THREADABLE_TYPE_GITHUB_PR, savedPr.getId());
-            Thread savedThread = threadRepository.save(thread);
-
-            Map<String, Object> meta = new HashMap<>();
-            meta.put("prNumber", item.number());
-            meta.put("prTitle", item.title());
-            meta.put("prBody", item.body() != null ? item.body() : "");
-            meta.put("prStatus", Boolean.TRUE.equals(item.merged()) ? "merged" : item.state());
-            meta.put("prAuthor", item.user() != null ? item.user().login() : null);
-            meta.put("prUrl", item.htmlUrl());
-            meta.put("repository", repo.getName());
-            meta.put("branch", item.head() != null ? item.head().ref() : null);
-            meta.put("additions", item.additions() != null ? item.additions() : 0);
-            meta.put("deletions", item.deletions() != null ? item.deletions() : 0);
-            meta.put("filesChanged", item.changedFiles() != null ? item.changedFiles() : 0);
-            meta.put("approved", 0);
-            meta.put("pending", item.requestedReviewers() != null ? item.requestedReviewers().size() : 0);
-            meta.put("aiRisk", "Medium");
-            meta.put("passed", 0);
-            meta.put("labels", List.of());
-            String metaJson;
-            try {
-                metaJson = objectMapper.writeValueAsString(meta);
-            } catch (JsonProcessingException e) {
-                metaJson = "{}";
-            }
-
-            ThreadAttachment attachment = ThreadAttachment.create(
-                    savedThread, "pr", savedPr.getId(),
-                    item.htmlUrl(), "PR #" + item.number() + ": " + item.title(),
-                    item.user() != null ? item.user().login() : null,
-                    metaJson, null, null, null
-            );
-            threadAttachmentRepository.save(attachment);
+            // ThreadAttachment meta 최신 데이터로 갱신 (prBody 포함)
+            threadRepository.findByThreadableTypeAndThreadableId(
+                    Thread.THREADABLE_TYPE_GITHUB_PR, existingPr.getId()
+            ).ifPresent(thread -> {
+                List<ThreadAttachment> attachments = threadAttachmentRepository
+                        .findAllByThread_IdOrderByIdAsc(thread.getId());
+                if (!attachments.isEmpty()) {
+                    Map<String, Object> updatedMeta = new HashMap<>();
+                    updatedMeta.put("prNumber", item.number());
+                    updatedMeta.put("prTitle", item.title());
+                    updatedMeta.put("prBody", item.body() != null ? item.body() : "");
+                    updatedMeta.put("prCommits", commitsJson);
+                    updatedMeta.put("prStatus", Boolean.TRUE.equals(item.merged()) ? "merged" : item.state());
+                    updatedMeta.put("prAuthor", item.user() != null ? item.user().login() : null);
+                    updatedMeta.put("prUrl", item.htmlUrl());
+                    updatedMeta.put("repository", repo.getName());
+                    updatedMeta.put("branch", item.head() != null ? item.head().ref() : null);
+                    updatedMeta.put("additions", item.additions() != null ? item.additions() : 0);
+                    updatedMeta.put("deletions", item.deletions() != null ? item.deletions() : 0);
+                    updatedMeta.put("filesChanged", item.changedFiles() != null ? item.changedFiles() : 0);
+                    updatedMeta.put("approved", 0);
+                    updatedMeta.put("pending", item.requestedReviewers() != null ? item.requestedReviewers().size() : 0);
+                    updatedMeta.put("aiRisk", "Medium");
+                    updatedMeta.put("passed", 0);
+                    updatedMeta.put("labels", List.of());
+                    try {
+                        attachments.get(0).updateMeta(objectMapper.writeValueAsString(updatedMeta));
+                        threadAttachmentRepository.save(attachments.get(0));
+                    } catch (JsonProcessingException e) {
+                        log.warn("PR attachment meta 업데이트 실패 → prId={}", existingPr.getId());
+                    }
+                }
+            });
+            return;
         }
+
+        GithubPullRequest pr = GithubPullRequest.create(
+                repo, channel, githubPrId, item.number(), item.title(), item.body(),
+                item.state(),
+                item.htmlUrl(),
+                item.user() != null ? item.user().login() : null,
+                item.head() != null ? item.head().ref() : null,
+                item.base() != null ? item.base().ref() : null,
+                null,
+                item.additions(),
+                item.deletions(),
+                item.changedFiles(),
+                Boolean.TRUE.equals(item.merged()) ? toLocalDateTime(item.mergedAt()) : null,
+                toLocalDateTime(item.createdAt()),
+                toLocalDateTime(item.updatedAt()),
+                commitsJson
+        );
+        GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
+
+        String content = String.format("PR #%d opened by %s: %s",
+                item.number(),
+                item.user() != null ? item.user().login() : "unknown",
+                item.title());
+
+        Thread thread = Thread.createBotNotification(
+                channel, content, Thread.THREADABLE_TYPE_GITHUB_PR, savedPr.getId());
+        Thread savedThread = threadRepository.save(thread);
+
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("prNumber", item.number());
+        meta.put("prTitle", item.title());
+        meta.put("prBody", item.body() != null ? item.body() : "");
+        meta.put("prStatus", Boolean.TRUE.equals(item.merged()) ? "merged" : item.state());
+        meta.put("prAuthor", item.user() != null ? item.user().login() : null);
+        meta.put("prUrl", item.htmlUrl());
+        meta.put("repository", repo.getName());
+        meta.put("branch", item.head() != null ? item.head().ref() : null);
+        meta.put("additions", item.additions() != null ? item.additions() : 0);
+        meta.put("deletions", item.deletions() != null ? item.deletions() : 0);
+        meta.put("filesChanged", item.changedFiles() != null ? item.changedFiles() : 0);
+        meta.put("approved", 0);
+        meta.put("pending", item.requestedReviewers() != null ? item.requestedReviewers().size() : 0);
+        meta.put("aiRisk", "Medium");
+        meta.put("passed", 0);
+        meta.put("labels", List.of());
+        String metaJson;
+        try {
+            metaJson = objectMapper.writeValueAsString(meta);
+        } catch (JsonProcessingException e) {
+            metaJson = "{}";
+        }
+
+        ThreadAttachment attachment = ThreadAttachment.create(
+                savedThread, "pr", savedPr.getId(),
+                item.htmlUrl(), "PR #" + item.number() + ": " + item.title(),
+                item.user() != null ? item.user().login() : null,
+                metaJson, null, null, null
+        );
+        threadAttachmentRepository.save(attachment);
     }
 
     private Map<String, Object> buildPrMessageMap(GithubRepository repo, GithubPullRequest pr) {
