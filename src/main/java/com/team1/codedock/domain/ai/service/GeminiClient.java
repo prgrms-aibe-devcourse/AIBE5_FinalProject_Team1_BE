@@ -75,10 +75,33 @@ public class GeminiClient {
     private String buildErdPrompt(List<String> entitySources) {
         String sourcesText = String.join("\n\n---\n\n", entitySources);
         return """
-                다음 Java Spring Boot @Entity 클래스들을 분석하여 Mermaid ERD와 테이블 정보를 생성해주세요.
+                다음 소스코드(엔티티/모델/스키마)를 분석하여 Mermaid ERD와 테이블 정보를 생성해주세요.
 
-                [엔티티 소스코드]
+                [소스코드]
                 %s
+
+                [Mermaid ERD 문법 규칙 — 반드시 준수]
+                - 첫 줄은 반드시 erDiagram
+                - 속성 형식: datatype columnName [PK] [FK]
+                - 관계 표기: TABLE1 ||--o{ TABLE2 : "관계설명"
+                - 올바른 예시:
+                  erDiagram
+                      USER {
+                          bigint id PK
+                          varchar email
+                          varchar username
+                      }
+                      ORDER {
+                          bigint id PK
+                          bigint user_id FK
+                          varchar status
+                      }
+                      USER ||--o{ ORDER : "places"
+
+                [schemaDefinition 형식 규칙 — 반드시 준수]
+                - 각 테이블의 schemaDefinition은 아래 형식의 JSON 배열 문자열이어야 합니다.
+                - 올바른 예시:
+                  "[{\\"name\\":\\"id\\",\\"type\\":\\"bigint\\",\\"pk\\":true,\\"fk\\":null,\\"nullable\\":false},{\\"name\\":\\"email\\",\\"type\\":\\"varchar\\",\\"pk\\":false,\\"fk\\":null,\\"nullable\\":false}]"
 
                 다음 JSON 형식으로 응답해주세요:
                 {
@@ -86,7 +109,7 @@ public class GeminiClient {
                   "tables": [
                     {
                       "tableName": "테이블명",
-                      "schemaDefinition": "컬럼 정보 JSON 문자열",
+                      "schemaDefinition": "[{\\"name\\":\\"컬럼명\\",\\"type\\":\\"타입\\",\\"pk\\":true/false,\\"fk\\":\\"참조테이블 또는 null\\",\\"nullable\\":true/false}]",
                       "description": "테이블 설명"
                     }
                   ]
