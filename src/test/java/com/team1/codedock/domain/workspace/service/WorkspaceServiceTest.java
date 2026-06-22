@@ -5,6 +5,8 @@ import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.dto.WorkspaceCreateRequest;
+import com.team1.codedock.domain.workspace.dto.WorkspaceMemberResponse;
+import com.team1.codedock.domain.workspace.dto.WorkspaceResponse;
 import com.team1.codedock.domain.workspace.dto.InviteCreateRequest;
 import com.team1.codedock.domain.workspace.entity.Invitation;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -67,6 +69,9 @@ class WorkspaceServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private PresenceRegistry presenceRegistry;
 
     @InjectMocks
     private WorkspaceService workspaceService;
@@ -163,6 +168,7 @@ class WorkspaceServiceTest {
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
         when(userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(member));
         when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.of(preferences));
 
         workspaceService.updatePresence(10L, "busy", 100L);
@@ -182,6 +188,7 @@ class WorkspaceServiceTest {
         when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
         when(userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, user)).thenReturn(Optional.of(member));
+        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(member));
         when(preferencesRepository.findByWorkspaceMember(member)).thenReturn(Optional.empty());
 
         workspaceService.updatePresence(10L, "away", 100L);
@@ -427,6 +434,183 @@ class WorkspaceServiceTest {
         verify(workspaceMemberRepository).save(captor.capture());
         assertThat(captor.getValue().getPosition()).isNull();
         assertThat(invitation.getStatus()).isEqualTo("accepted");
+    }
+
+    @Test
+    @DisplayName("sendPresenceSnapshot: 접속 세션 없는 멤버는 offline로, 개인 큐로 스냅샷을 보낸다")
+    @SuppressWarnings("unchecked")
+    void sendPresenceSnapshot() {
+        Workspace workspace = workspace(1L);
+        User a = user(10L, "a@test.com");
+        User b = user(20L, "b@test.com");
+        WorkspaceMember memberA = workspaceMember(100L, workspace, a, "editor");
+        WorkspaceMember memberB = workspaceMember(200L, workspace, b, "viewer");
+        ReflectionTestUtils.setField(memberA, "isActive", true);
+        ReflectionTestUtils.setField(memberB, "isActive", true);
+        WorkspaceMemberPreferences prefsA = WorkspaceMemberPreferences.create(memberA);
+        prefsA.updatePresence("away");
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findAllByWorkspace(workspace)).thenReturn(List.of(memberA, memberB));
+        when(preferencesRepository.findByWorkspaceMember(memberA)).thenReturn(Optional.of(prefsA));
+        when(preferencesRepository.findByWorkspaceMember(memberB)).thenReturn(Optional.empty());
+
+        // A만 접속(online), B는 세션 없음(offline로 내려가야 함)
+        workspaceService.sendPresenceSnapshot(1L, "alice", java.util.Set.of(10L));
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSendToUser(
+                org.mockito.ArgumentMatchers.eq("alice"),
+                org.mockito.ArgumentMatchers.eq("/queue/presence"),
+                payloadCaptor.capture()
+        );
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) payloadCaptor.getValue();
+        assertThat(snapshot).hasSize(2);
+        assertThat(snapshot.get(0)).containsEntry("memberId", 100L).containsEntry("presence", "away");
+        assertThat(snapshot.get(1)).containsEntry("memberId", 200L).containsEntry("presence", "offline");
+    }
+
+    @Test
+    @DisplayName("sendPresenceSnapshot: 수신자 이름이 없으면 보내지 않는다")
+    void sendPresenceSnapshotWithoutRecipient() {
+        workspaceService.sendPresenceSnapshot(1L, null, java.util.Set.of(10L));
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("broadcastUserPresenceToAllWorkspaces(online): 사용자의 모든 활성 워크스페이스에 고른 상태를 보낸다")
+    @SuppressWarnings("unchecked")
+    void broadcastUserPresenceOnline() {
+        User user = user(10L, "alice@test.com");
+        Workspace w1 = workspace(1L);
+        Workspace w2 = workspace(2L);
+        WorkspaceMember m1 = workspaceMember(100L, w1, user, "owner");
+        WorkspaceMember m2 = workspaceMember(200L, w2, user, "editor");
+        ReflectionTestUtils.setField(m1, "isActive", true);
+        ReflectionTestUtils.setField(m2, "isActive", true);
+        WorkspaceMemberPreferences prefs1 = WorkspaceMemberPreferences.create(m1);
+        prefs1.updatePresence("busy");
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(m1, m2));
+        when(preferencesRepository.findByWorkspaceMember(m1)).thenReturn(Optional.of(prefs1));
+        when(preferencesRepository.findByWorkspaceMember(m2)).thenReturn(Optional.empty());
+
+        workspaceService.broadcastUserPresenceToAllWorkspaces(10L, true);
+
+        ArgumentCaptor<String> destCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate, org.mockito.Mockito.times(2))
+                .convertAndSend(destCaptor.capture(), payloadCaptor.capture());
+
+        assertThat(destCaptor.getAllValues())
+                .containsExactly("/topic/workspaces/1/presence", "/topic/workspaces/2/presence");
+        Map<String, Object> p1 = (Map<String, Object>) payloadCaptor.getAllValues().get(0);
+        Map<String, Object> p2 = (Map<String, Object>) payloadCaptor.getAllValues().get(1);
+        assertThat(p1).containsEntry("memberId", 100L).containsEntry("presence", "busy");
+        assertThat(p2).containsEntry("memberId", 200L).containsEntry("presence", "active");
+    }
+
+    @Test
+    @DisplayName("broadcastUserPresenceToAllWorkspaces(offline): 모든 활성 워크스페이스에 offline을 보낸다")
+    @SuppressWarnings("unchecked")
+    void broadcastUserPresenceOffline() {
+        User user = user(10L, "alice@test.com");
+        Workspace w1 = workspace(1L);
+        WorkspaceMember m1 = workspaceMember(100L, w1, user, "owner");
+        ReflectionTestUtils.setField(m1, "isActive", true);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(m1));
+
+        workspaceService.broadcastUserPresenceToAllWorkspaces(10L, false);
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(
+                org.mockito.ArgumentMatchers.eq("/topic/workspaces/1/presence"),
+                payloadCaptor.capture()
+        );
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertThat(payload).containsEntry("memberId", 100L).containsEntry("presence", "offline");
+    }
+
+    @Test
+    @DisplayName("getMyWorkspaces: membersOnline은 본인을 제외한 접속 멤버 수다(본인은 FE가 더함)")
+    void getMyWorkspacesWithOnlineCount() {
+        User me = user(10L, "me@test.com");
+        User other = user(20L, "other@test.com");
+        Workspace ws = workspace(1L);
+        WorkspaceMember myMembership = workspaceMember(100L, ws, me, "owner");
+        WorkspaceMember otherMembership = workspaceMember(200L, ws, other, "editor");
+        ReflectionTestUtils.setField(myMembership, "isActive", true);
+        ReflectionTestUtils.setField(otherMembership, "isActive", true);
+        when(userRepository.findById(10L)).thenReturn(Optional.of(me));
+        when(workspaceMemberRepository.findAllByUser(me)).thenReturn(List.of(myMembership));
+        when(workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(ws)).thenReturn(2);
+        when(workspaceMemberRepository.findAllByWorkspace(ws)).thenReturn(List.of(myMembership, otherMembership));
+        // 본인(10L)은 제외되어 isOnline 조회 안 함. 다른 멤버(20L)만 registry로 판단(접속 중).
+        when(presenceRegistry.isOnline(20L)).thenReturn(true);
+
+        List<WorkspaceResponse> result = workspaceService.getMyWorkspaces(10L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getMemberCount()).isEqualTo(2);
+        assertThat(result.get(0).getMembersOnline()).isEqualTo(1); // 본인 제외, 다른 멤버 1명
+    }
+
+    @Test
+    @DisplayName("updatePresence: 사용자의 모든 활성 워크스페이스에 적용하고 각 토픽에 브로드캐스트한다(전역)")
+    void updatePresenceAppliesToAllWorkspaces() {
+        User user = user(10L, "alice@test.com");
+        Workspace w1 = workspace(1L);
+        Workspace w2 = workspace(2L);
+        WorkspaceMember m1 = workspaceMember(100L, w1, user, "owner");
+        WorkspaceMember m2 = workspaceMember(200L, w2, user, "editor");
+        ReflectionTestUtils.setField(m1, "isActive", true);
+        ReflectionTestUtils.setField(m2, "isActive", true);
+        // 요청 워크스페이스(1L) 권한 검증 경로
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(w1));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(w1, user)).thenReturn(Optional.of(m1));
+        // 전역 적용 루프
+        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(m1, m2));
+        when(preferencesRepository.findByWorkspaceMember(m1)).thenReturn(Optional.empty());
+        when(preferencesRepository.findByWorkspaceMember(m2)).thenReturn(Optional.empty());
+
+        workspaceService.updatePresence(1L, "busy", 10L);
+
+        verify(preferencesRepository, org.mockito.Mockito.times(2)).save(any(WorkspaceMemberPreferences.class));
+        ArgumentCaptor<String> destCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate, org.mockito.Mockito.times(2))
+                .convertAndSend(destCaptor.capture(), payloadCaptor.capture());
+        assertThat(destCaptor.getAllValues())
+                .containsExactlyInAnyOrder("/topic/workspaces/1/presence", "/topic/workspaces/2/presence");
+    }
+
+    @Test
+    @DisplayName("getMembers: 접속 세션 없는 멤버는 고른 상태와 무관하게 offline로 내려준다")
+    void getMembersOverlaysLiveness() {
+        User me = user(10L, "me@test.com");
+        User other = user(20L, "other@test.com");
+        Workspace ws = workspace(1L);
+        WorkspaceMember myMembership = workspaceMember(100L, ws, me, "owner");
+        WorkspaceMember otherMembership = workspaceMember(200L, ws, other, "editor");
+        ReflectionTestUtils.setField(myMembership, "isActive", true);
+        ReflectionTestUtils.setField(otherMembership, "isActive", true);
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(ws));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(me));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(ws, me)).thenReturn(Optional.of(myMembership));
+        when(workspaceMemberRepository.findAllByWorkspace(ws)).thenReturn(List.of(myMembership, otherMembership));
+        when(presenceRegistry.isOnline(10L)).thenReturn(true);   // 본인 접속 중
+        when(presenceRegistry.isOnline(20L)).thenReturn(false);  // 다른 멤버 세션 없음
+        when(preferencesRepository.findByWorkspaceMember(myMembership)).thenReturn(Optional.empty()); // active
+
+        List<WorkspaceMemberResponse> result = workspaceService.getMembers(1L, 10L);
+
+        WorkspaceMemberResponse meResp = result.stream()
+                .filter(r -> r.getMemberId().equals(100L)).findFirst().orElseThrow();
+        WorkspaceMemberResponse otherResp = result.stream()
+                .filter(r -> r.getMemberId().equals(200L)).findFirst().orElseThrow();
+        assertThat(meResp.getPresence()).isEqualTo("active");
+        assertThat(otherResp.getPresence()).isEqualTo("offline"); // 세션 없으면 고른 상태 무관하게 offline
     }
 
     private static User user(Long id, String email) {
