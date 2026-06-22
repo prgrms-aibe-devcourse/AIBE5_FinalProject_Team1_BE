@@ -123,12 +123,26 @@ public class ReactionService {
     }
 
     @Transactional(readOnly = true)
-    public List<ReactionSummaryResponse> getReactionSummaries(Long channelId) {
+    public List<ReactionSummaryResponse> getReactionSummaries(Long channelId, Long userId) {
+        Channel channel = findChannel(channelId);
+        WorkspaceMember workspaceMember = findActiveWorkspaceMember(channel, userId);
+
         // 초기 렌더링에서 메시지와 답글 리액션을 한 번에 붙일 수 있도록 집계함
         List<ReactionSummaryResponse> summaries = new ArrayList<>();
         summaries.addAll(reactionRepository.findThreadReactionSummariesByChannelId(channelId));
         summaries.addAll(reactionRepository.findThreadReplyReactionSummariesByChannelId(channelId));
-        return summaries;
+        return summaries.stream()
+                .map(summary -> summary.withReacted(hasReacted(workspaceMember, summary)))
+                .toList();
+    }
+
+    private boolean hasReacted(WorkspaceMember workspaceMember, ReactionSummaryResponse summary) {
+        return reactionRepository.existsByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+                workspaceMember.getId(),
+                summary.targetType(),
+                summary.targetId(),
+                summary.emoji()
+        );
     }
 
     private boolean toggle(
@@ -215,5 +229,13 @@ public class ReactionService {
         Long workspaceId = channel.getWorkspace().getId();
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
+    private Channel findChannel(Long channelId) {
+        Channel channel = entityManager.find(Channel.class, channelId);
+        if (channel == null) {
+            throw new BusinessException(ErrorCode.CHANNEL_NOT_FOUND);
+        }
+        return channel;
     }
 }

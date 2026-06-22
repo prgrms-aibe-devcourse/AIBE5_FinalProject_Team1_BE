@@ -93,6 +93,7 @@ class ChatMessageServiceTest {
         assertThat(response.senderName()).isEqualTo("tester");
         assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/message-sender.png");
         assertThat(response.content()).isEqualTo("hello");
+        assertThat(response.isDeleted()).isFalse();
         verify(threadRepository).save(org.mockito.ArgumentMatchers.any(Thread.class));
         verify(mentionService).createMentionsForThread(
                 org.mockito.ArgumentMatchers.any(Thread.class),
@@ -1139,6 +1140,7 @@ class ChatMessageServiceTest {
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.clientMessageId()).isEqualTo("cmid-1");
         assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
         assertThat(response.attachments()).isEmpty();
         verify(threadRepository, never()).save(org.mockito.ArgumentMatchers.any(Thread.class));
         verify(threadAttachmentService, never()).getAttachments(org.mockito.ArgumentMatchers.anyLong());

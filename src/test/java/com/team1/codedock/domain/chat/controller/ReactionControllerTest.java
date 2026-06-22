@@ -137,15 +137,26 @@ class ReactionControllerTest {
                 "smile",
                 2L
         );
+        authenticateUser();
 
-        when(reactionService.getReactionSummaries(channelId)).thenReturn(List.of(threadSummary, replySummary));
+        when(reactionService.getReactionSummaries(channelId, USER_ID)).thenReturn(List.of(threadSummary, replySummary));
 
         ApiResponse<List<ReactionSummaryResponse>> apiResponse =
                 reactionController.getReactionSummaries(channelId);
 
         assertThat(apiResponse.isSuccess()).isTrue();
         assertThat(apiResponse.getData()).containsExactly(threadSummary, replySummary);
-        verify(reactionService).getReactionSummaries(channelId);
+        verify(reactionService).getReactionSummaries(channelId, USER_ID);
+    }
+
+    @Test
+    @DisplayName("인증 사용자가 없으면 리액션 집계 조회를 거부한다")
+    void getReactionSummaries_unauthorizedWhenUserIsNotAuthenticated() {
+        assertThatThrownBy(() -> reactionController.getReactionSummaries(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
+
+        verifyNoInteractions(reactionService, messagingTemplate);
     }
 
     private void authenticateUser() {

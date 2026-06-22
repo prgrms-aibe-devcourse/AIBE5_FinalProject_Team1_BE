@@ -72,6 +72,7 @@ class ChatWebSocketControllerTest {
                 LocalDateTime.of(2026, 6, 8, 10, 0),
                 java.util.List.of(),
                 null,
+                false,
                 null
         );
 
@@ -163,7 +164,8 @@ class ChatWebSocketControllerTest {
                 "tester",
                 "https://example.com/reply-avatar.png",
                 "reply",
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                false
         );
 
         when(threadReplyService.createReply(eq(threadId), eq(userId), eq(serviceRequest))).thenReturn(response);

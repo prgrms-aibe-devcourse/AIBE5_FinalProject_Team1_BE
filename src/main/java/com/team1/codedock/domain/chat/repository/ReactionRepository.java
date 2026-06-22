@@ -21,6 +21,13 @@ public interface ReactionRepository extends JpaRepository<Reaction, Long> {
 
     long countByTargetTypeAndTargetIdAndEmoji(String targetType, Long targetId, String emoji);
 
+    boolean existsByWorkspaceMember_IdAndTargetTypeAndTargetIdAndEmoji(
+            Long workspaceMemberId,
+            String targetType,
+            Long targetId,
+            String emoji
+    );
+
     // 채널 메시지(thread)에 달린 리액션을 이모지별로 묶어 초기 화면용 개수 생성
     @Query("""
             select new com.team1.codedock.domain.chat.dto.ReactionSummaryResponse(

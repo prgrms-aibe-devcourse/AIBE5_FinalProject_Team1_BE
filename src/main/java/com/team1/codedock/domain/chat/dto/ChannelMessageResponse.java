@@ -18,6 +18,7 @@ public record ChannelMessageResponse(
         LocalDateTime createdAt,
         List<ThreadAttachmentResponse> attachments,
         ReplyToSummary replyTo,
+        boolean isDeleted,
         String clientMessageId
 ) {
 
@@ -39,7 +40,7 @@ public record ChannelMessageResponse(
             String content,
             LocalDateTime createdAt
     ) {
-        this(id, channelId, senderMemberId, senderName, null, content, createdAt, List.of(), null, null);
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, List.of(), null, false, null);
     }
 
     public ChannelMessageResponse(
@@ -52,7 +53,7 @@ public record ChannelMessageResponse(
             List<ThreadAttachmentResponse> attachments,
             ReplyToSummary replyTo
     ) {
-        this(id, channelId, senderMemberId, senderName, null, content, createdAt, attachments, replyTo, null);
+        this(id, channelId, senderMemberId, senderName, null, content, createdAt, attachments, replyTo, false, null);
     }
 
     public static ChannelMessageResponse from(Thread thread) {
@@ -75,6 +76,7 @@ public record ChannelMessageResponse(
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
                 toReplyToSummary(thread.getReplyTo()),
+                thread.isDeleted(),
                 thread.getClientMessageId()
         );
     }
@@ -90,6 +92,7 @@ public record ChannelMessageResponse(
                 thread.getCreatedAt(),
                 attachments == null ? List.of() : attachments,
                 null,
+                thread.isDeleted(),
                 null
         );
     }

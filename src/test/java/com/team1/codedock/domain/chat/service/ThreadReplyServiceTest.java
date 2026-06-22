@@ -118,6 +118,7 @@ class ThreadReplyServiceTest {
         assertThat(response.senderName()).isEqualTo("테스터");
         assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("새 답글");
+        assertThat(response.isDeleted()).isFalse();
         verify(workspaceMemberRepository).findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId);
         verify(threadReplyRepository).save(org.mockito.ArgumentMatchers.any(ThreadReply.class));
         verify(mentionService).createMentionsForThreadReply(
@@ -333,6 +334,7 @@ class ThreadReplyServiceTest {
 
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.content()).isEqualTo(ThreadReply.DELETED_REPLY_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
         verify(threadReplyRepository, never()).delete(org.mockito.ArgumentMatchers.any(ThreadReply.class));
     }
 

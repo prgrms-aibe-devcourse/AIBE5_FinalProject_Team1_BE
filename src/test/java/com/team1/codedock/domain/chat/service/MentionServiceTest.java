@@ -361,8 +361,11 @@ class MentionServiceTest {
         when(mentionRepository.findByIdAndMentionedMember_Id(300L, 21L))
                 .thenReturn(Optional.of(mention));
 
-        mentionService.deleteMention(300L, 30L);
+        MentionResponse response = mentionService.deleteMention(300L, 30L);
 
+        assertThat(response.id()).isEqualTo(300L);
+        assertThat(response.mentionedMemberId()).isEqualTo(21L);
+        assertThat(response.content()).isEqualTo("hello @alice");
         verify(mentionRepository).delete(mention);
     }
 

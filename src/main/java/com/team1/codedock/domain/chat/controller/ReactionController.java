@@ -48,6 +48,6 @@ public class ReactionController {
 
     @GetMapping
     public ApiResponse<List<ReactionSummaryResponse>> getReactionSummaries(@PathVariable Long channelId) {
-        return ApiResponse.ok(reactionService.getReactionSummaries(channelId));
+        return ApiResponse.ok(reactionService.getReactionSummaries(channelId, SecurityUtils.getCurrentUserId()));
     }
 }

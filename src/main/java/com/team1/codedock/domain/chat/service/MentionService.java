@@ -153,11 +153,13 @@ public class MentionService {
     }
 
     @Transactional
-    public void deleteMention(Long mentionId, Long userId) {
+    public MentionResponse deleteMention(Long mentionId, Long userId) {
         Mention myMention = findMyMention(mentionId, userId);
+        MentionResponse response = MentionResponse.from(myMention);
 
         // 멘션 목록에서 본인이 받은 멘션만 제거함
         mentionRepository.delete(myMention);
+        return response;
     }
 
     private List<WorkspaceMember> findMentionedMembers(Long workspaceId, String content) {
