@@ -1,10 +1,12 @@
 package com.team1.codedock.domain.github.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.core.ParameterizedTypeReference;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -126,7 +128,7 @@ public class GithubApiClient {
                 .map(item -> fetchFileContent(owner, repo, branch, item.path(), token))
                 .filter(content -> content != null && (
                         content.contains("@RestController") ||
-                        content.contains("@Controller")))
+                                content.contains("@Controller")))
                 .toList();
     }
 
@@ -162,6 +164,7 @@ public class GithubApiClient {
                 .toList();
     }
 
+    // [팀원 기능] 커밋 목록 조회
     public List<String> fetchCommits(String owner, String repo, String branch, String token,
                                      LocalDate startDate, LocalDate endDate) {
         String since = startDate.atStartOfDay().atOffset(ZoneOffset.UTC)
@@ -186,6 +189,42 @@ public class GithubApiClient {
         return commits.stream()
                 .map(c -> c.commit().message())
                 .toList();
+    }
+
+    // [준우님 기능] PR 목록 조회
+    public List<GithubPrItem> fetchPullRequests(String owner, String repo, String token) {
+        List<GithubPrItem> result = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/pulls")
+                        .queryParam("state", "all")
+                        .queryParam("per_page", "100")
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubPrItem>>() {});
+        return result != null ? result : List.of();
+    }
+
+    // 단일 PR 조회 (body 포함)
+    public GithubPrItem fetchSinglePullRequest(String owner, String repo, int pullNumber, String token) {
+        return restClient.get()
+                .uri("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber)
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(GithubPrItem.class);
+    }
+
+    // [준우님 기능] 특정 PR의 커밋 목록 조회
+    public List<GithubCommitItem> fetchPullRequestCommits(String owner, String repo, int pullNumber, String token) {
+        List<GithubCommitItem> result = restClient.get()
+                .uri("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/commits")
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubCommitItem>>() {});
+        return result != null ? result : List.of();
     }
 
     public String fetchPrimaryEmail(String token) {
@@ -250,9 +289,56 @@ public class GithubApiClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record GithubEmail(String email, boolean primary, boolean verified, String visibility) {}
 
+    // [팀원 DTO] 일반 커밋 조회용
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record GithubCommit(GithubCommitDetail commit) {}
+    record GithubCommit(GithubCommitDetailSimple commit) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record GithubCommitDetail(String message) {}
+    record GithubCommitDetailSimple(String message) {}
+
+    // [준우님 DTO] PR 조회용 상세 데이터 구조들
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubPrItem(
+            long id,
+            int number,
+            String title,
+            String body,
+            String state,
+            @JsonProperty("html_url") String htmlUrl,
+            GithubPrUser user,
+            @JsonProperty("requested_reviewers") List<GithubPrUser> requestedReviewers,
+            GithubPrBranch head,
+            GithubPrBranch base,
+            Integer additions,
+            Integer deletions,
+            @JsonProperty("changed_files") Integer changedFiles,
+            Boolean merged,
+            @JsonProperty("merged_at") Instant mergedAt,
+            @JsonProperty("created_at") Instant createdAt,
+            @JsonProperty("updated_at") Instant updatedAt
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubPrUser(String login) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubPrBranch(String ref) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubCommitItem(
+            String sha,
+            GithubCommitDetail commit
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubCommitDetail(
+            String message,
+            GithubCommitAuthor author
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubCommitAuthor(
+            String name,
+            String date
+    ) {}
 }

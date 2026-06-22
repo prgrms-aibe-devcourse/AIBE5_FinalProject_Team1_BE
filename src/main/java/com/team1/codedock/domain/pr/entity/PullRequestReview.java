@@ -37,4 +37,16 @@ public class PullRequestReview extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "thread_reply_id")
     private ThreadReply threadReply;
+
+    public void updateState(String state) {
+        this.reviewState = state;
+    }
+
+    public static PullRequestReview create(GithubPullRequest pr, WorkspaceMember member, String state) {
+        PullRequestReview review = new PullRequestReview();
+        review.githubPullRequest = pr;
+        review.workspaceMember = member;
+        review.reviewState = state;
+        return review;
+    }
 }

@@ -14,6 +14,13 @@ public interface ThreadAttachmentRepository extends JpaRepository<ThreadAttachme
 
     List<ThreadAttachment> findAllByThread_IdInOrderByThread_IdAscIdAsc(List<Long> threadIds);
 
+    @Query("""
+            SELECT ta FROM ThreadAttachment ta
+            WHERE ta.thread.channel.id = :channelId
+              AND ta.attachmentType = 'pr'
+            """)
+    List<ThreadAttachment> findAllPrByChannelId(@Param("channelId") Long channelId);
+
     @Modifying
     @Query(value = """
             DELETE FROM thread_attachments

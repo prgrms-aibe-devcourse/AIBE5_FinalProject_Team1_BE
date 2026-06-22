@@ -17,6 +17,7 @@ public class Thread extends BaseEntity {
     public static final String TYPE_USER_MESSAGE = "user_message";
     public static final String TYPE_BOT_NOTIFICATION = "github_bot_notification";
     public static final String THREADABLE_TYPE_GITHUB_ISSUE = "github_issue";
+    public static final String THREADABLE_TYPE_GITHUB_PR = "github_pull_request";
     public static final String DELETED_MESSAGE_CONTENT = "삭제된 메시지입니다";
 
     @Id
