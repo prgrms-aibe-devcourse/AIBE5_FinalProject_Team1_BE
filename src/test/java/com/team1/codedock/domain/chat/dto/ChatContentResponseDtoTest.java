@@ -46,6 +46,7 @@ class ChatContentResponseDtoTest {
         assertThat(response.content()).isEqualTo("배포 완료 👍🔥");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 0));
         assertThat(response.attachments()).isEmpty();
+        assertThat(response.isDeleted()).isFalse();
     }
 
     @Test
@@ -124,6 +125,38 @@ class ChatContentResponseDtoTest {
         assertThat(response.senderAvatarUrl()).isEqualTo("https://example.com/reply-sender.png");
         assertThat(response.content()).isEqualTo("수정했습니다 🔧✅");
         assertThat(response.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 2));
+        assertThat(response.isDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("삭제된 채널 메시지 응답은 isDeleted를 true로 반환한다")
+    void channelMessageResponseMarksDeletedMessage() {
+        Workspace workspace = workspace(1L);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        Thread message = message(100L, channel, sender, "삭제 전 본문", LocalDateTime.of(2026, 6, 18, 10, 0));
+        message.markAsDeleted();
+
+        ChannelMessageResponse response = ChannelMessageResponse.from(message);
+
+        assertThat(response.content()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("삭제된 답글 응답은 isDeleted를 true로 반환한다")
+    void threadReplyResponseMarksDeletedReply() {
+        Workspace workspace = workspace(1L);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember sender = member(20L, workspace, user("sender@test.com", "보낸사람"));
+        Thread message = message(100L, channel, sender, "parent", LocalDateTime.of(2026, 6, 18, 10, 0));
+        ThreadReply reply = reply(200L, message, sender, "삭제 전 답글", LocalDateTime.of(2026, 6, 18, 10, 2));
+        reply.markAsDeleted();
+
+        ThreadReplyResponse response = ThreadReplyResponse.from(reply);
+
+        assertThat(response.content()).isEqualTo(ThreadReply.DELETED_REPLY_CONTENT);
+        assertThat(response.isDeleted()).isTrue();
     }
 
     @Test
@@ -150,6 +183,8 @@ class ChatContentResponseDtoTest {
 
         assertThat(messageResponse.senderAvatarUrl()).isNull();
         assertThat(replyResponse.senderAvatarUrl()).isNull();
+        assertThat(messageResponse.isDeleted()).isFalse();
+        assertThat(replyResponse.isDeleted()).isFalse();
     }
 
     @Test

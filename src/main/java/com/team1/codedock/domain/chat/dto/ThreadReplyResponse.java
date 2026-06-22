@@ -14,7 +14,8 @@ public record ThreadReplyResponse(
         String senderName,
         String senderAvatarUrl,
         String content,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        boolean isDeleted
 ) {
 
     public ThreadReplyResponse(
@@ -25,7 +26,7 @@ public record ThreadReplyResponse(
             String content,
             LocalDateTime createdAt
     ) {
-        this(id, threadId, senderMemberId, senderName, null, content, createdAt);
+        this(id, threadId, senderMemberId, senderName, null, content, createdAt, false);
     }
 
     public static ThreadReplyResponse from(ThreadReply reply) {
@@ -39,7 +40,8 @@ public record ThreadReplyResponse(
                 resolveSenderName(user),
                 user.getAvatarUrl(),
                 ChatContentEmojiCodec.decode(reply.getContent()),
-                reply.getCreatedAt()
+                reply.getCreatedAt(),
+                reply.isDeleted()
         );
     }
 

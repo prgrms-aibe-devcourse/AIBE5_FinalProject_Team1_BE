@@ -104,6 +104,7 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0),
                 List.of(),
                 null,
+                false,
                 null
         );
 
@@ -137,6 +138,7 @@ class ChatMessageControllerTest {
                 LocalDateTime.of(2026, 6, 9, 10, 0),
                 List.of(),
                 null,
+                false,
                 null
         );
 
@@ -382,8 +384,13 @@ class ChatMessageControllerTest {
                 channelId,
                 20L,
                 "tester",
+                null,
                 Thread.DELETED_MESSAGE_CONTENT,
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                List.of(),
+                null,
+                true,
+                null
         );
 
         when(chatMessageService.deleteChannelMessage(channelId, messageId, USER_ID)).thenReturn(response);
@@ -393,7 +400,8 @@ class ChatMessageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(messageId))
-                .andExpect(jsonPath("$.data.content").value(Thread.DELETED_MESSAGE_CONTENT));
+                .andExpect(jsonPath("$.data.content").value(Thread.DELETED_MESSAGE_CONTENT))
+                .andExpect(jsonPath("$.data.isDeleted").value(true));
 
         verify(chatMessageService).deleteChannelMessage(channelId, messageId, USER_ID);
         assertBroadcastEvent(

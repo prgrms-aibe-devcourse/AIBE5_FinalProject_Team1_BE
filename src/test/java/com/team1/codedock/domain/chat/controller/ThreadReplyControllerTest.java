@@ -88,7 +88,8 @@ class ThreadReplyControllerTest {
                 "tester",
                 "https://example.com/reply-avatar.png",
                 "reply",
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                false
         );
 
         when(threadReplyService.getReplies(threadId, USER_ID)).thenReturn(List.of(response));
@@ -119,7 +120,8 @@ class ThreadReplyControllerTest {
                 "tester",
                 "https://example.com/reply-avatar.png",
                 "reply",
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                false
         );
 
         when(threadReplyService.createReply(eq(threadId), eq(USER_ID), eq(request))).thenReturn(response);
@@ -233,8 +235,10 @@ class ThreadReplyControllerTest {
                 threadId,
                 20L,
                 "tester",
+                null,
                 ThreadReply.DELETED_REPLY_CONTENT,
-                LocalDateTime.of(2026, 6, 9, 10, 0)
+                LocalDateTime.of(2026, 6, 9, 10, 0),
+                true
         );
 
         when(threadReplyService.deleteReply(threadId, replyId, USER_ID)).thenReturn(response);
@@ -245,7 +249,8 @@ class ThreadReplyControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(replyId))
                 .andExpect(jsonPath("$.data.threadId").value(threadId))
-                .andExpect(jsonPath("$.data.content").value(ThreadReply.DELETED_REPLY_CONTENT));
+                .andExpect(jsonPath("$.data.content").value(ThreadReply.DELETED_REPLY_CONTENT))
+                .andExpect(jsonPath("$.data.isDeleted").value(true));
 
         verify(threadReplyService).deleteReply(threadId, replyId, USER_ID);
     }
