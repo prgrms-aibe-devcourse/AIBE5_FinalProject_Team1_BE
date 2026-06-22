@@ -51,14 +51,18 @@ public class ErdService {
                 .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
-        List<String> entitySources = githubApiClient.fetchEntitySources(
+        List<String> repoSources = githubApiClient.fetchRepoSources(
                 githubRepo.getOwner(),
                 githubRepo.getName(),
                 githubRepo.getDefaultBranch(),
                 user.getGithubAccessToken()
         );
 
-        GeminiClient.ErdGenerationResult result = geminiClient.generateErd(entitySources);
+        if (repoSources.isEmpty()) {
+            throw new BusinessException(ErrorCode.ERD_SOURCE_NOT_FOUND);
+        }
+
+        GeminiClient.ErdGenerationResult result = geminiClient.generateErd(repoSources);
 
         ErdDocument erdDocument = erdDocumentRepository
                 .findByWorkspace_IdAndDeletedAtIsNull(workspaceId)

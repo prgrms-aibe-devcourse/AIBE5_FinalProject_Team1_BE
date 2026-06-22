@@ -52,103 +52,222 @@ class GithubApiClientTest {
         lenient().when(uriSpec.retrieve()).thenReturn(responseSpec);
     }
 
-    // ── fetchEntitySources ─────────────────────────────────────
+    // ── fetchRepoSources ───────────────────────────────────────
 
     @Test
-    @DisplayName("@Entity가 포함된 .java 파일을 디코딩하여 반환한다")
+    @DisplayName("pom.xml이 있는 Java 레포에서 @Entity 파일을 반환한다")
     @SuppressWarnings("unchecked")
-    void fetchEntitySources_성공_Entity_파일_반환() {
+    void fetchRepoSources_Java_레포_Entity_파일_반환() {
         String entitySource = "@Entity public class Item {}";
         String base64Content = Base64.getEncoder().encodeToString(entitySource.getBytes());
 
-        var treeItem = new GithubApiClient.GithubTreeItem("src/main/java/Item.java", "blob");
-        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(treeItem));
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("pom.xml", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/java/Item.java", "blob")));
         var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
 
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
         when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).contains("@Entity");
     }
 
     @Test
-    @DisplayName("@Entity가 없는 .java 파일은 반환하지 않는다")
+    @DisplayName("pom.xml이 있는 Java 레포에서 @Entity가 없는 파일은 반환하지 않는다")
     @SuppressWarnings("unchecked")
-    void fetchEntitySources_성공_Entity_없으면_빈리스트() {
+    void fetchRepoSources_Java_레포_Entity_없으면_빈리스트() {
         String nonEntitySource = "public class ItemDto {}";
         String base64Content = Base64.getEncoder().encodeToString(nonEntitySource.getBytes());
 
-        var treeItem = new GithubApiClient.GithubTreeItem("src/main/java/ItemDto.java", "blob");
-        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(treeItem));
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("pom.xml", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/java/ItemDto.java", "blob")));
         var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
 
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
         when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
 
     @Test
     @DisplayName("tree API 응답이 null이면 빈 리스트를 반환한다")
-    void fetchEntitySources_treeResponse_null이면_빈리스트() {
+    void fetchRepoSources_treeResponse_null이면_빈리스트() {
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(null);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
 
     @Test
     @DisplayName("tree 필드가 null이면 빈 리스트를 반환한다")
-    void fetchEntitySources_tree_null이면_빈리스트() {
+    void fetchRepoSources_tree_null이면_빈리스트() {
         var treeResponse = new GithubApiClient.GithubTreeResponse(null);
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName(".java 확장자가 아닌 파일은 제외한다")
-    void fetchEntitySources_Java_아닌_파일_제외() {
-        var treeItem = new GithubApiClient.GithubTreeItem("src/main/resources/application.yml", "blob");
-        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(treeItem));
+    @DisplayName("pom.xml이 있는 Java 레포에서 .java가 아닌 파일은 제외한다")
+    void fetchRepoSources_Java_레포_java_아닌_파일_제외() {
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("pom.xml", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/resources/application.yml", "blob")));
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("type이 blob이 아닌 항목은 제외한다")
-    void fetchEntitySources_blob_아닌_타입_제외() {
-        var treeItem = new GithubApiClient.GithubTreeItem("src/main/java", "tree");
-        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(treeItem));
+    @DisplayName("pom.xml이 있는 Java 레포에서 type이 blob이 아닌 항목은 제외한다")
+    void fetchRepoSources_Java_레포_blob_아닌_타입_제외() {
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("pom.xml", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/java", "tree")));
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("파일 내용 조회가 null이면 해당 항목을 제외한다")
+    @DisplayName("pom.xml이 있는 Java 레포에서 파일 내용이 null이면 제외한다")
     @SuppressWarnings("unchecked")
-    void fetchEntitySources_fileContent_null이면_제외() {
-        var treeItem = new GithubApiClient.GithubTreeItem("src/main/java/Item.java", "blob");
-        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(treeItem));
+    void fetchRepoSources_Java_레포_fileContent_null이면_제외() {
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("pom.xml", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/java/Item.java", "blob")));
 
         when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
         when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(null);
 
-        List<String> result = githubApiClient.fetchEntitySources("octocat", "hello-world", "main", "token");
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("build.gradle이 있는 Java 레포에서 @Entity 파일을 반환한다")
+    @SuppressWarnings("unchecked")
+    void fetchRepoSources_build_gradle_Java_레포_Entity_반환() {
+        String entitySource = "@Entity public class User {}";
+        String base64Content = Base64.getEncoder().encodeToString(entitySource.getBytes());
+
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("build.gradle", "blob"),
+                new GithubApiClient.GithubTreeItem("src/main/java/User.java", "blob")));
+        var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
+
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+        when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).contains("@Entity");
+    }
+
+    @Test
+    @DisplayName("기타 언어 레포에서 ORM 폴더 내 .py 파일을 반환한다")
+    @SuppressWarnings("unchecked")
+    void fetchRepoSources_기타_언어_ORM_폴더_파일_반환() {
+        String modelSource = "class User(Base): pass";
+        String base64Content = Base64.getEncoder().encodeToString(modelSource.getBytes());
+
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("models/user.py", "blob")));
+        var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
+
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+        when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).hasSize(1).contains(modelSource);
+    }
+
+    @Test
+    @DisplayName("기타 언어 레포에서 .sql 파일을 반환한다")
+    @SuppressWarnings("unchecked")
+    void fetchRepoSources_기타_언어_SQL_파일_반환() {
+        String sqlSource = "CREATE TABLE users (id BIGINT PRIMARY KEY);";
+        String base64Content = Base64.getEncoder().encodeToString(sqlSource.getBytes());
+
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("schema.sql", "blob")));
+        var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
+
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+        when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).hasSize(1).contains(sqlSource);
+    }
+
+    @Test
+    @DisplayName("기타 언어 레포에서 마이그레이션 폴더 내 .py 파일을 반환한다")
+    @SuppressWarnings("unchecked")
+    void fetchRepoSources_기타_언어_마이그레이션_파일_반환() {
+        String migSource = "def upgrade(): op.create_table('users')";
+        String base64Content = Base64.getEncoder().encodeToString(migSource.getBytes());
+
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("migrations/env.py", "blob")));
+        var contentResponse = new GithubApiClient.GithubContentResponse(base64Content, "base64");
+
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+        when(responseSpec.body(GithubApiClient.GithubContentResponse.class)).thenReturn(contentResponse);
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).hasSize(1).contains(migSource);
+    }
+
+    @Test
+    @DisplayName("기타 언어 레포에서 ORM 파일과 SQL 파일이 모두 있으면 합쳐서 반환한다")
+    @SuppressWarnings("unchecked")
+    void fetchRepoSources_기타_언어_ORM_SQL_합쳐서_반환() {
+        String modelSource = "class User(Base): pass";
+        String sqlSource = "CREATE TABLE users (id BIGINT PRIMARY KEY);";
+
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("models/user.py", "blob"),
+                new GithubApiClient.GithubTreeItem("schema.sql", "blob")));
+
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+        when(responseSpec.body(GithubApiClient.GithubContentResponse.class))
+                .thenReturn(new GithubApiClient.GithubContentResponse(
+                        Base64.getEncoder().encodeToString(modelSource.getBytes()), "base64"))
+                .thenReturn(new GithubApiClient.GithubContentResponse(
+                        Base64.getEncoder().encodeToString(sqlSource.getBytes()), "base64"));
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
+
+        assertThat(result).hasSize(2).contains(modelSource, sqlSource);
+    }
+
+    @Test
+    @DisplayName("기타 언어 레포에서 ORM/SQL 파일이 없으면 빈 리스트를 반환한다")
+    void fetchRepoSources_기타_언어_소스_없으면_빈리스트() {
+        var treeResponse = new GithubApiClient.GithubTreeResponse(List.of(
+                new GithubApiClient.GithubTreeItem("README.md", "blob"),
+                new GithubApiClient.GithubTreeItem(".gitignore", "blob")));
+        when(responseSpec.body(GithubApiClient.GithubTreeResponse.class)).thenReturn(treeResponse);
+
+        List<String> result = githubApiClient.fetchRepoSources("octocat", "hello-world", "main", "token");
 
         assertThat(result).isEmpty();
     }
