@@ -1644,6 +1644,110 @@ class WebSocketAuthChannelInterceptorTest {
     }
 
     @Test
+    @DisplayName("워크스페이스 channels 구독 권한 캐시는 TTL이 지나면 다시 검증한다")
+    void subscribeWorkspaceChannelsAuthorizationCacheExpires() {
+        MutableClock clock = new MutableClock();
+        WebSocketAuthChannelInterceptor interceptor = interceptorWithClock(clock);
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        clock.advance(Duration.ofMillis(30_000));
+
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("워크스페이스 channels 구독 권한 캐시는 다른 세션과 공유하지 않는다")
+    void subscribeWorkspaceChannelsAuthorizationCacheIsSeparatedBySession() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> firstSessionMessage =
+                subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+        Message<?> secondSessionMessage =
+                subscribeMessage("/topic/workspaces/100/channels", authentication, "session-2");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(firstSessionMessage, messageChannel)).isSameAs(firstSessionMessage);
+        assertThat(interceptor.preSend(secondSessionMessage, messageChannel)).isSameAs(secondSessionMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("워크스페이스 channels 구독 거부 결과는 캐시하지 않는다")
+    void subscribeWorkspaceChannelsDeniedResultIsNotCached() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(0L, 1L);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("WebSocket 구독 권한이 없습니다.");
+        assertThat(interceptor.preSend(message, messageChannel)).isSameAs(message);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("DISCONNECT는 워크스페이스 channels 구독 권한 캐시를 정리한다")
+    void disconnectClearsWorkspaceChannelsSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+        Message<?> disconnectMessage = disconnectMessage("session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        interceptor.preSend(disconnectMessage, messageChannel);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
+    @DisplayName("SessionDisconnectEvent는 워크스페이스 channels 구독 권한 캐시를 정리한다")
+    void sessionDisconnectEventClearsWorkspaceChannelsSubscribeAuthorizationCache() {
+        Authentication authentication = authenticatedPrincipal(1L);
+        Message<?> subscribeMessage = subscribeMessage("/topic/workspaces/100/channels", authentication, "session-1");
+
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L))
+                .thenReturn(1L);
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        interceptor.handleSessionDisconnect(sessionDisconnectEvent("session-1"));
+
+        assertThat(interceptor.preSend(subscribeMessage, messageChannel)).isSameAs(subscribeMessage);
+
+        verify(workspaceMemberRepository, times(2))
+                .countByWorkspace_IdAndUser_IdAndIsActiveTrue(100L, 1L);
+        verifyNoInteractions(channelRepository, threadRepository);
+    }
+
+    @Test
     @DisplayName("비소속 사용자의 워크스페이스 channels 구독은 거부한다")
     void subscribeWorkspaceChannelsWithoutWorkspaceMember() {
         Message<?> message = subscribeMessage("/topic/workspaces/100/channels", authenticatedPrincipal(1L));

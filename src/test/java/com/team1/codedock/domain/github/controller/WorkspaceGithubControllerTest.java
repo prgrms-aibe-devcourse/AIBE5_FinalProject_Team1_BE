@@ -109,6 +109,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.data.fullName").value("team1/codedock"));
 
         verify(githubRepositoryService).connectRepository(eq(10L), eq(USER_ID), any(GithubConnectRequest.class));
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -125,7 +126,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test
@@ -142,7 +143,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test
@@ -157,6 +158,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("U001"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -171,6 +174,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C003"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -189,6 +194,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G005"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -203,6 +210,8 @@ class WorkspaceGithubControllerTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G006"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     @Test
@@ -344,7 +353,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test
@@ -368,7 +377,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test
@@ -392,7 +401,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     @Test
@@ -416,7 +425,7 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("C001"));
 
-        verifyNoInteractions(githubRepositoryService);
+        verifyNoInteractions(githubRepositoryService, messagingTemplate);
     }
 
     private GithubRepositoryLinkRequest request() {

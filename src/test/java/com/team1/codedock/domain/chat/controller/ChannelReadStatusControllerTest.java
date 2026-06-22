@@ -4,6 +4,8 @@ import com.team1.codedock.domain.chat.dto.ChannelReadStatusResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventResponse;
 import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.chat.service.ChannelReadStatusService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -27,8 +29,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,7 +55,7 @@ class ChannelReadStatusControllerTest {
     void setUp() {
         CustomUserDetails userDetails = mock(CustomUserDetails.class);
         when(userDetails.getUserId()).thenReturn(USER_ID);
-        when(userDetails.getUsername()).thenReturn("reader@test.com");
+        lenient().when(userDetails.getUsername()).thenReturn("reader@test.com");
         List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userDetails, null, authorities));
@@ -99,5 +103,20 @@ class ChannelReadStatusControllerTest {
         ChatEventResponse<?> event = (ChatEventResponse<?>) payloadCaptor.getValue();
         assertThat(event.type()).isEqualTo(ChatEventType.CHANNEL_READ_STATUS_UPDATED);
         assertThat(event.payload()).isEqualTo(response);
+    }
+
+    @Test
+    @DisplayName("읽음 처리 서비스가 실패하면 개인 WebSocket 이벤트를 전송하지 않는다")
+    void markChannelAsReadDoesNotBroadcastWhenServiceFails() throws Exception {
+        when(channelReadStatusService.markChannelAsRead(1L, USER_ID))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+        mockMvc.perform(put("/api/channels/{channelId}/read", 1L))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+
+        verify(channelReadStatusService).markChannelAsRead(1L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
     }
 }
