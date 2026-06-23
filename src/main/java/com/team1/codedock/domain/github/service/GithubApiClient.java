@@ -238,6 +238,20 @@ public class GithubApiClient {
         return result != null ? result : List.of();
     }
 
+    // 특정 PR의 리뷰 목록 조회 (APPROVED 등). 승인 인원 집계용.
+    public List<GithubReviewItem> fetchPullRequestReviews(String owner, String repo, int pullNumber, String token) {
+        List<GithubReviewItem> result = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/reviews")
+                        .queryParam("per_page", "100")
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubReviewItem>>() {});
+        return result != null ? result : List.of();
+    }
+
     // 레포지토리 이슈 목록 조회 (state=all). GitHub 이슈 API는 PR도 포함하므로 pullRequest != null 항목은 호출부에서 제외한다.
     public List<GithubIssueItem> fetchIssues(String owner, String repo, String token) {
         List<GithubIssueItem> result = restClient.get()
@@ -385,6 +399,9 @@ public class GithubApiClient {
             // 이슈 API 응답에 pull_request 필드가 있으면 그 항목은 실제로 PR이므로 제외 대상
             @JsonProperty("pull_request") Object pullRequest
     ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubReviewItem(GithubPrUser user, String state) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GithubIssueLabel(String name, String color) {}
