@@ -2,6 +2,7 @@ package com.team1.codedock.global.config;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.autoconfigure.data.redis.RedisHealthContributorAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -30,6 +31,11 @@ class RedisConfigTest {
     private final ApplicationContextRunner redisFullContextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(RedisAutoConfiguration.class))
             .withUserConfiguration(RedisConfig.class);
+    private final ApplicationContextRunner redisHealthContextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(
+                    RedisAutoConfiguration.class,
+                    RedisHealthContributorAutoConfiguration.class
+            ));
 
     @Test
     @DisplayName("RedisConnectionFactory가 있으면 공통 RedisTemplate 빈을 등록함")
@@ -454,6 +460,26 @@ class RedisConfigTest {
                     LettuceConnectionFactory connectionFactory = context.getBean(LettuceConnectionFactory.class);
                     assertThat(connectionFactory.getHostName()).isEqualTo("redis-not-running.local");
                     assertThat(connectionFactory.getPort()).isEqualTo(6399);
+                });
+    }
+
+    @Test
+    @DisplayName("Redis health는 기본값으로 등록되어 Actuator health에서 Redis 연결 상태를 확인할 수 있음")
+    void redisHealthContributorIsRegisteredByDefault() {
+        redisHealthContextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasBean("redisHealthContributor");
+        });
+    }
+
+    @Test
+    @DisplayName("Redis health는 Redis 기능 플래그를 끄면 함께 비활성화할 수 있음")
+    void redisHealthContributorIsDisabledWithRedisFeatureFlag() {
+        redisHealthContextRunner
+                .withPropertyValues("management.health.redis.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean("redisHealthContributor");
                 });
     }
 
