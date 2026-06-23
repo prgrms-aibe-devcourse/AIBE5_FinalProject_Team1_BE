@@ -32,9 +32,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.List;
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -225,6 +228,39 @@ class ErdServiceTest {
                 .hasMessageContaining(ErrorCode.GITHUB_REPO_NOT_FOUND.getMessage());
 
         verify(erdDocumentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("레포가 2개이면 두 레포의 소스를 병합하여 AI에 전달한다")
+    @SuppressWarnings("unchecked")
+    void generateErd_레포_2개_소스_병합() {
+        User user = mockUser();
+        WorkspaceMember member = mockMember();
+        GithubRepository repo1 = mockGithubRepo();
+        GithubRepository repo2 = mock(GithubRepository.class);
+        when(repo2.getOwner()).thenReturn("owner2");
+        when(repo2.getName()).thenReturn("repo2");
+        when(repo2.getDefaultBranch()).thenReturn("main");
+        GeminiClient.ErdGenerationResult result = mockErdResult();
+        ErdDocument savedDoc = ErdDocument.create(member.getWorkspace(), member, "ERD", null, "erDiagram\n...");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
+        when(githubApiClient.fetchRepoSources(eq("owner"), eq("repo"), any(), any()))
+                .thenReturn(List.of("@Entity public class User {}"));
+        when(githubApiClient.fetchRepoSources(eq("owner2"), eq("repo2"), any(), any()))
+                .thenReturn(List.of("@Entity public class Order {}"));
+        when(geminiClient.generateErd(any())).thenReturn(result);
+        when(erdDocumentRepository.findByWorkspace_IdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(erdDocumentRepository.save(any(ErdDocument.class))).thenReturn(savedDoc);
+
+        erdService.generateErd(1L);
+
+        ArgumentCaptor<List<String>> sourcesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(geminiClient).generateErd(sourcesCaptor.capture());
+        assertThat(sourcesCaptor.getValue()).hasSize(2)
+                .containsExactlyInAnyOrder("@Entity public class User {}", "@Entity public class Order {}");
     }
 
     // ── getErd() ──────────────────────────────────────────────

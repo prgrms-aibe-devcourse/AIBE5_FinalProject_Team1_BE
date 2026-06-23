@@ -31,6 +31,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -303,6 +305,112 @@ class DocumentAiServiceTest {
                 1L, new DocumentAiGenerateRequest("manual", "payment", null, null));
 
         verify(githubApiClient).fetchSourcesByKeyword(any(), any(), any(), any(), eq("payment"));
+    }
+
+    @Test
+    @DisplayName("레포가 2개이면 두 레포의 컨트롤러 소스를 병합하여 AI에 전달한다 (manual)")
+    @SuppressWarnings("unchecked")
+    void generateDocument_manual_레포_2개_소스_병합() {
+        WorkspaceMember member = mockMember();
+        GithubRepository repo1 = mockGithubRepo();
+        GithubRepository repo2 = mock(GithubRepository.class);
+        lenient().when(repo2.getOwner()).thenReturn("owner2");
+        lenient().when(repo2.getName()).thenReturn("repo2");
+        lenient().when(repo2.getDefaultBranch()).thenReturn("main");
+        GeminiClient.DocumentGenerationResult result =
+                new GeminiClient.DocumentGenerationResult("사용자 매뉴얼", "내용", "manual");
+        Document savedDoc = Document.createFromAi(
+                member.getWorkspace(), member, result.title(), result.content(), result.category());
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
+        when(githubApiClient.fetchControllerSources(eq("owner"), eq("repo"), any(), any()))
+                .thenReturn(List.of("@RestController public class UserController {}"));
+        when(githubApiClient.fetchControllerSources(eq("owner2"), eq("repo2"), any(), any()))
+                .thenReturn(List.of("@RestController public class OrderController {}"));
+        when(geminiClient.generateDocument(any(), any(), any(), any())).thenReturn(result);
+        when(documentRepository.save(any(Document.class))).thenReturn(savedDoc);
+
+        documentAiService.generateDocument(
+                1L, new DocumentAiGenerateRequest("manual", "user", null, null));
+
+        ArgumentCaptor<List<String>> sourcesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(geminiClient).generateDocument(sourcesCaptor.capture(), any(), any(), any());
+        assertThat(sourcesCaptor.getValue()).hasSize(2)
+                .containsExactlyInAnyOrder(
+                        "@RestController public class UserController {}",
+                        "@RestController public class OrderController {}");
+    }
+
+    @Test
+    @DisplayName("레포가 2개이면 두 레포의 커밋을 병합하여 AI에 전달한다 (release)")
+    @SuppressWarnings("unchecked")
+    void generateDocument_release_레포_2개_커밋_병합() {
+        WorkspaceMember member = mockMember();
+        GithubRepository repo1 = mockGithubRepo();
+        GithubRepository repo2 = mock(GithubRepository.class);
+        lenient().when(repo2.getOwner()).thenReturn("owner2");
+        lenient().when(repo2.getName()).thenReturn("repo2");
+        lenient().when(repo2.getDefaultBranch()).thenReturn("main");
+        GeminiClient.DocumentGenerationResult result =
+                new GeminiClient.DocumentGenerationResult("릴리즈 노트", "내용", "release");
+        Document savedDoc = Document.createFromAi(
+                member.getWorkspace(), member, result.title(), result.content(), result.category());
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
+        when(githubApiClient.fetchCommits(eq("owner"), eq("repo"), any(), any(), any(), any()))
+                .thenReturn(List.of("feat: 로그인 추가"));
+        when(githubApiClient.fetchCommits(eq("owner2"), eq("repo2"), any(), any(), any(), any()))
+                .thenReturn(List.of("feat: 결제 추가"));
+        when(geminiClient.generateDocument(any(), any(), any(), any())).thenReturn(result);
+        when(documentRepository.save(any(Document.class))).thenReturn(savedDoc);
+
+        documentAiService.generateDocument(
+                1L, new DocumentAiGenerateRequest("release", null,
+                        LocalDate.of(2025, 6, 1), LocalDate.of(2025, 6, 7)));
+
+        ArgumentCaptor<List<String>> commitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(geminiClient).generateDocument(any(), any(), any(), commitsCaptor.capture());
+        assertThat(commitsCaptor.getValue()).hasSize(2)
+                .containsExactlyInAnyOrder("feat: 로그인 추가", "feat: 결제 추가");
+    }
+
+    @Test
+    @DisplayName("레포가 2개이고 컨트롤러가 없으면 두 레포에서 키워드 소스를 병합하여 AI에 전달한다 (manual fallback)")
+    @SuppressWarnings("unchecked")
+    void generateDocument_manual_레포_2개_키워드_폴백_병합() {
+        WorkspaceMember member = mockMember();
+        GithubRepository repo1 = mockGithubRepo();
+        GithubRepository repo2 = mock(GithubRepository.class);
+        lenient().when(repo2.getOwner()).thenReturn("owner2");
+        lenient().when(repo2.getName()).thenReturn("repo2");
+        lenient().when(repo2.getDefaultBranch()).thenReturn("main");
+        GeminiClient.DocumentGenerationResult result =
+                new GeminiClient.DocumentGenerationResult("결제 매뉴얼", "내용", "manual");
+        Document savedDoc = Document.createFromAi(
+                member.getWorkspace(), member, result.title(), result.content(), result.category());
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
+        when(githubApiClient.fetchControllerSources(any(), any(), any(), any())).thenReturn(List.of());
+        when(githubApiClient.fetchSourcesByKeyword(eq("owner"), eq("repo"), any(), any(), eq("payment")))
+                .thenReturn(List.of("def process_payment(): pass"));
+        when(githubApiClient.fetchSourcesByKeyword(eq("owner2"), eq("repo2"), any(), any(), eq("payment")))
+                .thenReturn(List.of("def refund_payment(): pass"));
+        when(geminiClient.generateDocument(any(), any(), any(), any())).thenReturn(result);
+        when(documentRepository.save(any(Document.class))).thenReturn(savedDoc);
+
+        documentAiService.generateDocument(
+                1L, new DocumentAiGenerateRequest("manual", "payment", null, null));
+
+        ArgumentCaptor<List<String>> sourcesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(geminiClient).generateDocument(sourcesCaptor.capture(), any(), any(), any());
+        assertThat(sourcesCaptor.getValue()).hasSize(2)
+                .containsExactlyInAnyOrder("def process_payment(): pass", "def refund_payment(): pass");
     }
 
     @Test
