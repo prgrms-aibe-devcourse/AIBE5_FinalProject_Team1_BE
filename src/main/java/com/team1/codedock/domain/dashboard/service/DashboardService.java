@@ -103,7 +103,12 @@ public class DashboardService {
             return List.of();
         }
 
-        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId).stream()
+        List<WorkspaceEvent.EventType> broadcastTypes = List.of(
+                WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED);
+        List<WorkspaceEvent.EventType> targetedTypes = List.of(
+                WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
+
+        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes).stream()
                 .filter(e -> {
                     if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
                             || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
@@ -125,9 +130,10 @@ public class DashboardService {
         WorkspaceEvent event = workspaceEventRepository.findByIdWithWorkspace(eventId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "이벤트를 찾을 수 없습니다."));
 
-        boolean isTarget = Objects.equals(event.getTargetUserId(), userId);
-        boolean isMyWorkspace = workspaceIds.contains(event.getWorkspace().getId());
-        if (!isTarget && !isMyWorkspace) {
+        boolean canRead = event.getTargetUserId() != null
+                ? Objects.equals(event.getTargetUserId(), userId)
+                : workspaceIds.contains(event.getWorkspace().getId());
+        if (!canRead) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
