@@ -422,6 +422,138 @@ public class GithubWebhookService {
         }
     }
 
+    // 과거(기존) 이슈를 GitHub에서 가져와 DB/스레드로 동기화 (PR sync와 동일 패턴).
+    // 웹훅을 놓쳤거나 웹훅 등록 이전에 만들어진 이슈도 모든 워크스페이스 멤버에게 보이도록 공유 채널에 영속화한다.
+    public void syncIssuesFromGithub(Long repositoryId, Long userId) {
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        validateRepositoryMember(repo, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String token = user.getGithubAccessToken();
+        if (token == null || token.isBlank()) {
+            log.warn("GitHub 토큰 없음 → userId={}", userId);
+            return;
+        }
+
+        Channel channel = getRepoChannel(repo);
+        if (channel == null) {
+            log.warn("레포지토리 채널을 찾을 수 없음 → repoId={}", repositoryId);
+            return;
+        }
+
+        List<GithubApiClient.GithubIssueItem> issues;
+        try {
+            issues = githubApiClient.fetchIssues(repo.getOwner(), repo.getName(), token);
+        } catch (Exception e) {
+            log.warn("GitHub 이슈 목록 fetch 실패 → repoId={}", repositoryId, e);
+            return;
+        }
+
+        for (GithubApiClient.GithubIssueItem item : issues) {
+            if (item.pullRequest() != null) continue; // 이슈 API가 PR도 반환 → PR 항목 제외
+            try {
+                syncSingleIssue(repo, channel, repositoryId, item);
+            } catch (Exception e) {
+                log.warn("이슈 동기화 실패 → issue#{}", item.number(), e);
+            }
+        }
+    }
+
+    @Transactional
+    public void syncSingleIssue(GithubRepository repo, Channel channel, Long repositoryId,
+                                GithubApiClient.GithubIssueItem item) {
+        String githubIssueId = String.valueOf(item.id());
+        Optional<GithubIssue> existingOpt =
+                githubIssueRepository.findByRepository_IdAndGithubIssueId(repositoryId, githubIssueId);
+
+        if (existingOpt.isPresent()) {
+            // 이미 등록된 이슈는 스레드가 없을 때만 복구 생성 (상태는 syncAllIssueStatuses가 담당)
+            GithubIssue issue = existingOpt.get();
+            boolean threadExists = threadRepository
+                    .findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId())
+                    .isPresent();
+            if (!threadExists) {
+                createIssueThreadAndAttachment(channel, issue, item);
+            }
+            return;
+        }
+
+        GithubIssue issue = GithubIssue.create(
+                repo, channel, githubIssueId, item.number(), item.title(),
+                item.body(), item.state(), item.htmlUrl(),
+                item.user() != null ? item.user().login() : null,
+                buildIssueLabelsJson(item.labels()),
+                toLocalDateTime(item.closedAt()),
+                toLocalDateTime(item.createdAt()),
+                toLocalDateTime(item.updatedAt())
+        );
+        GithubIssue savedIssue = githubIssueRepository.save(issue);
+        createIssueThreadAndAttachment(channel, savedIssue, item);
+    }
+
+    private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
+                                                GithubApiClient.GithubIssueItem item) {
+        String content = String.format("Issue #%d opened by %s: %s",
+                item.number(),
+                item.user() != null ? item.user().login() : "unknown",
+                item.title());
+
+        Thread thread = Thread.createBotNotification(
+                channel, content, Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId());
+        Thread savedThread = threadRepository.save(thread);
+
+        String meta = buildIssueMetaFromItem(issue, item);
+        ThreadAttachment attachment = ThreadAttachment.create(
+                savedThread, "issue", issue.getId(),
+                item.htmlUrl(), "Issue #" + item.number() + ": " + item.title(),
+                item.user() != null ? item.user().login() : null,
+                meta, null, null, null
+        );
+        threadAttachmentRepository.save(attachment);
+    }
+
+    private String buildIssueLabelsJson(List<GithubApiClient.GithubIssueLabel> labels) {
+        if (labels == null || labels.isEmpty()) return "[]";
+        try {
+            return objectMapper.writeValueAsString(
+                    labels.stream().map(l -> Map.of("name", l.name(), "color", l.color())).toList());
+        } catch (JsonProcessingException e) {
+            return "[]";
+        }
+    }
+
+    private String buildIssueMetaFromItem(GithubIssue issue, GithubApiClient.GithubIssueItem item) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("id", issue.getId());
+        meta.put("issueNumber", item.number());
+        meta.put("issueTitle", item.title());
+        meta.put("issueStatus", item.state());
+        meta.put("issueAuthor", item.user() != null ? item.user().login() : null);
+        meta.put("issuePriority", issue.getPriority());
+        meta.put("issueType", issue.getIssueType());
+        meta.put("issueBody", item.body());
+        meta.put("issueAssignees", item.assignees() != null
+                ? item.assignees().stream().map(GithubApiClient.GithubPrUser::login).toList()
+                : List.of());
+        meta.put("issueLabels", item.labels() != null
+                ? item.labels().stream().map(l -> Map.of("name", l.name(), "color", "#" + l.color())).toList()
+                : List.of());
+        meta.put("issueHistory", List.of(Map.of(
+                "id", "h1",
+                "actor", item.user() != null ? item.user().login() : "unknown",
+                "action", "이슈를 생성했습니다",
+                "time", item.createdAt() != null ? item.createdAt().toString() : "",
+                "eventType", "created"
+        )));
+        try {
+            return objectMapper.writeValueAsString(meta);
+        } catch (JsonProcessingException e) {
+            return "{}";
+        }
+    }
+
     private void broadcastIssueStatusUpdate(GithubIssue issue, GithubIssueWebhookPayload.IssueDto dto) {
         threadRepository.findByThreadableTypeAndThreadableId(
                 Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId()

@@ -141,6 +141,15 @@ public class GithubWebhookController {
     }
 
     /**
+     * GitHub API로 기존 이슈 목록을 가져와 DB/스레드에 동기화 (과거 이슈도 모든 멤버에게 보이도록)
+     */
+    @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-issues")
+    public ApiResponse<Void> syncIssues(@PathVariable Long repositoryId) {
+        githubWebhookService.syncIssuesFromGithub(repositoryId, SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok(null);
+    }
+
+    /**
      * 레포지토리의 기존 이슈 상태를 채팅 메시지 meta와 동기화
      */
     @PostMapping("/api/v1/github/repositories/{repositoryId}/sync-issue-statuses")

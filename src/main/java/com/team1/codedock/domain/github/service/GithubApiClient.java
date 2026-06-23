@@ -238,6 +238,21 @@ public class GithubApiClient {
         return result != null ? result : List.of();
     }
 
+    // 레포지토리 이슈 목록 조회 (state=all). GitHub 이슈 API는 PR도 포함하므로 pullRequest != null 항목은 호출부에서 제외한다.
+    public List<GithubIssueItem> fetchIssues(String owner, String repo, String token) {
+        List<GithubIssueItem> result = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/repos/" + owner + "/" + repo + "/issues")
+                        .queryParam("state", "all")
+                        .queryParam("per_page", "100")
+                        .build())
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<GithubIssueItem>>() {});
+        return result != null ? result : List.of();
+    }
+
     // [준우님 기능] 특정 PR의 변경 파일 목록 조회 (파일명/status/추가·삭제 수/patch)
     public List<GithubPrFileItem> fetchPullRequestFiles(String owner, String repo, int pullNumber, String token) {
         List<GithubPrFileItem> result = restClient.get()
@@ -352,6 +367,27 @@ public class GithubApiClient {
             Integer changes,
             String patch
     ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubIssueItem(
+            long id,
+            int number,
+            String title,
+            String body,
+            String state,
+            @JsonProperty("html_url") String htmlUrl,
+            GithubPrUser user,
+            List<GithubIssueLabel> labels,
+            List<GithubPrUser> assignees,
+            @JsonProperty("created_at") Instant createdAt,
+            @JsonProperty("updated_at") Instant updatedAt,
+            @JsonProperty("closed_at") Instant closedAt,
+            // 이슈 API 응답에 pull_request 필드가 있으면 그 항목은 실제로 PR이므로 제외 대상
+            @JsonProperty("pull_request") Object pullRequest
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GithubIssueLabel(String name, String color) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GithubPrUser(String login) {}
