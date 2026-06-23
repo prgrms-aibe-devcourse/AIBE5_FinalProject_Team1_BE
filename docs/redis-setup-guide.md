@@ -10,6 +10,7 @@
 
 | 이름 | 기본값 | 설명 |
 | --- | --- | --- |
+| `APP_REDIS_ENABLED` | `true` | Redis 공통 템플릿 설정 활성화 여부 |
 | `REDIS_HOST` | `localhost` | Redis 서버 호스트 |
 | `REDIS_PORT` | `6379` | Redis 서버 포트 |
 | `REDIS_PASSWORD` | 빈 값 | Redis 비밀번호. 비어 있으면 인증 없이 연결 |
@@ -63,12 +64,12 @@ REDIS_PASSWORD={운영용_비밀번호}
 
 ## Spring Bean
 
-`RedisConfig`는 `RedisConnectionFactory`가 있을 때만 아래 공통 빈을 등록한다.
+`RedisConfig`는 `APP_REDIS_ENABLED=true`일 때 아래 공통 빈을 등록한다.
 
 - `StringRedisTemplate`
 - `RedisTemplate<String, Object>`
 
-테스트 환경처럼 Redis 자동 설정이 꺼진 경우에는 위 빈을 등록하지 않는다. 이 정책 덕분에 Redis 서버가 없어도 일반 단위 테스트가 깨지지 않는다.
+테스트 환경처럼 Redis 자동 설정이 꺼진 경우에는 `app.redis.enabled=false`로 위 빈을 등록하지 않는다. 이 정책 덕분에 Redis 서버가 없어도 일반 단위 테스트가 깨지지 않는다.
 
 ## Health Check
 
