@@ -13,6 +13,7 @@ import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -41,6 +43,18 @@ public class AiSummaryService {
         GithubPullRequest pr = githubPullRequestRepository.findByIdAndRepository_Workspace_Id(prId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
 
+        return generateSummaryInternal(pr, prId);
+    }
+
+    public void generateSummaryForWebhook(Long prId) {
+        try {
+            githubPullRequestRepository.findById(prId).ifPresent(pr -> generateSummaryInternal(pr, prId));
+        } catch (Exception e) {
+            log.warn("Webhook AI 요약 생성 실패 → prId={}", prId, e);
+        }
+    }
+
+    private AiSummaryResponse generateSummaryInternal(GithubPullRequest pr, Long prId) {
         aiSummaryRepository.findByGithubPullRequest_Id(prId)
                 .ifPresent(aiSummaryRepository::delete);
 
@@ -56,6 +70,7 @@ public class AiSummaryService {
             String summaryJson = objectMapper.writeValueAsString(normalized);
             aiSummary.complete(summaryJson, normalizeRiskLevel(normalized.riskLevel()), geminiClient.getModel());
         } catch (Exception e) {
+            aiSummary.fail();
             throw new BusinessException(ErrorCode.AI_ANALYSIS_FAILED);
         }
 
@@ -141,9 +156,9 @@ public class AiSummaryService {
     private String normalizeFileRisk(String risk) {
         if (risk == null) return null;
         return switch (risk.toUpperCase()) {
-            case "HIGH", "높음" -> "높음";
-            case "MEDIUM", "중간" -> "중간";
-            case "LOW", "낮음" -> "낮음";
+            case "HIGH" -> "High";
+            case "MEDIUM" -> "Medium";
+            case "LOW" -> "Low";
             default -> null;
         };
     }

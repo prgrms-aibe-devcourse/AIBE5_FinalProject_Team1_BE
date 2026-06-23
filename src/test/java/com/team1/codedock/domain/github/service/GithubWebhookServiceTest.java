@@ -16,7 +16,9 @@ import com.team1.codedock.domain.issue.entity.GithubIssue;
 import com.team1.codedock.domain.issue.entity.IssueLabel;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.issue.repository.IssueLabelRepository;
+import com.team1.codedock.domain.ai.service.AiSummaryService;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestFileRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
@@ -76,6 +78,10 @@ class GithubWebhookServiceTest {
     private WorkspaceMemberRepository workspaceMemberRepository;
     @Mock
     private PullRequestReviewRepository pullRequestReviewRepository;
+    @Mock
+    private PullRequestFileRepository pullRequestFileRepository;
+    @Mock
+    private AiSummaryService aiSummaryService;
 
     private GithubWebhookService githubWebhookService;
 
@@ -93,7 +99,9 @@ class GithubWebhookServiceTest {
                 githubApiClient,
                 userRepository,
                 workspaceMemberRepository,
-                pullRequestReviewRepository
+                pullRequestReviewRepository,
+                pullRequestFileRepository,
+                aiSummaryService
         );
     }
 
