@@ -127,6 +127,48 @@ GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
+## Oracle DB 배포 방식
+
+현재 프로젝트는 Oracle RDS를 반드시 사용할 필요가 없다. 기존 Oracle 서버가 공인 IP로 접근 가능한 상태라면 EC2 백엔드 컨테이너가 해당 Oracle 서버에 JDBC로 직접 접속하면 된다.
+
+```text
+사용자
+-> EC2 nginx
+-> Spring Boot container
+-> jdbc:oracle:thin:@Oracle-public-ip:1521:orcl
+```
+
+EC2의 `.env`에는 기존 Oracle 서버 주소를 그대로 넣는다.
+
+```properties
+DB_URL=jdbc:oracle:thin:@{oracle-public-ip}:1521:orcl
+DB_USERNAME=
+DB_PASSWORD=
+```
+
+배포 전 EC2에서 Oracle 포트 접근을 확인한다.
+
+```bash
+nc -vz {oracle-public-ip} 1521
+```
+
+`nc`가 없다면 아래 패키지를 먼저 설치한다.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y netcat-openbsd
+```
+
+### Oracle 서버 보안 주의사항
+
+- Oracle 1521 포트는 전체 공개하지 않는다.
+- Oracle 서버 방화벽에서 EC2 public IP만 허용한다.
+- EC2 public IP가 바뀌면 Oracle 방화벽 허용 IP도 다시 수정해야 한다.
+- 가능하면 EC2에 Elastic IP를 붙여 public IP를 고정한다.
+- DB 계정은 운영에 필요한 최소 권한만 부여한다.
+
+이 구조에서는 CI/CD workflow를 별도로 바꿀 필요가 없다. DB 접속 정보는 EC2 `.env`의 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`로 주입된다.
+
 ## 수동 배포 확인
 
 GitHub Actions를 붙이기 전에 EC2에서 한 번 수동으로 확인한다.
