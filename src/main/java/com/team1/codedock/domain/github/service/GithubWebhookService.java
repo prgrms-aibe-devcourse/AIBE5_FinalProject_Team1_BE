@@ -79,6 +79,7 @@ public class GithubWebhookService {
     private final PullRequestReviewRepository pullRequestReviewRepository;
     private final PullRequestFileRepository pullRequestFileRepository;
     private final AiSummaryService aiSummaryService;
+    private final GithubWebhookEventService githubWebhookEventService;
 
     public void verifySignature(Long repositoryId, String signatureHeader, byte[] rawBody) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
@@ -140,6 +141,10 @@ public class GithubWebhookService {
             issue = githubIssueRepository.save(issue);
             saveLabels(issue, dto.labels());
             broadcastBotNotification(issue, dto);
+            githubWebhookEventService.onIssueCreated(
+                    repo.getWorkspace().getId(), issue.getId(),
+                    dto.user() != null ? dto.user().login() : null,
+                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
         } else {
             issue = existing.get();
             issue.syncFromWebhook(
@@ -207,6 +212,10 @@ public class GithubWebhookService {
             );
             GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
             broadcastPrBotNotification(repo, channel, savedPr, dto);
+            githubWebhookEventService.onPrCreated(
+                    repo.getWorkspace().getId(), savedPr.getId(),
+                    dto.user() != null ? dto.user().login() : null,
+                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
 
             savePullRequestFiles(repo, savedPr, dto.number());
             aiSummaryService.generateSummaryForWebhook(savedPr.getId());
@@ -923,6 +932,11 @@ public class GithubWebhookService {
         // 승인 상태 변경을 실시간으로 메신저에 반영 (이슈 닫힘과 동일 패턴)
         threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> broadcastPrMessageUpdated(thread, approveChannel));
+
+        githubWebhookEventService.onPrReview(
+                repo.getWorkspace().getId(), pr.getId(),
+                member.getUser().getDisplayName(), "승인",
+                repo.getId(), repo.getName(), (long) prNumber);
     }
 
     public void mergePullRequestOnGithub(Long repositoryId, int prNumber, Long userId) {

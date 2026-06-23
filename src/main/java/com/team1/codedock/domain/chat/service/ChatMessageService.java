@@ -12,8 +12,10 @@ import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -40,6 +42,7 @@ public class ChatMessageService {
     private final EntityManager entityManager;
     private final MentionService mentionService;
     private final ThreadAttachmentService threadAttachmentService;
+    private final WorkspaceEventService workspaceEventService;
 
     @Transactional
     public ChannelMessageResponse createChannelMessage(Long channelId, Long userId, ChannelMessageCreateRequest request) {
@@ -178,6 +181,13 @@ public class ChatMessageService {
 
         Thread savedThread = threadRepository.save(thread);
         mentionService.createMentionsForThread(savedThread, sender, content);
+        if (replyTo != null && replyTo.getCreatedBy() != null) {
+            Long targetUserId = replyTo.getCreatedBy().getUser().getId();
+            workspaceEventService.recordEvent(
+                    channel.getWorkspace().getId(), WorkspaceEvent.EventType.REPLY,
+                    sender.getUser().getDisplayName(), null, null, channel.getId(), content,
+                    null, null, replyTo.getId(), null, null, targetUserId);
+        }
         return savedThread;
     }
 

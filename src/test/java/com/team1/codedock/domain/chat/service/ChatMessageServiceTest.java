@@ -15,8 +15,10 @@ import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -58,6 +60,9 @@ class ChatMessageServiceTest {
 
     @Mock
     private ThreadAttachmentService threadAttachmentService;
+
+    @Mock
+    private WorkspaceEventService workspaceEventService;
 
     @InjectMocks
     private ChatMessageService chatMessageService;
@@ -1347,6 +1352,43 @@ class ChatMessageServiceTest {
         chatMessageService.createChannelMessage(channelId, userId, new ChannelMessageCreateRequest("hello", null, "cmid-2"));
 
         verify(threadRepository, org.mockito.Mockito.times(2)).save(org.mockito.ArgumentMatchers.any(Thread.class));
+    }
+
+    @Test
+    @DisplayName("replyTo가 있으면 원본 메시지 작성자에게 REPLY 이벤트를 기록한다")
+    void createChannelMessageRecordsReplyEvent() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        User senderUser = user("sender", "Sender");
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, senderUser);
+
+        User originalAuthorUser = user("original", "Original");
+        ReflectionTestUtils.setField(originalAuthorUser, "id", 99L);
+        WorkspaceMember originalAuthor = workspaceMember(50L, workspace, true, originalAuthorUser);
+        Thread replyTo = thread(50L, channel, originalAuthor, "원본 메시지", LocalDateTime.of(2026, 6, 23, 9, 0));
+
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("reply content", 50L, null);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findById(50L)).thenReturn(Optional.of(replyTo));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(workspaceEventService).recordEvent(
+                workspaceId, WorkspaceEvent.EventType.REPLY, "Sender", null, null, channelId,
+                "reply content", null, null, 50L, null, null, 99L);
     }
 
     private static Thread thread(

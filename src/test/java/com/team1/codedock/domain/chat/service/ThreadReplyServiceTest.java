@@ -10,10 +10,8 @@ import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.Workspace;
-import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
-import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -51,9 +49,6 @@ class ThreadReplyServiceTest {
 
     @Mock
     private MentionService mentionService;
-
-    @Mock
-    private WorkspaceEventService workspaceEventService;
 
     @InjectMocks
     private ThreadReplyService threadReplyService;
@@ -126,8 +121,6 @@ class ThreadReplyServiceTest {
                 org.mockito.ArgumentMatchers.eq(member),
                 org.mockito.ArgumentMatchers.eq("새 답글")
         );
-        verify(workspaceEventService).recordEvent(
-                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, "새 답글", null, null, 1L, null, null);
     }
 
     @Test
@@ -167,8 +160,6 @@ class ThreadReplyServiceTest {
                 org.mockito.ArgumentMatchers.eq(member),
                 org.mockito.ArgumentMatchers.eq(content)
         );
-        verify(workspaceEventService).recordEvent(
-                2L, WorkspaceEvent.EventType.REPLY, "테스터", null, null, 10L, content, null, null, 1L, null, null);
     }
 
     @Test

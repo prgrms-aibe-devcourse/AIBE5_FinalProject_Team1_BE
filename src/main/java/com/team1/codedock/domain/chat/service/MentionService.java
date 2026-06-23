@@ -56,9 +56,11 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
-                mentionedByMember.getUser().getDisplayName(), null, null, thread.getChannel().getId(), content,
-                null, null, thread.getId(), null, null);
+        for (WorkspaceMember mentionedMember : mentionedMembers) {
+            workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
+                    mentionedByMember.getUser().getDisplayName(), null, null, thread.getChannel().getId(), content,
+                    null, null, thread.getId(), null, null, mentionedMember.getUser().getId());
+        }
         publishThreadMentionNotifications(workspace, thread, mentionedMembers);
     }
 
@@ -79,10 +81,12 @@ public class MentionService {
                 ))
                 .toList();
         mentionRepository.saveAll(mentions);
-        workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
-                mentionedByMember.getUser().getDisplayName(), null, null,
-                threadReply.getThread().getChannel().getId(), content,
-                null, null, threadReply.getThread().getId(), null, null);
+        for (WorkspaceMember mentionedMember : mentionedMembers) {
+            workspaceEventService.recordEvent(workspace.getId(), WorkspaceEvent.EventType.MENTION,
+                    mentionedByMember.getUser().getDisplayName(), null, null,
+                    threadReply.getThread().getChannel().getId(), content,
+                    null, null, threadReply.getThread().getId(), null, null, mentionedMember.getUser().getId());
+        }
         publishThreadReplyMentionNotifications(workspace, threadReply, mentionedMembers);
     }
 
