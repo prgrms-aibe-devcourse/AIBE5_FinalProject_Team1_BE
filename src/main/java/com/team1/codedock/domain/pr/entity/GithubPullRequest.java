@@ -141,4 +141,14 @@ public class GithubPullRequest extends BaseEntity {
     public void updateState(String state) {
         this.state = state;
     }
+
+    public void updateMerged() {
+        this.state = "merged";
+        this.mergedAt = java.time.LocalDateTime.now();
+    }
+
+    public void updateMergedAt(java.time.LocalDateTime mergedAt) {
+        this.state = "merged";
+        this.mergedAt = mergedAt;
+    }
 }
