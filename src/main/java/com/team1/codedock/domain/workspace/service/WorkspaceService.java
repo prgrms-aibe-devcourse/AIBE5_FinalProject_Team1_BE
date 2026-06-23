@@ -137,7 +137,8 @@ public class WorkspaceService {
         return workspaceMemberRepository.findAllByWorkspace(workspace).stream()
                 .filter(WorkspaceMember::isActive)
                 .map(m -> {
-                    // 접속 세션이 없는 멤버는 고른 상태와 무관하게 offline로 내려줌(목록 진입 시 깜빡임 방지).
+                    // 세션이 있으면 고른 상태(active/away/busy/offline)를 그대로 사용, 없으면 offline.
+                    // 사용자가 직접 고른 offline은 접속 중이어도 offline로 표시되고 접속 인원에서 제외됨.
                     String chosen = preferencesRepository.findByWorkspaceMember(m)
                             .map(WorkspaceMemberPreferences::getPresence)
                             .orElse("active");
@@ -153,6 +154,11 @@ public class WorkspaceService {
         // (한 워크스페이스에서 offline으로 바꾸면 다른 워크스페이스에서도 즉시 offline로 반영됨)
         WorkspaceMember requesting = getMembership(workspaceId, currentUserId);
         User user = requesting.getUser();
+        if ("offline".equals(presence)) {
+            presenceRegistry.markOffline(currentUserId);
+        } else if (!presenceRegistry.hasConnectedSession(currentUserId)) {
+            presenceRegistry.markOnline(currentUserId);
+        }
         for (WorkspaceMember member : workspaceMemberRepository.findAllByUser(user)) {
             if (!member.isActive()) {
                 continue;

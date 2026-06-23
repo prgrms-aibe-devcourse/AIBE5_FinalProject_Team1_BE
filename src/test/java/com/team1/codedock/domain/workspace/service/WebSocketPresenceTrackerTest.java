@@ -44,12 +44,11 @@ class WebSocketPresenceTrackerTest {
 
     @BeforeEach
     void setUp() {
-        // 세션 카운팅은 실제 PresenceRegistry로 구동하고, 브로드캐스트만 mock으로 검증한다.
         tracker = new WebSocketPresenceTracker(workspaceService, new PresenceRegistry());
     }
 
     @Test
-    @DisplayName("첫 세션 연결이면 모든 워크스페이스에 online 브로드캐스트한다")
+    @DisplayName("First session broadcasts online")
     void firstSessionBroadcastsOnline() {
         Principal user = principal(10L, "alice");
 
@@ -60,7 +59,7 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("presence 토픽 구독 시 해당 워크스페이스 스냅샷을 구독자에게 전송한다")
+    @DisplayName("Presence subscription sends snapshot")
     void subscribeSendsSnapshot() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
@@ -71,17 +70,18 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("presence가 아닌 경로 구독은 무시한다")
-    void nonPresenceSubscribeIgnored() {
+    @DisplayName("Non-presence subscription registers authenticated session without snapshot")
+    void nonPresenceSubscribeRegistersOnlineWithoutSnapshot() {
         Principal user = principal(10L, "alice");
 
         tracker.onSubscribe(subscribeEvent("s1", "/topic/channels/5/events", user));
 
-        verifyNoInteractions(workspaceService);
+        verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, true);
+        verify(workspaceService, never()).sendPresenceSnapshot(anyLong(), any(), any());
     }
 
     @Test
-    @DisplayName("마지막 세션이 끊기면 모든 워크스페이스에 offline 브로드캐스트한다")
+    @DisplayName("Last session broadcasts offline")
     void lastSessionBroadcastsOffline() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
@@ -92,7 +92,7 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("멀티 세션: online은 1회, 한 세션만 끊기면 offline 없음, 모두 끊겨야 offline")
+    @DisplayName("Multiple sessions broadcast online once and offline on last disconnect")
     void multiSessionOnlineOnceOfflineOnLast() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
@@ -108,7 +108,7 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("같은 세션의 connect+subscribe는 세션을 1회만 등록한다(online 1회)")
+    @DisplayName("Connect and subscribe register the same session only once")
     void registerOncePerSession() {
         Principal user = principal(10L, "alice");
         tracker.onConnected(connectedEvent("s1", user));
@@ -118,7 +118,7 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("알 수 없는 세션 disconnect는 아무 것도 하지 않는다")
+    @DisplayName("Unknown session disconnect is noop")
     void disconnectUnknownSessionNoop() {
         tracker.onDisconnect(disconnectEvent("ghost"));
 
@@ -126,7 +126,7 @@ class WebSocketPresenceTrackerTest {
     }
 
     @Test
-    @DisplayName("onConnected 없이 구독→끊김이어도 online/스냅샷/offline이 모두 처리된다")
+    @DisplayName("Subscribe without connected still handles online, snapshot, and offline")
     void subscribeWithoutConnectedStillWorks() {
         Principal user = principal(10L, "alice");
 
@@ -137,8 +137,6 @@ class WebSocketPresenceTrackerTest {
         tracker.onDisconnect(disconnectEvent("s1"));
         verify(workspaceService).broadcastUserPresenceToAllWorkspaces(10L, false);
     }
-
-    // --- event/principal builders ---
 
     private static Principal principal(long userId, String name) {
         CustomUserDetails details = mock(CustomUserDetails.class);

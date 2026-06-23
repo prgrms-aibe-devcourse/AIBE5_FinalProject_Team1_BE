@@ -18,7 +18,10 @@ import java.util.concurrent.ConcurrentMap;
 @Component
 public class PresenceRegistry {
 
+    private static final long MANUAL_ONLINE_TTL_MILLIS = 90_000L;
+
     private final ConcurrentMap<Long, Integer> userSessionCounts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, Long> manualOnlineExpiresAtByUserId = new ConcurrentHashMap<>();
 
     /** 세션 +1. 이 호출로 offline→online이 되면 true. */
     public boolean increment(Long userId) {
@@ -47,11 +50,57 @@ public class PresenceRegistry {
         if (userId == null) {
             return false;
         }
+        clearExpiredManualOnline(userId);
+        Integer count = userSessionCounts.get(userId);
+        return (count != null && count > 0) || manualOnlineExpiresAtByUserId.containsKey(userId);
+    }
+
+    public Set<Long> onlineUserIds() {
+        clearExpiredManualOnline();
+        Set<Long> onlineUserIds = new HashSet<>(manualOnlineExpiresAtByUserId.keySet());
+        userSessionCounts.forEach((userId, count) -> {
+            if (count != null && count > 0) {
+                onlineUserIds.add(userId);
+            }
+        });
+        return onlineUserIds;
+    }
+
+    public boolean hasConnectedSession(Long userId) {
+        if (userId == null) {
+            return false;
+        }
         Integer count = userSessionCounts.get(userId);
         return count != null && count > 0;
     }
 
-    public Set<Long> onlineUserIds() {
-        return new HashSet<>(userSessionCounts.keySet());
+    public boolean markOnline(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        boolean wasOnline = isOnline(userId);
+        manualOnlineExpiresAtByUserId.put(userId, System.currentTimeMillis() + MANUAL_ONLINE_TTL_MILLIS);
+        return !wasOnline;
+    }
+
+    public boolean markOffline(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        boolean wasOnline = isOnline(userId);
+        manualOnlineExpiresAtByUserId.remove(userId);
+        return wasOnline && !isOnline(userId);
+    }
+
+    private void clearExpiredManualOnline(Long userId) {
+        Long expiresAt = manualOnlineExpiresAtByUserId.get(userId);
+        if (expiresAt != null && expiresAt <= System.currentTimeMillis()) {
+            manualOnlineExpiresAtByUserId.remove(userId, expiresAt);
+        }
+    }
+
+    private void clearExpiredManualOnline() {
+        long now = System.currentTimeMillis();
+        manualOnlineExpiresAtByUserId.entrySet().removeIf(entry -> entry.getValue() <= now);
     }
 }
