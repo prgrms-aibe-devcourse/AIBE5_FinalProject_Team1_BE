@@ -100,6 +100,11 @@ jobs:
           script: |
             set -e
             cd "${{ secrets.EC2_DEPLOY_PATH }}"
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git checkout main
+              git pull --ff-only origin main
+            fi
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             docker compose pull app
             docker compose up -d
