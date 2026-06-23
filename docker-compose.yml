@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: codedock-backend:${APP_IMAGE_TAG:-local}
+    image: ${APP_IMAGE:-codedock-backend:local}
     container_name: codedock-backend
     restart: unless-stopped
     ports:
