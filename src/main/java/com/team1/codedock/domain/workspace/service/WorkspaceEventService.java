@@ -30,11 +30,12 @@ public class WorkspaceEventService {
 
     public void recordEvent(Long workspaceId, WorkspaceEvent.EventType type, String actorName,
                             Long prId, Long issueId, Long channelId, String content,
-                            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber) {
+                            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
+                            Long targetUserId) {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
         workspaceEventRepository.save(
-                WorkspaceEvent.create(workspace, type, actorName, prId, issueId, channelId, content, repositoryId, repositoryName, threadId, prNumber, issueNumber)
+                WorkspaceEvent.create(workspace, type, actorName, prId, issueId, channelId, content, repositoryId, repositoryName, threadId, prNumber, issueNumber, targetUserId)
         );
         workspace.updateLastActivityAt(LocalDateTime.now());
     }
