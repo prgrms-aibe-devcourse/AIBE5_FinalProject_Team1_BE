@@ -10,8 +10,10 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +58,21 @@ class RedisConfigTest {
     }
 
     @Test
+    @DisplayName("RedisConnectionFactory가 있어도 Redis 공통 설정을 끄면 공통 빈을 등록하지 않음")
+    void disabledRedisConfigDoesNotRegisterTemplatesEvenWhenConnectionFactoryExists() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withPropertyValues("app.redis.enabled=false")
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(RedisConnectionFactory.class);
+                    assertThat(context).doesNotHaveBean(StringRedisTemplate.class);
+                    assertThat(context).doesNotHaveBean("redisTemplate");
+                });
+    }
+
+    @Test
     @DisplayName("Redis key와 hash key는 문자열 직렬화를 사용함")
     void redisTemplateUsesStringSerializersForKeys() {
         RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
@@ -73,6 +90,27 @@ class RedisConfigTest {
     }
 
     @Test
+    @DisplayName("RedisTemplate key serializer는 UTF-8 문자열 왕복 직렬화를 수행함")
+    void redisTemplateKeySerializerRoundTripsUtf8String() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+                    @SuppressWarnings("unchecked")
+                    RedisSerializer<String> keySerializer =
+                            (RedisSerializer<String>) redisTemplate.getKeySerializer();
+
+                    String key = "codedock:redis:키:1";
+                    byte[] serializedKey = keySerializer.serialize(key);
+
+                    assertThat(serializedKey).isEqualTo(key.getBytes(StandardCharsets.UTF_8));
+                    assertThat(keySerializer.deserialize(serializedKey)).isEqualTo(key);
+                });
+    }
+
+    @Test
     @DisplayName("Redis value와 hash value는 JSON 직렬화를 사용함")
     void redisTemplateUsesJsonSerializersForValues() {
         RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
@@ -86,6 +124,65 @@ class RedisConfigTest {
                             .isInstanceOf(GenericJackson2JsonRedisSerializer.class);
                     assertThat(redisTemplate.getHashValueSerializer())
                             .isInstanceOf(GenericJackson2JsonRedisSerializer.class);
+                });
+    }
+
+    @Test
+    @DisplayName("RedisTemplate value serializer는 값 객체를 JSON으로 왕복 직렬화함")
+    void redisTemplateValueSerializerRoundTripsValueObjectAsJson() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+                    @SuppressWarnings("unchecked")
+                    RedisSerializer<Object> valueSerializer =
+                            (RedisSerializer<Object>) redisTemplate.getValueSerializer();
+
+                    RedisSampleValue value = new RedisSampleValue("MESSAGE_CREATED", 17L, true);
+                    byte[] serializedValue = valueSerializer.serialize(value);
+
+                    assertThat(serializedValue).isNotEmpty();
+                    assertThat(new String(serializedValue, StandardCharsets.UTF_8))
+                            .contains("MESSAGE_CREATED", "workspaceId", "active");
+                    assertThat(valueSerializer.deserialize(serializedValue)).isEqualTo(value);
+                });
+    }
+
+    @Test
+    @DisplayName("RedisTemplate hash value serializer도 값 객체를 JSON으로 왕복 직렬화함")
+    void redisTemplateHashValueSerializerRoundTripsValueObjectAsJson() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+                    @SuppressWarnings("unchecked")
+                    RedisSerializer<Object> hashValueSerializer =
+                            (RedisSerializer<Object>) redisTemplate.getHashValueSerializer();
+
+                    RedisSampleValue value = new RedisSampleValue("REACTION_UPDATED", 33L, false);
+                    byte[] serializedValue = hashValueSerializer.serialize(value);
+
+                    assertThat(serializedValue).isNotEmpty();
+                    assertThat(hashValueSerializer.deserialize(serializedValue)).isEqualTo(value);
+                });
+    }
+
+    @Test
+    @DisplayName("RedisTemplate은 key와 hash key serializer를 같은 문자열 정책으로 유지함")
+    void redisTemplateKeepsSameStringPolicyForKeyAndHashKey() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+
+                    assertThat(redisTemplate.getKeySerializer()).isSameAs(redisTemplate.getHashKeySerializer());
+                    assertThat(redisTemplate.getKeySerializer()).isSameAs(StringRedisSerializer.UTF_8);
                 });
     }
 
@@ -223,6 +320,18 @@ class RedisConfigTest {
     }
 
     @Test
+    @DisplayName("Spring Redis 연결 설정은 빈 비밀번호를 인증 없음으로 유지함")
+    void redisConnectionFactoryKeepsBlankPasswordAsNoPassword() {
+        redisAutoConfigContextRunner
+                .withPropertyValues("spring.data.redis.password=")
+                .run(context -> {
+                    LettuceConnectionFactory connectionFactory = context.getBean(LettuceConnectionFactory.class);
+
+                    assertThat(connectionFactory.getPassword()).isNullOrEmpty();
+                });
+    }
+
+    @Test
     @DisplayName("Spring Redis 빈 생성은 실제 Redis 서버 연결 없이 설정만 검증 가능함")
     void redisConnectionFactoryCreationDoesNotRequireRunningRedisServer() {
         redisAutoConfigContextRunner
@@ -237,5 +346,12 @@ class RedisConfigTest {
                     assertThat(connectionFactory.getHostName()).isEqualTo("redis-not-running.local");
                     assertThat(connectionFactory.getPort()).isEqualTo(6399);
                 });
+    }
+
+    private record RedisSampleValue(
+            String type,
+            Long workspaceId,
+            boolean active
+    ) {
     }
 }
