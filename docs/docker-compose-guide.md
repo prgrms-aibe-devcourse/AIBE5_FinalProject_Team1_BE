@@ -40,6 +40,16 @@ AWS 배포 환경에서는 실제 Oracle 접속 주소를 넣는다.
 docker compose up -d --build
 ```
 
+로컬 PC에서 이미 백엔드, Redis, Kafka가 실행 중이면 host 포트가 충돌할 수 있다. 이 경우 `.env`에서 host 노출 포트만 바꾼다.
+
+```properties
+APP_PORT=18080
+REDIS_HOST_PORT=16379
+KAFKA_HOST_PORT=19092
+```
+
+이 값은 host PC에서 접근할 포트만 바꾼다. Compose 내부에서 백엔드는 계속 `redis:6379`, `kafka:9092`로 접근한다.
+
 ## 상태 확인
 
 백엔드 컨테이너 로그를 확인한다.
