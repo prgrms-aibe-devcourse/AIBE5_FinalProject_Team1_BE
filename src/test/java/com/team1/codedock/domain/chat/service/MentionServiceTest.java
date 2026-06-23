@@ -66,8 +66,12 @@ class MentionServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
         WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
-        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
-        WorkspaceMember bob = workspaceMember(22L, workspace, user("bob", "Bob"));
+        User aliceUser = user("alice", "Alice");
+        ReflectionTestUtils.setField(aliceUser, "id", 101L);
+        WorkspaceMember alice = workspaceMember(21L, workspace, aliceUser);
+        User bobUser = user("bob", "Bob");
+        ReflectionTestUtils.setField(bobUser, "id", 102L);
+        WorkspaceMember bob = workspaceMember(22L, workspace, bobUser);
         Thread thread = thread(100L, channel, sender, "hello @alice @bob @alice @none");
 
         when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("alice", "bob", "none")))
@@ -109,7 +113,9 @@ class MentionServiceTest {
                     assertThat(notification.message()).isEqualTo("새 멘션이 도착했습니다.");
                 });
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, null, 100L, null, null);
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, null, 100L, null, null, 101L);
+        verify(workspaceEventService).recordEvent(
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, null, 100L, null, null, 102L);
     }
 
     @Test
@@ -187,7 +193,7 @@ class MentionServiceTest {
         verify(workspaceMemberRepository, never()).findActiveMentionTargets(anyLong(), anyList());
         verify(mentionRepository, never()).saveAll(any());
         verify(eventPublisher, never()).publishEvent(any());
-        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -196,7 +202,9 @@ class MentionServiceTest {
         Workspace workspace = workspace(10L);
         Channel channel = channel(1L, workspace);
         WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
-        WorkspaceMember alice = workspaceMember(21L, workspace, user("alice", "Alice"));
+        User aliceUser = user("alice", "Alice");
+        ReflectionTestUtils.setField(aliceUser, "id", 101L);
+        WorkspaceMember alice = workspaceMember(21L, workspace, aliceUser);
         Thread thread = thread(100L, channel, sender, "message");
         ThreadReply reply = reply(200L, thread, sender, "reply to @alice");
 
@@ -227,7 +235,7 @@ class MentionServiceTest {
         assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
         assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice", null, null, 100L, null, null);
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice", null, null, 100L, null, null, 101L);
     }
 
     @Test
