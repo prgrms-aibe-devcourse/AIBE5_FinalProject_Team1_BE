@@ -69,8 +69,23 @@ class GithubWebhookEventServiceTest {
 
     @Test
     @DisplayName("PR 리뷰 이벤트를 기록한다 - PR 작성자 조회 실패 시 targetUserId는 null이다")
-    void onPrReview_작성자_조회_실패() {
+    void onPrReview_작성자_조회_실패_PR없음() {
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.empty());
+
+        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", 234L);
+
+        verify(workspaceEventService).recordEvent(
+                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
+    }
+
+    @Test
+    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR은 찾았으나 GitHub 유저 조회 실패 시 targetUserId는 null이다")
+    void onPrReview_작성자_조회_실패_유저없음() {
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getAuthor()).thenReturn("octocat");
+
+        when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.of(pr));
+        when(userRepository.findByGithubUsername("octocat")).thenReturn(Optional.empty());
 
         githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", 234L);
 

@@ -271,12 +271,32 @@ class DashboardServiceTest {
 
     @Test
     @DisplayName("targetUserId가 다른 사용자이면 FORBIDDEN 예외가 발생한다")
-    void markEventAsRead_권한없으면_FORBIDDEN() {
+    void markEventAsRead_권한없으면_FORBIDDEN_타깃유저_불일치() {
         Workspace ws = workspace(10L, "워크스페이스");
         WorkspaceEvent ev = event(ws, WorkspaceEvent.EventType.REPLY, "alice", 99L);
         ReflectionTestUtils.setField(ev, "id", 200L);
 
         WorkspaceMember m = membership(user(1L, null), ws);
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
+        when(workspaceEventRepository.findByIdWithWorkspace(200L)).thenReturn(Optional.of(ev));
+
+        assertThatThrownBy(() -> dashboardService.markEventAsRead(200L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        assertThat(ev.isRead()).isFalse();
+    }
+
+    @Test
+    @DisplayName("targetUserId가 없는 broadcast 이벤트를 비소속 사용자가 읽으려 하면 FORBIDDEN 예외가 발생한다")
+    void markEventAsRead_권한없으면_FORBIDDEN_비소속멤버() {
+        Workspace ws = workspace(10L, "워크스페이스");
+        WorkspaceEvent ev = event(ws, WorkspaceEvent.EventType.PR_CREATED, "alice", null);
+        ReflectionTestUtils.setField(ev, "id", 200L);
+
+        // userId=1L은 workspace 20L의 멤버이지, 이벤트가 속한 workspace 10L의 멤버가 아님
+        WorkspaceMember m = membership(user(1L, null), workspace(20L, "다른 워크스페이스"));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
         when(workspaceEventRepository.findByIdWithWorkspace(200L)).thenReturn(Optional.of(ev));
 
