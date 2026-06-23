@@ -87,6 +87,8 @@ class GithubWebhookServiceTest {
     private PullRequestFileRepository pullRequestFileRepository;
     @Mock
     private AiSummaryService aiSummaryService;
+    @Mock
+    private GithubWebhookEventService githubWebhookEventService;
 
     private GithubWebhookService githubWebhookService;
 
@@ -106,7 +108,8 @@ class GithubWebhookServiceTest {
                 workspaceMemberRepository,
                 pullRequestReviewRepository,
                 pullRequestFileRepository,
-                aiSummaryService
+                aiSummaryService,
+                githubWebhookEventService
         );
     }
 
@@ -246,6 +249,8 @@ class GithubWebhookServiceTest {
         verify(issueLabelRepository).saveAll(labelsCaptor.capture());
         assertThat(labelsCaptor.getValue()).hasSize(1);
         assertThat(labelsCaptor.getValue().get(0).getName()).isEqualTo("bug");
+
+        verify(githubWebhookEventService).onIssueCreated(10L, 40L, "octocat", "로그인 버그", 20L, "repo", 7L);
     }
 
     @Test
@@ -343,6 +348,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.processPullRequestEvent(20L, payload);
 
         verify(pullRequestFileRepository).saveAll(any());
+        verify(githubWebhookEventService).onPrCreated(10L, 100L, "octocat", "Feature: Add auth", 20L, "repo", 1L);
     }
 
     @Test
@@ -464,6 +470,42 @@ class GithubWebhookServiceTest {
 
         verify(pullRequestFileRepository, never()).saveAll(any());
         verify(aiSummaryService).generateSummaryForWebhook(100L);
+    }
+
+    @Test
+    @DisplayName("PR 승인 시 onPrReview 이벤트를 발행한다")
+    void approvePullRequest_onPrReview_이벤트_발행() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User memberUser = mock(User.class);
+        when(memberUser.getDisplayName()).thenReturn("테스터");
+        when(member.getId()).thenReturn(30L);
+        when(member.getUser()).thenReturn(memberUser);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndPrNumber(20L, 1)).thenReturn(Optional.of(pr));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(pullRequestReviewRepository.findByGithubPullRequest_IdAndWorkspaceMember_Id(100L, 30L))
+                .thenReturn(Optional.empty());
+        when(pullRequestReviewRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestReviewRepository.countByGithubPullRequest_IdAndReviewState(100L, "approved"))
+                .thenReturn(1L);
+        when(githubPullRequestRepository.save(pr)).thenReturn(pr);
+        Channel approveChannel = mock(Channel.class);
+        when(approveChannel.getId()).thenReturn(30L);
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(approveChannel));
+        when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
+        when(threadRepository.findByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+
+        githubWebhookService.approvePullRequest(20L, 1, 3L);
+
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "테스터", "승인", 20L, "repo", 1L);
     }
 
     private static ChatEventResponse<?> assertChatEvent(Object value, ChatEventType expectedType) {

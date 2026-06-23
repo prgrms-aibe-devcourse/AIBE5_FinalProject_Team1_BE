@@ -21,5 +21,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByUsername(String username);
 
+    Optional<User> findByGithubUsername(String githubUsername);
+
     List<User> findByGithubUsernameIn(Collection<String> githubUsernames);
 }

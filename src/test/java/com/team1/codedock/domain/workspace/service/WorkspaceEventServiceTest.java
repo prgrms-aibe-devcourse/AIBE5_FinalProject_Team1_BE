@@ -51,7 +51,7 @@ class WorkspaceEventServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         workspaceEventService.recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "actor", null, null, 1L, "hello", null, null, null, null, null);
+                10L, WorkspaceEvent.EventType.MENTION, "actor", null, null, 1L, "hello", null, null, null, null, null, null);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
@@ -63,6 +63,8 @@ class WorkspaceEventServiceTest {
         assertThat(saved.getContent()).isEqualTo("hello");
         assertThat(saved.getRepositoryId()).isNull();
         assertThat(saved.getThreadId()).isNull();
+        assertThat(saved.isRead()).isFalse();
+        assertThat(saved.getTargetUserId()).isNull();
         assertThat(workspace.getLastActivityAt()).isNotNull();
     }
 
@@ -72,7 +74,7 @@ class WorkspaceEventServiceTest {
         when(workspaceRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                workspaceEventService.recordEvent(99L, WorkspaceEvent.EventType.REPLY, "actor", null, null, null, "hi", null, null, null, null, null))
+                workspaceEventService.recordEvent(99L, WorkspaceEvent.EventType.REPLY, "actor", null, null, null, "hi", null, null, null, null, null, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
@@ -89,7 +91,7 @@ class WorkspaceEventServiceTest {
         ReflectionTestUtils.setField(member, "id", 20L);
 
         WorkspaceEvent event = WorkspaceEvent.create(workspace, WorkspaceEvent.EventType.MENTION,
-                "actor", null, null, 1L, "hello", null, null, null, null, null);
+                "actor", null, null, 1L, "hello", null, null, null, null, null, null);
         ReflectionTestUtils.setField(event, "id", 100L);
         ReflectionTestUtils.setField(event, "createdAt", LocalDateTime.of(2026, 6, 18, 12, 0));
 

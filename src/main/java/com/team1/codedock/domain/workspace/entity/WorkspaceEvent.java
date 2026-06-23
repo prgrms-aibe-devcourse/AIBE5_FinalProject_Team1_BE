@@ -55,6 +55,12 @@ public class WorkspaceEvent extends BaseCreatedEntity {
     @Column(columnDefinition = "CLOB")
     private String content;
 
+    @Column(name = "target_user_id")
+    private Long targetUserId;
+
+    @Column(name = "is_read", nullable = false)
+    private boolean isRead;
+
     public enum EventType {
         PR_CREATED, ISSUE_CREATED, PR_REVIEW, MENTION, REPLY
     }
@@ -62,7 +68,8 @@ public class WorkspaceEvent extends BaseCreatedEntity {
     public static WorkspaceEvent create(
             Workspace workspace, EventType type, String actorName,
             Long prId, Long issueId, Long channelId, String content,
-            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber) {
+            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
+            Long targetUserId) {
         WorkspaceEvent event = new WorkspaceEvent();
         event.workspace = workspace;
         event.type = type;
@@ -76,6 +83,12 @@ public class WorkspaceEvent extends BaseCreatedEntity {
         event.threadId = threadId;
         event.prNumber = prNumber;
         event.issueNumber = issueNumber;
+        event.targetUserId = targetUserId;
+        event.isRead = false;
         return event;
+    }
+
+    public void markAsRead() {
+        this.isRead = true;
     }
 }
