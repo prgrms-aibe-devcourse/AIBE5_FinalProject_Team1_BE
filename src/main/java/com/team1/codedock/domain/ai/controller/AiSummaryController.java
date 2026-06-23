@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/workspaces/{workspaceId}/pull-requests/{prId}/ai-summary")
+@RequestMapping("/api/workspaces/{workspaceId}/prs/{prId}/ai-summary")
 public class AiSummaryController {
 
     private final AiSummaryService aiSummaryService;
