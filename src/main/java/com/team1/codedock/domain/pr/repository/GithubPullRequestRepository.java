@@ -20,4 +20,7 @@ public interface GithubPullRequestRepository extends JpaRepository<GithubPullReq
 
     @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.channel.id = :channelId")
     long countByChannelId(@Param("channelId") Long channelId);
+
+    @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.repository.workspace.id = :workspaceId AND pr.author = :author AND pr.state = 'open'")
+    long countOpenByWorkspaceIdAndAuthor(@Param("workspaceId") Long workspaceId, @Param("author") String author);
 }
