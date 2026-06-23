@@ -298,6 +298,7 @@ class RedisConfigTest {
                 .withPropertyValues(
                         "spring.data.redis.host=redis",
                         "spring.data.redis.port=6380",
+                        "spring.data.redis.username=codedock",
                         "spring.data.redis.password=redis-secret",
                         "spring.data.redis.database=3",
                         "spring.data.redis.timeout=2s",
@@ -309,6 +310,8 @@ class RedisConfigTest {
                     assertThat(connectionFactory.getHostName()).isEqualTo("redis");
                     assertThat(connectionFactory.getPort()).isEqualTo(6380);
                     assertThat(connectionFactory.getDatabase()).isEqualTo(3);
+                    assertThat(connectionFactory.getStandaloneConfiguration().getUsername())
+                            .isEqualTo("codedock");
                     assertThat(connectionFactory.getPassword()).isEqualTo("redis-secret");
                     assertThat(connectionFactory.getClientConfiguration().getCommandTimeout())
                             .isEqualTo(Duration.ofSeconds(2));
@@ -320,13 +323,17 @@ class RedisConfigTest {
     }
 
     @Test
-    @DisplayName("Spring Redis 연결 설정은 빈 비밀번호를 인증 없음으로 유지함")
-    void redisConnectionFactoryKeepsBlankPasswordAsNoPassword() {
+    @DisplayName("Spring Redis 연결 설정은 빈 사용자명과 빈 비밀번호를 인증 없음으로 유지함")
+    void redisConnectionFactoryKeepsBlankUsernameAndPasswordAsNoAuthentication() {
         redisAutoConfigContextRunner
-                .withPropertyValues("spring.data.redis.password=")
+                .withPropertyValues(
+                        "spring.data.redis.username=",
+                        "spring.data.redis.password="
+                )
                 .run(context -> {
                     LettuceConnectionFactory connectionFactory = context.getBean(LettuceConnectionFactory.class);
 
+                    assertThat(connectionFactory.getStandaloneConfiguration().getUsername()).isNullOrEmpty();
                     assertThat(connectionFactory.getPassword()).isNullOrEmpty();
                 });
     }

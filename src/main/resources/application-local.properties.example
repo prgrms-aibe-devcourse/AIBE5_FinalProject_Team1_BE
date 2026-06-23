@@ -9,6 +9,7 @@ spring.jpa.show-sql=false
 # Redis
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_USERNAME=
 REDIS_PASSWORD=
 REDIS_DATABASE=0
 REDIS_TIMEOUT=2s

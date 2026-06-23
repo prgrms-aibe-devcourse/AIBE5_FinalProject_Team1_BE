@@ -13,6 +13,7 @@
 | `APP_REDIS_ENABLED` | `true` | Redis 공통 템플릿 설정 활성화 여부 |
 | `REDIS_HOST` | `localhost` | Redis 서버 호스트 |
 | `REDIS_PORT` | `6379` | Redis 서버 포트 |
+| `REDIS_USERNAME` | 빈 값 | Redis ACL 사용자명. 일반 compose Redis는 비워 둠 |
 | `REDIS_PASSWORD` | 빈 값 | Redis 비밀번호. 비어 있으면 인증 없이 연결 |
 | `REDIS_DATABASE` | `0` | 사용할 Redis logical database index |
 | `REDIS_TIMEOUT` | `2s` | Redis 명령 타임아웃 |
@@ -25,6 +26,7 @@
 ```properties
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_USERNAME=
 REDIS_PASSWORD=
 REDIS_DATABASE=0
 REDIS_TIMEOUT=2s
@@ -50,6 +52,8 @@ REDIS_PASSWORD=change-me
 
 이 값이 있으면 Redis 컨테이너는 `--requirepass`로 실행되고, app 컨테이너도 같은 비밀번호로 접속한다. 값이 비어 있으면 인증 없는 개발용 Redis로 실행한다.
 
+일반 Docker Compose Redis는 기본 사용자(default user)에 비밀번호만 거는 방식으로 사용한다. `REDIS_USERNAME`은 비워 둔다. Redis ACL 사용자명을 별도로 쓰려면 Redis 서버 쪽에 해당 사용자를 먼저 생성해야 한다.
+
 ## EC2 배포
 
 단일 EC2 + Docker Compose 배포에서는 Redis도 같은 compose 네트워크에 올리는 방식을 기본으로 한다.
@@ -57,10 +61,13 @@ REDIS_PASSWORD=change-me
 ```properties
 REDIS_HOST=redis
 REDIS_PORT=6379
+REDIS_USERNAME=
 REDIS_PASSWORD={운영용_비밀번호}
 ```
 
 운영 서버에서는 Redis host port를 외부에 열 필요가 없다. 외부 접근이 필요하지 않다면 보안그룹에서 Redis 포트 `6379`를 열지 않는다.
+
+AWS ElastiCache 등 관리형 Redis에서 ACL 사용자명을 요구하는 경우에만 `REDIS_USERNAME`을 채운다. 단일 EC2 Compose Redis를 쓸 때는 username 없이 password만 사용하는 구성이 가장 단순하다.
 
 ## Spring Bean
 
