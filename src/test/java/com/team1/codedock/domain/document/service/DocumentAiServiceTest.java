@@ -322,7 +322,8 @@ class DocumentAiServiceTest {
         Document savedDoc = Document.createFromAi(
                 member.getWorkspace(), member, result.title(), result.content(), result.category());
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        User user1 = mockUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
         when(githubApiClient.fetchControllerSources(eq("owner"), eq("repo"), any(), any()))
@@ -358,7 +359,8 @@ class DocumentAiServiceTest {
         Document savedDoc = Document.createFromAi(
                 member.getWorkspace(), member, result.title(), result.content(), result.category());
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        User user2 = mockUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user2));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
         when(githubApiClient.fetchCommits(eq("owner"), eq("repo"), any(), any(), any(), any()))
@@ -393,7 +395,8 @@ class DocumentAiServiceTest {
         Document savedDoc = Document.createFromAi(
                 member.getWorkspace(), member, result.title(), result.content(), result.category());
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser()));
+        User user3 = mockUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user3));
         when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L)).thenReturn(Optional.of(member));
         when(githubRepositoryRepository.findByWorkspaceId(1L)).thenReturn(List.of(repo1, repo2));
         when(githubApiClient.fetchControllerSources(any(), any(), any(), any())).thenReturn(List.of());
