@@ -52,14 +52,14 @@ class AiSummaryControllerTest {
         );
     }
 
-    // ── POST /api/workspaces/{workspaceId}/pull-requests/{prId}/ai-summary ──
+    // ── POST /api/workspaces/{workspaceId}/prs/{prId}/ai-summary ──
 
     @Test
     @DisplayName("AI 요약 생성 성공 시 200과 생성된 요약을 반환한다")
     void generateSummary_성공_200() throws Exception {
         when(aiSummaryService.generateSummary(1L, 1L)).thenReturn(sampleResponse());
 
-        mockMvc.perform(post("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(post("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("completed"))
@@ -72,7 +72,7 @@ class AiSummaryControllerTest {
         when(aiSummaryService.generateSummary(1L, 1L))
                 .thenThrow(new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
-        mockMvc.perform(post("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(post("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("W002"));
@@ -84,7 +84,7 @@ class AiSummaryControllerTest {
         when(aiSummaryService.generateSummary(1L, 1L))
                 .thenThrow(new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
 
-        mockMvc.perform(post("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(post("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G003"));
@@ -96,20 +96,20 @@ class AiSummaryControllerTest {
         when(aiSummaryService.generateSummary(1L, 1L))
                 .thenThrow(new BusinessException(ErrorCode.AI_ANALYSIS_FAILED));
 
-        mockMvc.perform(post("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(post("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("AI002"));
     }
 
-    // ── GET /api/workspaces/{workspaceId}/pull-requests/{prId}/ai-summary ──
+    // ── GET /api/workspaces/{workspaceId}/prs/{prId}/ai-summary ──
 
     @Test
     @DisplayName("AI 요약 조회 성공 시 200과 요약을 반환한다")
     void getSummary_성공_200() throws Exception {
         when(aiSummaryService.getSummary(1L, 1L)).thenReturn(sampleResponse());
 
-        mockMvc.perform(get("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(get("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("completed"))
@@ -122,7 +122,7 @@ class AiSummaryControllerTest {
         when(aiSummaryService.getSummary(1L, 1L))
                 .thenThrow(new BusinessException(ErrorCode.AI_SUMMARY_NOT_FOUND));
 
-        mockMvc.perform(get("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(get("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("AI001"));
@@ -134,7 +134,7 @@ class AiSummaryControllerTest {
         when(aiSummaryService.getSummary(1L, 1L))
                 .thenThrow(new BusinessException(ErrorCode.GITHUB_PR_NOT_FOUND));
 
-        mockMvc.perform(get("/api/workspaces/1/pull-requests/1/ai-summary"))
+        mockMvc.perform(get("/api/workspaces/1/prs/1/ai-summary"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("G003"));
