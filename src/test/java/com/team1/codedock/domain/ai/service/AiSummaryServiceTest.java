@@ -262,7 +262,7 @@ class AiSummaryServiceTest {
     }
 
     @Test
-    @DisplayName("Gemini가 영문 fileRisk를 반환하면 한국어로 정규화하여 저장한다")
+    @DisplayName("Gemini가 fileRisk를 반환하면 High/Medium/Low로 정규화하여 저장한다")
     void generateSummary_fileFeedbacks_risk_정규화() {
         GithubPullRequest pr = mockPr();
         GeminiClient.PrFileFeedback feedback = new GeminiClient.PrFileFeedback(
@@ -285,7 +285,7 @@ class AiSummaryServiceTest {
         AiSummaryResponse response = aiSummaryService.generateSummary(1L, 1L);
 
         assertThat(response.fileFeedbacks()).hasSize(1);
-        assertThat(response.fileFeedbacks().get(0).risk()).isEqualTo("높음");
+        assertThat(response.fileFeedbacks().get(0).risk()).isEqualTo("High");
     }
 
     // ── getSummary() ──────────────────────────────────────────

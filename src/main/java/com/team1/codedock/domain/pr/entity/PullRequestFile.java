@@ -40,4 +40,17 @@ public class PullRequestFile extends BaseCreatedEntity {
     @Lob
     @Column
     private String patch;
+
+    public static PullRequestFile create(GithubPullRequest pr, String filename, String status,
+                                         int additions, int deletions, String path, String patch) {
+        PullRequestFile file = new PullRequestFile();
+        file.githubPullRequest = pr;
+        file.filename = filename;
+        file.status = status;
+        file.additions = additions;
+        file.deletions = deletions;
+        file.path = path;
+        file.patch = patch;
+        return file;
+    }
 }
