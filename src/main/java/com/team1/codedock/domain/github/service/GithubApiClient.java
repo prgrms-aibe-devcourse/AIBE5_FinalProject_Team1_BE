@@ -132,7 +132,7 @@ public class GithubApiClient {
                 .toList();
     }
 
-    private static final int KEYWORD_SOURCE_LIMIT = 10;
+    private static final int KEYWORD_SOURCE_LIMIT = 30;
     private static final List<String> SOURCE_EXTENSIONS = List.of(
             ".java", ".kt", ".py", ".js", ".ts", ".jsx", ".tsx",
             ".go", ".rb", ".php", ".cs", ".cpp", ".c", ".h",

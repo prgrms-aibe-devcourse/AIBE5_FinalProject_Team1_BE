@@ -47,16 +47,15 @@ public class ErdService {
                 .findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
-        GithubRepository githubRepo = githubRepositoryRepository.findByWorkspaceId(workspaceId)
-                .stream().findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        List<GithubRepository> githubRepos = githubRepositoryRepository.findByWorkspaceId(workspaceId)
+                .stream().limit(3).toList();
+        if (githubRepos.isEmpty()) throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
 
-        List<String> repoSources = githubApiClient.fetchRepoSources(
-                githubRepo.getOwner(),
-                githubRepo.getName(),
-                githubRepo.getDefaultBranch(),
-                user.getGithubAccessToken()
-        );
+        String token = user.getGithubAccessToken();
+        List<String> repoSources = githubRepos.stream()
+                .flatMap(repo -> githubApiClient.fetchRepoSources(
+                        repo.getOwner(), repo.getName(), repo.getDefaultBranch(), token).stream())
+                .toList();
 
         if (repoSources.isEmpty()) {
             throw new BusinessException(ErrorCode.ERD_SOURCE_NOT_FOUND);

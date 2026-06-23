@@ -45,13 +45,10 @@ public class DocumentAiService {
                 .findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_MEMBER_NOT_FOUND));
 
-        GithubRepository githubRepo = githubRepositoryRepository.findByWorkspaceId(workspaceId)
-                .stream().findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        List<GithubRepository> githubRepos = githubRepositoryRepository.findByWorkspaceId(workspaceId)
+                .stream().limit(3).toList();
+        if (githubRepos.isEmpty()) throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
 
-        String owner = githubRepo.getOwner();
-        String repo = githubRepo.getName();
-        String branch = githubRepo.getDefaultBranch();
         String token = user.getGithubAccessToken();
 
         List<String> sources;
@@ -69,7 +66,10 @@ public class DocumentAiService {
             if (ChronoUnit.DAYS.between(startDate, endDate) > 6) {
                 throw new BusinessException(ErrorCode.DATE_RANGE_TOO_LONG);
             }
-            commits = githubApiClient.fetchCommits(owner, repo, branch, token, startDate, endDate);
+            commits = githubRepos.stream()
+                    .flatMap(r -> githubApiClient.fetchCommits(
+                            r.getOwner(), r.getName(), r.getDefaultBranch(), token, startDate, endDate).stream())
+                    .toList();
             if (commits.isEmpty()) {
                 throw new BusinessException(ErrorCode.NO_COMMITS_IN_RANGE);
             }
@@ -78,9 +78,15 @@ public class DocumentAiService {
             if (request.topic() == null || request.topic().isBlank()) {
                 throw new BusinessException(ErrorCode.TOPIC_REQUIRED);
             }
-            sources = githubApiClient.fetchControllerSources(owner, repo, branch, token);
+            sources = githubRepos.stream()
+                    .flatMap(r -> githubApiClient.fetchControllerSources(
+                            r.getOwner(), r.getName(), r.getDefaultBranch(), token).stream())
+                    .toList();
             if (sources.isEmpty()) {
-                sources = githubApiClient.fetchSourcesByKeyword(owner, repo, branch, token, request.topic());
+                sources = githubRepos.stream()
+                        .flatMap(r -> githubApiClient.fetchSourcesByKeyword(
+                                r.getOwner(), r.getName(), r.getDefaultBranch(), token, request.topic()).stream())
+                        .toList();
             }
             commits = List.of();
         }
