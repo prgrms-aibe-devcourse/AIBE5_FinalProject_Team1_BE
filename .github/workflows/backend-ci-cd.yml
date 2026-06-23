@@ -45,10 +45,6 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    outputs:
-      image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build.outputs.digest }}
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -107,6 +103,6 @@ jobs:
             fi
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             docker compose pull app
-            docker compose up -d
+            docker compose up -d --no-build
             docker compose ps
             docker image prune -f

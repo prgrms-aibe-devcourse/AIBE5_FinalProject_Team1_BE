@@ -88,6 +88,27 @@ git clone https://github.com/prgrms-aibe-devcourse/AIBE5_FinalProject_Team1_BE.g
 cd ~/codedock-backend
 ```
 
+현재 저장소는 public이므로 EC2에서 위 HTTPS clone/pull을 그대로 사용할 수 있다. 저장소가 private으로 바뀌면 EC2의 `git fetch`/`git pull`에도 인증이 필요하다.
+
+private 저장소로 운영할 경우 아래 중 하나를 먼저 설정한다.
+
+### 방법 1. Deploy key 사용
+
+1. EC2에서 배포 전용 SSH key를 생성한다.
+2. public key를 GitHub Repository Settings > Deploy keys에 등록한다.
+3. EC2의 git remote를 SSH 주소로 바꾼다.
+
+```bash
+git remote set-url origin git@github.com:prgrms-aibe-devcourse/AIBE5_FinalProject_Team1_BE.git
+```
+
+### 방법 2. PAT 사용
+
+1. `contents:read` 권한이 있는 token을 발급한다.
+2. EC2에서 HTTPS clone/pull에 사용할 credential을 설정한다.
+
+Deploy key가 더 좁은 권한으로 관리하기 쉬우므로 우선 권장한다.
+
 `EC2_DEPLOY_PATH`는 위 경로와 맞춘다.
 
 ```text
@@ -177,9 +198,24 @@ GitHub Actions를 붙이기 전에 EC2에서 한 번 수동으로 확인한다.
 cd /path/to/deploy
 docker login ghcr.io
 docker compose pull app
-docker compose up -d
+docker compose up -d --no-build
 docker compose ps
 curl http://localhost:8080/actuator/health
+```
+
+배포 workflow도 `docker compose up -d --no-build`를 사용한다. 운영 서버에서는 GHCR에서 받은 이미지를 실행해야 하며, pull 실패나 태그 불일치 상황에서 EC2가 로컬 소스로 이미지를 다시 빌드하는 흐름을 피하기 위해서다.
+
+## 롤백
+
+workflow는 `latest` 태그와 함께 `sha-{commit-sha}` 태그도 push한다. 특정 버전으로 되돌리려면 EC2의 `.env`에서 `APP_IMAGE`를 원하는 sha 태그로 바꾼 뒤 compose를 다시 실행한다.
+
+```properties
+APP_IMAGE=ghcr.io/prgrms-aibe-devcourse/codedock-backend:sha-{commit-sha}
+```
+
+```bash
+docker compose pull app
+docker compose up -d --no-build
 ```
 
 ## 주의 사항
