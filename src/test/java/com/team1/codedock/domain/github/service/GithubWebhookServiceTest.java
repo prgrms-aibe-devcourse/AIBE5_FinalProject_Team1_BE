@@ -10,6 +10,7 @@ import com.team1.codedock.domain.chat.entity.ThreadAttachment;
 import com.team1.codedock.domain.chat.repository.ThreadAttachmentRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.github.dto.GithubIssueWebhookPayload;
+import com.team1.codedock.domain.github.dto.GithubPullRequestWebhookPayload;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
 import com.team1.codedock.domain.issue.entity.GithubIssue;
@@ -17,12 +18,14 @@ import com.team1.codedock.domain.issue.entity.IssueLabel;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.issue.repository.IssueLabelRepository;
 import com.team1.codedock.domain.ai.service.AiSummaryService;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestFileRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -48,6 +51,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -299,6 +304,168 @@ class GithubWebhookServiceTest {
         assertThat(repository.getWebhookLastStatus()).isEqualTo("success");
     }
 
+    @Test
+    @DisplayName("PR opened 웹훅 수신 시 PullRequestFile을 저장한다")
+    void processPullRequestEvent_opened_PullRequestFile_저장() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequestWebhookPayload payload = prPayload("opened", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.empty());
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(inv -> {
+            GithubPullRequest pr = inv.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(inv -> {
+            Thread thread = inv.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(inv -> {
+            ThreadAttachment att = inv.getArgument(0);
+            ReflectionTestUtils.setField(att, "id", 300L);
+            ReflectionTestUtils.setField(att, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 1));
+            return att;
+        });
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(member.getUser()).thenReturn(user);
+        when(workspaceMemberRepository.findAllByWorkspace_IdAndIsActiveTrue(10L)).thenReturn(List.of(member));
+        when(githubApiClient.fetchPullRequestFiles("team", "repo", 1, "ghtoken"))
+                .thenReturn(List.of(new GithubApiClient.GithubPrFileItem("src/Main.java", "modified", 5, 2, 7, "@@ -1 +1 @@")));
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(pullRequestFileRepository).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("PR opened 웹훅 수신 시 aiSummaryService.generateSummaryForWebhook를 호출한다")
+    void processPullRequestEvent_opened_generateSummaryForWebhook_호출() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequestWebhookPayload payload = prPayload("opened", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.empty());
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(inv -> {
+            GithubPullRequest pr = inv.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(inv -> {
+            Thread thread = inv.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(inv -> {
+            ThreadAttachment att = inv.getArgument(0);
+            ReflectionTestUtils.setField(att, "id", 300L);
+            ReflectionTestUtils.setField(att, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 1));
+            return att;
+        });
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(member.getUser()).thenReturn(user);
+        when(workspaceMemberRepository.findAllByWorkspace_IdAndIsActiveTrue(10L)).thenReturn(List.of(member));
+        when(githubApiClient.fetchPullRequestFiles("team", "repo", 1, "ghtoken"))
+                .thenReturn(List.of(new GithubApiClient.GithubPrFileItem("src/Main.java", "modified", 5, 2, 7, "@@ -1 +1 @@")));
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(aiSummaryService).generateSummaryForWebhook(100L);
+    }
+
+    @Test
+    @DisplayName("GitHub 토큰이 없으면 파일 fetch를 스킵하지만 AI 요약은 호출한다")
+    void processPullRequestEvent_opened_토큰_없으면_파일_스킵_AI_호출() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequestWebhookPayload payload = prPayload("opened", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.empty());
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(inv -> {
+            GithubPullRequest pr = inv.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(inv -> {
+            Thread thread = inv.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(inv -> {
+            ThreadAttachment att = inv.getArgument(0);
+            ReflectionTestUtils.setField(att, "id", 300L);
+            ReflectionTestUtils.setField(att, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 1));
+            return att;
+        });
+        // 토큰 없음 → 빈 목록 반환 (기본값)
+        when(workspaceMemberRepository.findAllByWorkspace_IdAndIsActiveTrue(10L)).thenReturn(List.of());
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(githubApiClient, never()).fetchPullRequestFiles(any(), any(), anyInt(), any());
+        verify(pullRequestFileRepository, never()).saveAll(any());
+        verify(aiSummaryService).generateSummaryForWebhook(100L);
+    }
+
+    @Test
+    @DisplayName("GitHub API 파일 fetch가 실패해도 AI 요약은 호출한다")
+    void processPullRequestEvent_opened_파일_fetch_실패해도_AI_호출() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequestWebhookPayload payload = prPayload("opened", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.empty());
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(inv -> {
+            GithubPullRequest pr = inv.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(inv -> {
+            Thread thread = inv.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(inv -> {
+            ThreadAttachment att = inv.getArgument(0);
+            ReflectionTestUtils.setField(att, "id", 300L);
+            ReflectionTestUtils.setField(att, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 1));
+            return att;
+        });
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(member.getUser()).thenReturn(user);
+        when(workspaceMemberRepository.findAllByWorkspace_IdAndIsActiveTrue(10L)).thenReturn(List.of(member));
+        when(githubApiClient.fetchPullRequestFiles("team", "repo", 1, "ghtoken"))
+                .thenThrow(new RuntimeException("GitHub API 오류"));
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(pullRequestFileRepository, never()).saveAll(any());
+        verify(aiSummaryService).generateSummaryForWebhook(100L);
+    }
+
     private static ChatEventResponse<?> assertChatEvent(Object value, ChatEventType expectedType) {
         assertThat(value).isInstanceOf(ChatEventResponse.class);
         ChatEventResponse<?> event = (ChatEventResponse<?>) value;
@@ -318,6 +485,23 @@ class GithubWebhookServiceTest {
         StringBuilder hex = new StringBuilder();
         for (byte b : raw) hex.append(String.format("%02x", b));
         return hex.toString();
+    }
+
+    private static GithubPullRequestWebhookPayload prPayload(String action, long prId, int prNumber, String title) {
+        GithubPullRequestWebhookPayload.PullRequestDto pr = new GithubPullRequestWebhookPayload.PullRequestDto(
+                prId, prNumber, title, "PR 본문", "open",
+                "https://github.com/team/repo/pull/" + prNumber,
+                new GithubPullRequestWebhookPayload.UserDto("octocat"),
+                List.of(), List.of(),
+                new GithubPullRequestWebhookPayload.HeadDto("feature-branch"),
+                new GithubPullRequestWebhookPayload.BaseDto("main"),
+                5, 2, 3, false, null,
+                Instant.parse("2026-06-23T00:00:00Z"),
+                Instant.parse("2026-06-23T00:00:00Z")
+        );
+        GithubPullRequestWebhookPayload.RepositoryDto repository =
+                new GithubPullRequestWebhookPayload.RepositoryDto(100L, "repo", "team/repo");
+        return new GithubPullRequestWebhookPayload(action, pr, repository);
     }
 
     private static GithubIssueWebhookPayload issuePayload(
