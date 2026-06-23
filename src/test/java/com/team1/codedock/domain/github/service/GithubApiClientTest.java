@@ -428,13 +428,13 @@ class GithubApiClientTest {
     }
 
     @Test
-    @DisplayName("매칭된 파일이 11개여도 최대 10개만 반환한다")
+    @DisplayName("매칭된 파일이 31개여도 최대 30개만 반환한다")
     @SuppressWarnings("unchecked")
-    void fetchSourcesByKeyword_11개_있어도_10개_반환() {
+    void fetchSourcesByKeyword_31개_있어도_30개_반환() {
         String source = "public class UserService {}";
         String base64 = Base64.getEncoder().encodeToString(source.getBytes());
 
-        var items = IntStream.range(0, 11)
+        var items = IntStream.range(0, 31)
                 .mapToObj(i -> new GithubApiClient.GithubTreeItem("src/user/UserService" + i + ".java", "blob"))
                 .toList();
         var treeResponse = new GithubApiClient.GithubTreeResponse(items);
@@ -445,7 +445,7 @@ class GithubApiClientTest {
 
         List<String> result = githubApiClient.fetchSourcesByKeyword("owner", "repo", "main", "token", "user");
 
-        assertThat(result).hasSize(10);
+        assertThat(result).hasSize(30);
     }
 
     // ── fetchCommits ───────────────────────────────────────────
