@@ -80,7 +80,7 @@ class AiSummaryServiceTest {
 
     private GeminiClient.PrAnalysisResult sampleAnalysisResult() {
         GeminiClient.PrFileFeedback feedback = new GeminiClient.PrFileFeedback(
-                "TestFile.java", "src/TestFile.java", "높음",
+                "TestFile.java", "src/TestFile.java", "High",
                 "취약점", "수정 방향", List.of("old code"), List.of("new code"), List.of("23번째 줄")
         );
         return new GeminiClient.PrAnalysisResult(
@@ -262,7 +262,7 @@ class AiSummaryServiceTest {
     }
 
     @Test
-    @DisplayName("Gemini가 영문 fileRisk를 반환하면 한국어로 정규화하여 저장한다")
+    @DisplayName("Gemini가 fileRisk를 반환하면 High/Medium/Low로 정규화하여 저장한다")
     void generateSummary_fileFeedbacks_risk_정규화() {
         GithubPullRequest pr = mockPr();
         GeminiClient.PrFileFeedback feedback = new GeminiClient.PrFileFeedback(
@@ -285,7 +285,7 @@ class AiSummaryServiceTest {
         AiSummaryResponse response = aiSummaryService.generateSummary(1L, 1L);
 
         assertThat(response.fileFeedbacks()).hasSize(1);
-        assertThat(response.fileFeedbacks().get(0).risk()).isEqualTo("높음");
+        assertThat(response.fileFeedbacks().get(0).risk()).isEqualTo("High");
     }
 
     // ── getSummary() ──────────────────────────────────────────
@@ -353,5 +353,53 @@ class AiSummaryServiceTest {
         assertThatThrownBy(() -> aiSummaryService.getSummary(1L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.AI_SUMMARY_NOT_FOUND.getMessage());
+    }
+
+    // ── generateSummaryForWebhook() ───────────────────────────
+
+    @Test
+    @DisplayName("PR이 존재하면 generateSummaryForWebhook는 AI 요약을 생성한다")
+    void generateSummaryForWebhook_PR_있으면_요약_생성() {
+        GithubPullRequest pr = mockPr();
+        GeminiClient.PrAnalysisResult result = sampleAnalysisResult();
+
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.empty());
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of());
+        when(geminiClient.generatePrAnalysis(any())).thenReturn(result);
+        when(geminiClient.getModel()).thenReturn("llama-3.3-70b-versatile");
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository).save(any(AiSummary.class));
+    }
+
+    @Test
+    @DisplayName("PR이 존재하지 않으면 generateSummaryForWebhook는 아무 작업도 하지 않는다")
+    void generateSummaryForWebhook_PR_없으면_no_op() {
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.empty());
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Gemini 호출이 실패해도 generateSummaryForWebhook는 예외를 전파하지 않고 AiSummary를 failed 상태로 저장한다")
+    void generateSummaryForWebhook_Gemini_실패해도_예외_전파_없음_fail_호출() {
+        GithubPullRequest pr = mockPr();
+        ArgumentCaptor<AiSummary> summaryCaptor = ArgumentCaptor.forClass(AiSummary.class);
+
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.empty());
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of());
+        when(geminiClient.generatePrAnalysis(any())).thenThrow(new RuntimeException("Gemini 오류"));
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository).save(summaryCaptor.capture());
+        assertThat(summaryCaptor.getValue().getStatus()).isEqualTo("failed");
     }
 }

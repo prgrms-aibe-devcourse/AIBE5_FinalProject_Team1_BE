@@ -239,27 +239,32 @@ public class GeminiClient {
 
     private String buildPrAnalysisPrompt(String combinedDiff) {
         return """
-                다음 PR의 파일 diff를 분석하여 요약과 보안 취약점 피드백을 생성해주세요.
+                반드시 한국어로만 작성해주세요.
+                다음 PR의 파일 diff를 분석하여 전체 요약, 코드 품질·보안 취약점·개선 필요 사항 전반에 대한 피드백을 생성해주세요.
+                언어나 프레임워크에 관계없이 변경된 모든 파일을 분석하세요.
 
                 [PR Diff]
                 %s
 
-                다음 JSON 형식으로 응답해주세요:
+                다음 JSON 형식으로 응답해주세요.
+                name과 path는 diff에 나타난 실제 파일명과 경로를 그대로 사용하세요.
+                riskLevel과 risk 모두 영어(High/Medium/Low)로 작성하세요.
+                cautionItems와 positiveItems는 내용에 따라 1~5개로 작성하세요.
                 {
-                  "summaryText": "PR 전체 요약 1~2문장",
-                  "cautionItems": ["주의사항1", "주의사항2"],
-                  "positiveItems": ["긍정적인 점1", "긍정적인 점2"],
+                  "summaryText": "PR 전체 요약 1~5문장",
+                  "cautionItems": ["주의사항1", "주의사항2", "주의사항3"],
+                  "positiveItems": ["긍정적인 점1", "긍정적인 점2", "긍정적인 점3"],
                   "riskLevel": "High | Medium | Low",
                   "fileFeedbacks": [
                     {
-                      "name": "파일명.java",
-                      "path": "src/.../파일명.java",
-                      "risk": "높음 | 중간 | 낮음",
-                      "vulnerability": "취약점 설명",
+                      "name": "실제 파일명",
+                      "path": "diff에 나타난 실제 경로",
+                      "risk": "High | Medium | Low",
+                      "vulnerability": "취약점 또는 개선 필요 사항 설명",
                       "fix": "수정 방향 설명",
                       "currentCode": ["현재 코드 라인1", "현재 코드 라인2"],
                       "recommendedCode": ["추천 코드 라인1", "추천 코드 라인2"],
-                      "findings": ["23번째 줄: CSRF 전역 비활성화"]
+                      "findings": ["발견된 구체적인 문제점"]
                     }
                   ]
                 }
