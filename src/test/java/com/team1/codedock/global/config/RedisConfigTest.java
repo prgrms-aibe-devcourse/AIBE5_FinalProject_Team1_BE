@@ -16,6 +16,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -180,6 +181,32 @@ class RedisConfigTest {
 
                     assertThat(serializedValue).isNotEmpty();
                     assertThat(hashValueSerializer.deserialize(serializedValue)).isEqualTo(value);
+                });
+    }
+
+    @Test
+    @DisplayName("RedisTemplate value serializer는 Java time 값 객체도 왕복 직렬화함")
+    void redisTemplateValueSerializerRoundTripsJavaTimeValueObjectAsJson() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+
+        contextRunner
+                .withBean(RedisConnectionFactory.class, () -> connectionFactory)
+                .run(context -> {
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+                    @SuppressWarnings("unchecked")
+                    RedisSerializer<Object> valueSerializer =
+                            (RedisSerializer<Object>) redisTemplate.getValueSerializer();
+
+                    RedisTimeValue value = new RedisTimeValue(
+                            "PRESENCE_UPDATED",
+                            LocalDateTime.of(2026, 6, 23, 21, 55, 30)
+                    );
+                    byte[] serializedValue = valueSerializer.serialize(value);
+
+                    assertThat(serializedValue).isNotEmpty();
+                    assertThat(new String(serializedValue, StandardCharsets.UTF_8))
+                            .contains("PRESENCE_UPDATED", "2026-06-23T21:55:30");
+                    assertThat(valueSerializer.deserialize(serializedValue)).isEqualTo(value);
                 });
     }
 
@@ -434,6 +461,12 @@ class RedisConfigTest {
             String type,
             Long workspaceId,
             boolean active
+    ) {
+    }
+
+    private record RedisTimeValue(
+            String type,
+            LocalDateTime occurredAt
     ) {
     }
 }
