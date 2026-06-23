@@ -16,6 +16,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_TIMEOUT: ${REDIS_TIMEOUT:-2s}
+      REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-2s}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-local}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-local}
@@ -43,12 +47,23 @@ services:
     image: redis:7.2
     container_name: codedock-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+        else
+          redis-server --appendonly yes
+        fi
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD}\" ]; then REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 3s
       retries: 5
