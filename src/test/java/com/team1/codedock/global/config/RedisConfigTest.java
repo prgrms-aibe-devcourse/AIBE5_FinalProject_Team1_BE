@@ -224,6 +224,53 @@ class RedisConfigTest {
     }
 
     @Test
+    @DisplayName("Spring Redis 자동 설정과 RedisConfig 조합에서도 외부 연결값과 JSON 템플릿이 함께 적용됨")
+    void redisFullContextBindsExternalPropertiesAndKeepsJsonRedisTemplate() {
+        redisFullContextRunner
+                .withPropertyValues(
+                        "spring.data.redis.host=compose-redis",
+                        "spring.data.redis.port=6381",
+                        "spring.data.redis.username=codedock-user",
+                        "spring.data.redis.password=compose-secret",
+                        "spring.data.redis.database=5",
+                        "spring.data.redis.timeout=2500ms"
+                )
+                .run(context -> {
+                    LettuceConnectionFactory connectionFactory = context.getBean(LettuceConnectionFactory.class);
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+
+                    assertThat(connectionFactory.getHostName()).isEqualTo("compose-redis");
+                    assertThat(connectionFactory.getPort()).isEqualTo(6381);
+                    assertThat(connectionFactory.getStandaloneConfiguration().getUsername())
+                            .isEqualTo("codedock-user");
+                    assertThat(connectionFactory.getPassword()).isEqualTo("compose-secret");
+                    assertThat(connectionFactory.getDatabase()).isEqualTo(5);
+                    assertThat(connectionFactory.getClientConfiguration().getCommandTimeout())
+                            .isEqualTo(Duration.ofMillis(2500));
+                    assertThat(redisTemplate.getKeySerializer())
+                            .isInstanceOf(StringRedisSerializer.class);
+                    assertThat(redisTemplate.getValueSerializer())
+                            .isInstanceOf(GenericJackson2JsonRedisSerializer.class);
+                });
+    }
+
+    @Test
+    @DisplayName("Redis 공통 설정을 끄면 Spring 기본 RedisTemplate은 유지하되 JSON 템플릿 커스터마이징은 적용하지 않음")
+    void disabledRedisConfigKeepsSpringDefaultRedisTemplateWithoutJsonCustomization() {
+        redisFullContextRunner
+                .withPropertyValues("app.redis.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(StringRedisTemplate.class);
+                    assertThat(context).hasBean("redisTemplate");
+
+                    RedisTemplate<?, ?> redisTemplate = context.getBean("redisTemplate", RedisTemplate.class);
+                    assertThat(redisTemplate.getValueSerializer())
+                            .isNotInstanceOf(GenericJackson2JsonRedisSerializer.class);
+                });
+    }
+
+    @Test
     @DisplayName("이미 redisTemplate 빈이 있으면 공통 RedisTemplate을 덮어쓰지 않음")
     void doesNotReplaceExistingRedisTemplateBean() {
         RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
