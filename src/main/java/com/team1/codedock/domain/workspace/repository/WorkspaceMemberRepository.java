@@ -30,6 +30,8 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     Optional<WorkspaceMember> findByWorkspace_IdAndUser_IdAndIsActiveTrue(Long workspaceId, Long userId);
 
+    List<WorkspaceMember> findAllByWorkspace_IdAndIsActiveTrue(Long workspaceId);
+
     Optional<WorkspaceMember> findByIdAndWorkspace_Id(Long id, Long workspaceId);
 
     // 멘션 토큰과 매칭되는 활성 워크스페이스 멤버 조회함

@@ -17,9 +17,12 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.ai.service.AiSummaryService;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.entity.PullRequestFile;
 import com.team1.codedock.domain.pr.entity.PullRequestReview;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestFileRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
@@ -74,6 +77,8 @@ public class GithubWebhookService {
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final PullRequestReviewRepository pullRequestReviewRepository;
+    private final PullRequestFileRepository pullRequestFileRepository;
+    private final AiSummaryService aiSummaryService;
 
     public void verifySignature(Long repositoryId, String signatureHeader, byte[] rawBody) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
@@ -202,6 +207,9 @@ public class GithubWebhookService {
             );
             GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
             broadcastPrBotNotification(repo, channel, savedPr, dto);
+
+            savePullRequestFiles(repo, savedPr, dto.number());
+            aiSummaryService.generateSummaryForWebhook(savedPr.getId());
         } else {
             GithubPullRequest pr = existing.get();
             if (ACTION_CLOSED.equals(action) || "reopened".equals(action)
@@ -330,6 +338,36 @@ public class GithubWebhookService {
                 "/topic/channels/" + channel.getId() + "/events",
                 ChatEventResponse.of(ChatEventType.MESSAGE_UPDATED, response)
         );
+    }
+
+    private void savePullRequestFiles(GithubRepository repo, GithubPullRequest savedPr, int prNumber) {
+        String token = null;
+        if (repo.getWorkspace() != null) {
+            token = workspaceMemberRepository
+                    .findAllByWorkspace_IdAndIsActiveTrue(repo.getWorkspace().getId())
+                    .stream()
+                    .map(m -> m.getUser().getGithubAccessToken())
+                    .filter(t -> t != null && !t.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (token == null) {
+            log.warn("GitHub 토큰 없음 → PullRequestFile 저장 스킵, prId={}", savedPr.getId());
+            return;
+        }
+        try {
+            List<GithubApiClient.GithubPrFileItem> files = githubApiClient.fetchPullRequestFiles(
+                    repo.getOwner(), repo.getName(), prNumber, token);
+            List<PullRequestFile> prFiles = files.stream()
+                    .map(f -> PullRequestFile.create(savedPr, f.filename(), f.status(),
+                            f.additions() != null ? f.additions() : 0,
+                            f.deletions() != null ? f.deletions() : 0,
+                            f.filename(), f.patch()))
+                    .toList();
+            pullRequestFileRepository.saveAll(prFiles);
+        } catch (Exception e) {
+            log.warn("PullRequestFile 저장 실패 → prId={}", savedPr.getId(), e);
+        }
     }
 
     private String buildPrMeta(GithubRepository repo, GithubPullRequestWebhookPayload.PullRequestDto dto) {

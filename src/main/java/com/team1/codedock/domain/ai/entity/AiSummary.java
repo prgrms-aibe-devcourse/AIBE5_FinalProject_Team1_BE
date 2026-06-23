@@ -60,4 +60,8 @@ public class AiSummary extends BaseEntity {
         this.status = "completed";
     }
 
+    public void fail() {
+        this.status = "failed";
+    }
+
 }
