@@ -18,7 +18,7 @@ public interface WorkspaceEventRepository extends JpaRepository<WorkspaceEvent, 
             WHERE (
                 e.type IN :broadcastTypes AND e.workspace.id IN :workspaceIds
             ) OR (
-                e.type IN :targetedTypes AND e.targetUserId = :userId
+                e.type IN :targetedTypes AND e.targetUserId = :userId AND e.workspace.id IN :workspaceIds
             )
             ORDER BY e.createdAt DESC
             """)
