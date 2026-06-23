@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -70,6 +71,17 @@ class RedisConfigTest {
                     assertThat(context).doesNotHaveBean(StringRedisTemplate.class);
                     assertThat(context).doesNotHaveBean("redisTemplate");
                 });
+    }
+
+    @Test
+    @DisplayName("Redis 공통 설정이 켜졌는데 RedisConnectionFactory가 없으면 기동 단계에서 실패함")
+    void enabledRedisConfigFailsFastWithoutConnectionFactory() {
+        contextRunner.run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure())
+                    .hasRootCauseInstanceOf(NoSuchBeanDefinitionException.class)
+                    .hasMessageContaining("stringRedisTemplate");
+        });
     }
 
     @Test
@@ -366,6 +378,22 @@ class RedisConfigTest {
                             .hasValueSatisfying(clientOptions -> assertThat(
                                     clientOptions.getSocketOptions().getConnectTimeout()
                             ).isEqualTo(Duration.ofMillis(1500)));
+                });
+    }
+
+    @Test
+    @DisplayName("Spring Redis 연결 설정은 비밀번호만 있어도 default user 인증 구성으로 사용할 수 있음")
+    void redisConnectionFactoryAllowsPasswordOnlyDefaultUserAuthentication() {
+        redisAutoConfigContextRunner
+                .withPropertyValues(
+                        "spring.data.redis.username=",
+                        "spring.data.redis.password=default-user-secret"
+                )
+                .run(context -> {
+                    LettuceConnectionFactory connectionFactory = context.getBean(LettuceConnectionFactory.class);
+
+                    assertThat(connectionFactory.getStandaloneConfiguration().getUsername()).isNullOrEmpty();
+                    assertThat(connectionFactory.getPassword()).isEqualTo("default-user-secret");
                 });
     }
 

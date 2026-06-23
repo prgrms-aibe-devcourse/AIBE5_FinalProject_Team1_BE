@@ -54,6 +54,8 @@ REDIS_PASSWORD=change-me
 
 일반 Docker Compose Redis는 기본 사용자(default user)에 비밀번호만 거는 방식으로 사용한다. `REDIS_USERNAME`은 비워 둔다. Redis ACL 사용자명을 별도로 쓰려면 Redis 서버 쪽에 해당 사용자를 먼저 생성해야 한다.
 
+`REDIS_USERNAME`을 임의로 채우면 백엔드는 `AUTH username password` 방식으로 접속한다. Compose Redis는 별도 ACL 사용자를 만들지 않으므로, username을 채우면 인증 실패가 날 수 있다.
+
 ## EC2 배포
 
 단일 EC2 + Docker Compose 배포에서는 Redis도 같은 compose 네트워크에 올리는 방식을 기본으로 한다.
