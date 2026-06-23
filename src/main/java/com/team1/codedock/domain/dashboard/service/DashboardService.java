@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.dashboard.service;
 
+import com.team1.codedock.domain.dashboard.dto.DashboardEventResponse;
 import com.team1.codedock.domain.dashboard.dto.DashboardSummaryResponse;
 import com.team1.codedock.domain.dashboard.dto.WorkspaceDashboardResponse;
 import com.team1.codedock.domain.issue.repository.IssueAssigneeRepository;
@@ -7,7 +8,9 @@ import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -17,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @Transactional(readOnly = true)
@@ -29,6 +33,7 @@ public class DashboardService {
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
     private final PullRequestReviewRepository pullRequestReviewRepository;
+    private final WorkspaceEventRepository workspaceEventRepository;
 
     public DashboardSummaryResponse getSummary(Long userId) {
         User user = findUser(userId);
@@ -84,6 +89,49 @@ public class DashboardService {
                 reviewRequestCount,
                 receivedReviewCount
         );
+    }
+
+    public List<DashboardEventResponse> getEvents(Long userId) {
+        User user = findUser(userId);
+        String githubUsername = user.getGithubUsername();
+        List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
+        List<Long> workspaceIds = memberships.stream()
+                .map(m -> m.getWorkspace().getId())
+                .toList();
+
+        if (workspaceIds.isEmpty()) {
+            return List.of();
+        }
+
+        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId).stream()
+                .filter(e -> {
+                    if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
+                            || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
+                        return !Objects.equals(e.getActorName(), githubUsername);
+                    }
+                    return true;
+                })
+                .map(DashboardEventResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public void markEventAsRead(Long eventId, Long userId) {
+        List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
+        List<Long> workspaceIds = memberships.stream()
+                .map(m -> m.getWorkspace().getId())
+                .toList();
+
+        WorkspaceEvent event = workspaceEventRepository.findByIdWithWorkspace(eventId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "이벤트를 찾을 수 없습니다."));
+
+        boolean isTarget = Objects.equals(event.getTargetUserId(), userId);
+        boolean isMyWorkspace = workspaceIds.contains(event.getWorkspace().getId());
+        if (!isTarget && !isMyWorkspace) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        event.markAsRead();
     }
 
     private User findUser(Long userId) {
