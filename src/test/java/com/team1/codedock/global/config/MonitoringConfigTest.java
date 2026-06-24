@@ -1,5 +1,7 @@
 package com.team1.codedock.global.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -7,11 +9,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MonitoringConfigTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     @DisplayName("application.properties는 Prometheus actuator endpoint와 registry 플래그를 노출함")
@@ -80,6 +86,35 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 exporter 포트를 host에 직접 노출하지 않음")
+    void dockerComposeDoesNotPublishExporterPortsToHost() throws IOException {
+        String compose = normalizeLineEndings(Files.readString(Path.of("docker-compose.yml")));
+
+        assertThat(compose)
+                .contains("  redis-exporter:\n")
+                .contains("    expose:\n      - \"9121\"")
+                .contains("  kafka-exporter:\n")
+                .contains("    expose:\n      - \"9308\"")
+                .doesNotContain(":9121:9121")
+                .doesNotContain(":9308:9308")
+                .doesNotContain("${REDIS_EXPORTER_HOST_PORT")
+                .doesNotContain("${KAFKA_EXPORTER_HOST_PORT");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 모니터링 설정 파일을 read-only로 마운트함")
+    void dockerComposeMountsMonitoringConfigFilesAsReadOnly() throws IOException {
+        String compose = Files.readString(Path.of("docker-compose.yml"));
+
+        assertThat(compose)
+                .contains("./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro")
+                .contains("./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro")
+                .contains("./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro")
+                .contains("./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro")
+                .contains("./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 backend Prometheus 지표와 exporter 의존성을 연결함")
     void dockerComposeConnectsBackendMetricsAndExporters() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
@@ -95,6 +130,18 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 Prometheus를 backend healthcheck 이후에 시작함")
+    void dockerComposeStartsPrometheusAfterBackendHealthcheck() throws IOException {
+        String compose = normalizeLineEndings(Files.readString(Path.of("docker-compose.yml")));
+
+        assertThat(compose)
+                .contains("  prometheus:\n")
+                .contains("      app:\n        condition: service_healthy")
+                .contains("      redis-exporter:\n        condition: service_started")
+                .contains("      kafka-exporter:\n        condition: service_started");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 Promtail이 Docker 로그를 읽고 Loki 이후에 시작되도록 구성함")
     void dockerComposeConfiguresPromtailDockerLogCollection() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
@@ -105,6 +152,18 @@ class MonitoringConfigTest {
                 .contains("./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro")
                 .contains("/var/run/docker.sock:/var/run/docker.sock:ro")
                 .contains("      loki:\n        condition: service_started");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 Grafana 관리자 계정과 회원가입 차단을 환경변수로 구성함")
+    void dockerComposeConfiguresGrafanaAdminAndDisablesSignup() throws IOException {
+        String compose = Files.readString(Path.of("docker-compose.yml"));
+
+        assertThat(compose)
+                .contains("GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}")
+                .contains("GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}")
+                .contains("GF_USERS_ALLOW_SIGN_UP: \"false\"")
+                .contains("grafana-data:/var/lib/grafana");
     }
 
     @Test
@@ -125,6 +184,22 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("Prometheus 설정은 scrape job 이름과 target label을 분리해 장애 지점을 구분함")
+    void prometheusConfigSeparatesJobsAndServiceLabels() throws IOException {
+        String prometheus = Files.readString(Path.of("monitoring/prometheus/prometheus.yml"));
+
+        assertThat(prometheus)
+                .contains("job_name: prometheus")
+                .contains("job_name: codedock-backend")
+                .contains("job_name: redis")
+                .contains("job_name: kafka")
+                .contains("service: codedock-backend")
+                .contains("service: codedock-redis")
+                .contains("service: codedock-kafka")
+                .doesNotContain("host.docker.internal");
+    }
+
+    @Test
     @DisplayName("Grafana datasource provisioning은 Prometheus와 Loki를 자동 등록함")
     void grafanaDatasourceProvisioningRegistersPrometheusAndLoki() throws IOException {
         String datasources = Files.readString(Path.of(
@@ -138,6 +213,21 @@ class MonitoringConfigTest {
                 .contains("uid: Loki")
                 .contains("type: loki")
                 .contains("url: http://loki:3100");
+    }
+
+    @Test
+    @DisplayName("Grafana datasource provisioning은 외부 주소가 아닌 compose 내부 service name을 사용함")
+    void grafanaDatasourcesUseComposeInternalServiceNames() throws IOException {
+        String datasources = Files.readString(Path.of(
+                "monitoring/grafana/provisioning/datasources/datasources.yml"));
+
+        assertThat(datasources)
+                .contains("url: http://prometheus:9090")
+                .contains("url: http://loki:3100")
+                .doesNotContain("localhost:9090")
+                .doesNotContain("localhost:3100")
+                .doesNotContain("127.0.0.1:9090")
+                .doesNotContain("127.0.0.1:3100");
     }
 
     @Test
@@ -171,6 +261,52 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("기본 Grafana dashboard JSON은 유효하며 핵심 패널 5개를 포함함")
+    void grafanaDashboardJsonIsValidAndContainsExpectedPanels() throws IOException {
+        JsonNode dashboard = objectMapper.readTree(Path.of("monitoring/grafana/dashboards/codedock-overview.json").toFile());
+        List<JsonNode> panels = StreamSupport.stream(dashboard.path("panels").spliterator(), false)
+                .toList();
+
+        assertThat(dashboard.path("uid").asText()).isEqualTo("codedock-overview");
+        assertThat(dashboard.path("title").asText()).isEqualTo("CodeDock Overview");
+        assertThat(panels)
+                .hasSize(5)
+                .extracting(panel -> panel.path("title").asText())
+                .containsExactly(
+                        "Backend Up",
+                        "Redis Up",
+                        "Kafka Up",
+                        "HTTP Requests",
+                        "Backend Logs"
+                );
+        assertThat(panels)
+                .extracting(panel -> panel.path("datasource").path("uid").asText())
+                .contains("Prometheus", "Loki");
+    }
+
+    @Test
+    @DisplayName("기본 Grafana dashboard의 PromQL과 LogQL 쿼리는 datasource 용도와 일치함")
+    void grafanaDashboardQueriesMatchDatasourcePurpose() throws IOException {
+        JsonNode dashboard = objectMapper.readTree(Path.of("monitoring/grafana/dashboards/codedock-overview.json").toFile());
+        List<JsonNode> panels = StreamSupport.stream(dashboard.path("panels").spliterator(), false)
+                .toList();
+
+        JsonNode backendUpPanel = panels.get(0);
+        JsonNode redisUpPanel = panels.get(1);
+        JsonNode kafkaUpPanel = panels.get(2);
+        JsonNode httpRequestsPanel = panels.get(3);
+        JsonNode backendLogsPanel = panels.get(4);
+
+        assertThat(firstExpr(backendUpPanel)).isEqualTo("up{job=\"codedock-backend\"}");
+        assertThat(firstExpr(redisUpPanel)).isEqualTo("up{job=\"redis\"}");
+        assertThat(firstExpr(kafkaUpPanel)).isEqualTo("up{job=\"kafka\"}");
+        assertThat(firstExpr(httpRequestsPanel))
+                .isEqualTo("sum by (method, status) (rate(http_server_requests_seconds_count{job=\"codedock-backend\"}[5m]))");
+        assertThat(firstExpr(backendLogsPanel)).isEqualTo("{service=\"app\"}");
+        assertThat(backendLogsPanel.path("datasource").path("uid").asText()).isEqualTo("Loki");
+    }
+
+    @Test
     @DisplayName("Promtail 설정은 Docker container label을 Loki label로 전달함")
     void promtailConfigMapsDockerContainerLabelsToLokiLabels() throws IOException {
         String promtail = Files.readString(Path.of("monitoring/promtail/promtail-config.yml"));
@@ -187,6 +323,17 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("Promtail 설정은 position 파일을 사용해 재시작 후 로그 중복 전송을 줄임")
+    void promtailConfigUsesPositionFileForRestartSafety() throws IOException {
+        String promtail = Files.readString(Path.of("monitoring/promtail/promtail-config.yml"));
+
+        assertThat(promtail)
+                .contains("positions:")
+                .contains("filename: /tmp/promtail-positions.yml")
+                .contains("refresh_interval: 10s");
+    }
+
+    @Test
     @DisplayName("Loki 설정은 단일 EC2 Compose에 맞는 filesystem 저장소와 retention을 사용함")
     void lokiConfigUsesFilesystemStorageAndRetention() throws IOException {
         String loki = Files.readString(Path.of("monitoring/loki/loki-config.yml"));
@@ -199,6 +346,35 @@ class MonitoringConfigTest {
                 .contains("schema: v13")
                 .contains("retention_period: 168h")
                 .contains("retention_enabled: true");
+    }
+
+    @Test
+    @DisplayName("Loki 설정은 단일 노드 filesystem storage에 필요한 디렉터리를 모두 분리함")
+    void lokiConfigSeparatesFilesystemDirectoriesForSingleNodeStorage() throws IOException {
+        String loki = Files.readString(Path.of("monitoring/loki/loki-config.yml"));
+
+        assertThat(loki)
+                .contains("path_prefix: /loki")
+                .contains("chunks_directory: /loki/chunks")
+                .contains("rules_directory: /loki/rules")
+                .contains("working_directory: /loki/compactor")
+                .contains("delete_request_store: filesystem");
+    }
+
+    @Test
+    @DisplayName("SecurityConfig와 JwtAuthFilter는 /actuator/prometheus를 공개 endpoint로 유지함")
+    void securityLayerKeepsPrometheusEndpointPublic() throws IOException {
+        String securityConfig = Files.readString(Path.of(
+                "src/main/java/com/team1/codedock/global/config/SecurityConfig.java"));
+        String jwtAuthFilter = Files.readString(Path.of(
+                "src/main/java/com/team1/codedock/global/security/JwtAuthFilter.java"));
+
+        assertThat(securityConfig)
+                .contains("\"/actuator/health\"")
+                .contains("\"/actuator/prometheus\"");
+        assertThat(jwtAuthFilter)
+                .contains("path.equals(\"/actuator/health\")")
+                .contains("path.equals(\"/actuator/prometheus\")");
     }
 
     @Test
@@ -229,5 +405,13 @@ class MonitoringConfigTest {
             properties.load(inputStream);
         }
         return properties;
+    }
+
+    private String firstExpr(JsonNode panel) {
+        return panel.path("targets").path(0).path("expr").asText();
+    }
+
+    private String normalizeLineEndings(String value) {
+        return value.replace("\r\n", "\n");
     }
 }
