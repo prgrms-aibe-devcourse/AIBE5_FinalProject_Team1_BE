@@ -257,8 +257,13 @@ class KafkaConfigTest {
                 .contains("KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}")
                 .contains("KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-codedock-backend}")
                 .contains("KAFKA_CONSUMER_GROUP_ID: ${KAFKA_CONSUMER_GROUP_ID:-codedock}")
+                .contains("KAFKA_CONSUMER_AUTO_OFFSET_RESET: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:-earliest}")
                 .contains("KAFKA_CONSUMER_ENABLE_AUTO_COMMIT: ${KAFKA_CONSUMER_ENABLE_AUTO_COMMIT:-false}")
                 .contains("KAFKA_PRODUCER_ACKS: ${KAFKA_PRODUCER_ACKS:-all}")
+                .contains("KAFKA_PRODUCER_RETRIES: ${KAFKA_PRODUCER_RETRIES:-3}")
+                .contains("KAFKA_PRODUCER_ENABLE_IDEMPOTENCE: ${KAFKA_PRODUCER_ENABLE_IDEMPOTENCE:-true}")
+                .contains("KAFKA_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION: ${KAFKA_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION:-5}")
+                .contains("KAFKA_LISTENER_ACK_MODE: ${KAFKA_LISTENER_ACK_MODE:-record}")
                 .contains("KAFKA_LISTENER_MISSING_TOPICS_FATAL: ${KAFKA_LISTENER_MISSING_TOPICS_FATAL:-false}");
     }
 
@@ -273,6 +278,35 @@ class KafkaConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 app 시작을 Redis와 Kafka healthcheck 이후로 제한함")
+    void dockerComposeWaitsForRedisAndKafkaHealthchecksBeforeStartingApp() throws IOException {
+        String compose = normalizeLineEndings(Files.readString(Path.of("docker-compose.yml")));
+
+        assertThat(compose)
+                .contains("    depends_on:\n")
+                .contains("      redis:\n        condition: service_healthy")
+                .contains("      kafka:\n        condition: service_healthy")
+                .contains("curl -fsS http://localhost:8080/actuator/health || exit 1");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 Zookeeper 없는 KRaft 단일 broker 설정을 유지함")
+    void dockerComposeUsesSingleNodeKraftBrokerWithoutZookeeper() throws IOException {
+        String compose = Files.readString(Path.of("docker-compose.yml"));
+
+        assertThat(compose)
+                .contains("image: apache/kafka:3.7.0")
+                .contains("KAFKA_PROCESS_ROLES: controller,broker")
+                .contains("KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093")
+                .contains("KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER")
+                .contains("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1")
+                .contains("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1")
+                .contains("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1")
+                .doesNotContain("zookeeper")
+                .doesNotContain("ZOOKEEPER");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 app 내부 Kafka 주소와 host 점검 주소를 분리함")
     void dockerComposeSeparatesInternalKafkaAddressFromHostAccessAddress() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
@@ -280,7 +314,8 @@ class KafkaConfigTest {
         assertThat(compose)
                 .contains("KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}")
                 .contains("- \"${KAFKA_HOST_PORT:-9092}:29092\"")
-                .contains("KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}");
+                .contains("KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}")
+                .doesNotContain("KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}");
     }
 
     @Test
@@ -295,6 +330,21 @@ class KafkaConfigTest {
                 .contains("docker compose config")
                 .contains("민감 정보가 그대로 포함될 수 있다")
                 .contains("마스킹");
+    }
+
+    @Test
+    @DisplayName("Kafka 가이드는 Redis와 Kafka 사용 기준을 구분함")
+    void kafkaGuideDocumentsRedisAndKafkaRoleBoundary() throws IOException {
+        String guide = Files.readString(Path.of("docs/kafka-setup-guide.md"));
+
+        assertThat(guide)
+                .contains("Redis는 빠르게 변하는 현재 상태와 TTL 기반 데이터에 적합하다")
+                .contains("온라인 상태/presence")
+                .contains("rate limit")
+                .contains("Kafka는 나중에 다시 처리할 수 있어야 하는 이벤트 흐름에 적합하다")
+                .contains("GitHub webhook 이벤트")
+                .contains("AI 분석 요청 큐")
+                .contains("ActivityLog 적재");
     }
 
     private Properties loadProperties(String path) throws IOException {
@@ -325,5 +375,9 @@ class KafkaConfigTest {
 
     private void assertConfigValue(Map<String, Object> configs, String key, String expectedValue) {
         assertThat(String.valueOf(configs.get(key))).isEqualTo(expectedValue);
+    }
+
+    private String normalizeLineEndings(String value) {
+        return value.replace("\r\n", "\n");
     }
 }
