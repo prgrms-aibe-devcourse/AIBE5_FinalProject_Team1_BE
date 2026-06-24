@@ -66,7 +66,8 @@ public class WorkspaceEventService {
 
         // sync/webhook 동시 호출 중복은 best-effort로 줄이고, 최종 방어는 DB 정책에서 처리해야 함.
         recordEvent(workspaceId, WorkspaceEvent.EventType.PR_CREATED,
-                actorName, prId, null, channelId, title, repositoryId, repositoryName, null, prNumber, null, null, occurredAt);
+                actorName, prId, null, channelId, title,
+                repositoryId, repositoryName, null, prNumber, null, null, occurredAt);
     }
 
     public void recordIssueCreatedIfAbsent(Long workspaceId, Long issueId, String actorName, String title,
@@ -84,7 +85,8 @@ public class WorkspaceEventService {
 
         // sync/webhook 동시 호출 중복은 best-effort로 줄이고, 최종 방어는 DB 정책에서 처리해야 함.
         recordEvent(workspaceId, WorkspaceEvent.EventType.ISSUE_CREATED,
-                actorName, null, issueId, channelId, title, repositoryId, repositoryName, null, null, issueNumber, null, occurredAt);
+                actorName, null, issueId, channelId, title,
+                repositoryId, repositoryName, null, null, issueNumber, null, occurredAt);
     }
 
     @Transactional(readOnly = true)

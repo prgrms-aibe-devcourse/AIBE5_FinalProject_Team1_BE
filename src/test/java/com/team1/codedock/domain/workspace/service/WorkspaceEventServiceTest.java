@@ -301,11 +301,14 @@ class WorkspaceEventServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         workspaceEventService.recordPrCreatedIfAbsent(
-                10L, 5L, "octocat", "PR title", 7L, "repo", 11L, occurredAt);
+                10L, 5L, "octocat", "PR title", 30L, 7L, "repo", 11L, occurredAt);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(WorkspaceEvent.EventType.PR_CREATED);
+        assertThat(captor.getValue().getChannelId()).isEqualTo(30L);
+        assertThat(captor.getValue().getRepositoryId()).isEqualTo(7L);
+        assertThat(captor.getValue().getPrNumber()).isEqualTo(11L);
         assertThat(captor.getValue().getOccurredAt()).isEqualTo(occurredAt);
     }
 
@@ -321,11 +324,14 @@ class WorkspaceEventServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         workspaceEventService.recordIssueCreatedIfAbsent(
-                10L, 6L, "octocat", "Issue title", 7L, "repo", 12L, occurredAt);
+                10L, 6L, "octocat", "Issue title", 30L, 7L, "repo", 12L, occurredAt);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(WorkspaceEvent.EventType.ISSUE_CREATED);
+        assertThat(captor.getValue().getChannelId()).isEqualTo(30L);
+        assertThat(captor.getValue().getRepositoryId()).isEqualTo(7L);
+        assertThat(captor.getValue().getIssueNumber()).isEqualTo(12L);
         assertThat(captor.getValue().getOccurredAt()).isEqualTo(occurredAt);
     }
 
