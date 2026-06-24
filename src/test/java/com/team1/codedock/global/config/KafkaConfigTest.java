@@ -188,6 +188,67 @@ class KafkaConfigTest {
     }
 
     @Test
+    @DisplayName("application.properties는 문자열 직렬화와 안전한 producer 기본값을 유지함")
+    void applicationPropertiesKeepStringSerializationAndSafeProducerDefaults() throws IOException {
+        Properties properties = loadProperties("src/main/resources/application.properties");
+
+        assertThat(properties)
+                .containsEntry("spring.kafka.consumer.key-deserializer",
+                        "${KAFKA_CONSUMER_KEY_DESERIALIZER:org.apache.kafka.common.serialization.StringDeserializer}")
+                .containsEntry("spring.kafka.consumer.value-deserializer",
+                        "${KAFKA_CONSUMER_VALUE_DESERIALIZER:org.apache.kafka.common.serialization.StringDeserializer}")
+                .containsEntry("spring.kafka.producer.key-serializer",
+                        "${KAFKA_PRODUCER_KEY_SERIALIZER:org.apache.kafka.common.serialization.StringSerializer}")
+                .containsEntry("spring.kafka.producer.value-serializer",
+                        "${KAFKA_PRODUCER_VALUE_SERIALIZER:org.apache.kafka.common.serialization.StringSerializer}")
+                .containsEntry("spring.kafka.producer.acks", "${KAFKA_PRODUCER_ACKS:all}")
+                .containsEntry("spring.kafka.producer.properties.enable.idempotence",
+                        "${KAFKA_PRODUCER_ENABLE_IDEMPOTENCE:true}")
+                .containsEntry("spring.kafka.producer.properties.max.in.flight.requests.per.connection",
+                        "${KAFKA_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION:5}")
+                .containsEntry("spring.kafka.listener.ack-mode", "${KAFKA_LISTENER_ACK_MODE:record}");
+    }
+
+    @Test
+    @DisplayName(".env.example은 Docker Compose용 Kafka 기본값과 빈 민감값을 제공함")
+    void envExampleProvidesDockerKafkaDefaultsAndBlankSecrets() throws IOException {
+        Properties properties = loadProperties(".env.example");
+
+        assertThat(properties)
+                .containsEntry("KAFKA_HOST_PORT", "9092")
+                .containsEntry("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+                .containsEntry("KAFKA_CLIENT_ID", "codedock-backend")
+                .containsEntry("KAFKA_CONSUMER_GROUP_ID", "codedock")
+                .containsEntry("KAFKA_CONSUMER_ENABLE_AUTO_COMMIT", "false")
+                .containsEntry("KAFKA_PRODUCER_ACKS", "all")
+                .containsEntry("KAFKA_PRODUCER_ENABLE_IDEMPOTENCE", "true")
+                .containsEntry("KAFKA_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION", "5")
+                .containsEntry("KAFKA_LISTENER_ACK_MODE", "record")
+                .containsEntry("KAFKA_LISTENER_MISSING_TOPICS_FATAL", "false")
+                .containsEntry("DB_PASSWORD", "")
+                .containsEntry("JWT_SECRET", "");
+    }
+
+    @Test
+    @DisplayName("application-local.properties.example은 IDE 실행용 Kafka localhost 기본값을 제공함")
+    void localPropertiesExampleProvidesIdeKafkaDefaults() throws IOException {
+        Properties properties = loadProperties("src/main/resources/application-local.properties.example");
+
+        assertThat(properties)
+                .containsEntry("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+                .containsEntry("KAFKA_CLIENT_ID", "codedock-backend-local")
+                .containsEntry("KAFKA_CONSUMER_GROUP_ID", "codedock")
+                .containsEntry("KAFKA_CONSUMER_AUTO_OFFSET_RESET", "earliest")
+                .containsEntry("KAFKA_CONSUMER_ENABLE_AUTO_COMMIT", "false")
+                .containsEntry("KAFKA_PRODUCER_ACKS", "all")
+                .containsEntry("KAFKA_PRODUCER_RETRIES", "3")
+                .containsEntry("KAFKA_PRODUCER_ENABLE_IDEMPOTENCE", "true")
+                .containsEntry("KAFKA_PRODUCER_MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION", "5")
+                .containsEntry("KAFKA_LISTENER_ACK_MODE", "record")
+                .containsEntry("KAFKA_LISTENER_MISSING_TOPICS_FATAL", "false");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 app 컨테이너에 Kafka 환경변수를 전달함")
     void dockerComposePassesKafkaEnvironmentVariablesToAppContainer() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
