@@ -29,6 +29,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class AiSummaryService {
 
+    private static final String EMPTY_SUMMARY_TEXT = "AI 요약 정보 없음";
+    private static final String EMPTY_SUMMARY_TEXT_SHORT = "요약 정보 없음";
+
     private final AiSummaryRepository aiSummaryRepository;
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final PullRequestFileRepository pullRequestFileRepository;
@@ -54,7 +57,7 @@ public class AiSummaryService {
             // 이미 완료된 요약이 있으면 재생성하지 않는다(LLM 호출 비용 절약, 멱등).
             // 미완료/실패/빈 요약만 (재)생성해 sync 시 자동 복구되게 한다.
             boolean alreadyDone = aiSummaryRepository.findByGithubPullRequest_Id(prId)
-                    .filter(s -> "completed".equals(s.getStatus()) && s.getSummary() != null)
+                    .filter(this::isReusableCompletedSummary)
                     .isPresent();
             if (alreadyDone) {
                 return;
@@ -91,6 +94,32 @@ public class AiSummaryService {
         }
 
         return toResponse(aiSummary);
+    }
+
+    private boolean isReusableCompletedSummary(AiSummary aiSummary) {
+        if (!"completed".equals(aiSummary.getStatus())) {
+            return false;
+        }
+        if (aiSummary.getSummary() == null || aiSummary.getSummary().isBlank()) {
+            return false;
+        }
+        try {
+            GeminiClient.PrAnalysisResult result = objectMapper.readValue(
+                    aiSummary.getSummary(), GeminiClient.PrAnalysisResult.class);
+            return hasMeaningfulSummaryText(result.summaryText());
+        } catch (Exception e) {
+            // 기존에 잘못 저장된 JSON은 재생성 대상임.
+            return false;
+        }
+    }
+
+    private boolean hasMeaningfulSummaryText(String summaryText) {
+        if (summaryText == null || summaryText.isBlank()) {
+            return false;
+        }
+        String normalized = summaryText.trim();
+        return !EMPTY_SUMMARY_TEXT.equals(normalized)
+                && !EMPTY_SUMMARY_TEXT_SHORT.equals(normalized);
     }
 
     @Transactional(readOnly = true)

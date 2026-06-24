@@ -56,6 +56,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -65,17 +66,23 @@ public class GithubWebhookService {
     // 목록 화면 진입 시 FE가 sync를 반복 호출해도, 최근에 동기화한 레포는 GitHub fetch를 건너뛴다.
     // (동시/반복 sync로 같은 이슈/PR을 중복 저장하다 UQ 제약 위반이 폭주하던 문제 방지 + GitHub API 부하 감소)
     private static final long SYNC_COOLDOWN_MS = 15_000;
-    private final Map<Long, Long> issueSyncAtByRepo = new ConcurrentHashMap<>();
-    private final Map<Long, Long> prSyncAtByRepo = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> issueSyncAtByRepo = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> prSyncAtByRepo = new ConcurrentHashMap<>();
 
-    private boolean withinSyncCooldown(Map<Long, Long> lastSyncByRepo, Long repositoryId) {
+    private boolean withinSyncCooldown(ConcurrentHashMap<Long, Long> lastSyncByRepo, Long repositoryId) {
         long now = System.currentTimeMillis();
-        Long last = lastSyncByRepo.get(repositoryId);
-        if (last != null && now - last < SYNC_COOLDOWN_MS) {
-            return true;
-        }
-        lastSyncByRepo.put(repositoryId, now);
-        return false;
+        AtomicBoolean blocked = new AtomicBoolean(false);
+
+        // 쿨다운 확인과 timestamp 갱신을 한 번에 처리해야 동시 sync 요청이 같이 통과하지 않음.
+        lastSyncByRepo.compute(repositoryId, (key, last) -> {
+            if (last != null && now - last < SYNC_COOLDOWN_MS) {
+                blocked.set(true);
+                return last;
+            }
+            return now;
+        });
+
+        return blocked.get();
     }
 
     private static final String ACTION_OPENED = "opened";
