@@ -947,9 +947,12 @@ public class GithubWebhookService {
         threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> broadcastPrMessageUpdated(thread, approveChannel));
 
+        String actorName = member.getUser().getGithubUsername() != null
+                ? member.getUser().getGithubUsername()
+                : member.getUser().getDisplayName();
         githubWebhookEventService.onPrReview(
                 repo.getWorkspace().getId(), pr.getId(),
-                member.getUser().getDisplayName(), "승인",
+                actorName, "승인",
                 repo.getId(), repo.getName(), (long) prNumber);
     }
 
