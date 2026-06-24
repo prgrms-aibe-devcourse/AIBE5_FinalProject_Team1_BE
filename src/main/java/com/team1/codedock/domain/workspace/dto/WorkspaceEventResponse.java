@@ -35,7 +35,7 @@ public record WorkspaceEventResponse(
                 event.getContent(),
                 event.getCreatedAt(),
                 event.getDisplayOccurredAt(),
-                resolveNavigationType(event),
+                event.getNavigationType(),
                 event.getRepositoryId(),
                 event.getRepositoryName(),
                 event.getThreadId(),
@@ -43,18 +43,5 @@ public record WorkspaceEventResponse(
                 event.getIssueNumber(),
                 isRead
         );
-    }
-
-    private static String resolveNavigationType(WorkspaceEvent event) {
-        return switch (event.getType()) {
-            case PR_CREATED, PR_REVIEW -> event.getPrId() != null ? "PR" : fallbackNavigationType(event);
-            case ISSUE_CREATED -> event.getIssueId() != null ? "ISSUE" : fallbackNavigationType(event);
-            case REPLY -> event.getThreadId() != null ? "THREAD" : fallbackNavigationType(event);
-            case MENTION -> event.getThreadId() != null ? "MENTION" : fallbackNavigationType(event);
-        };
-    }
-
-    private static String fallbackNavigationType(WorkspaceEvent event) {
-        return event.getChannelId() != null ? "CHANNEL" : "WORKSPACE";
     }
 }

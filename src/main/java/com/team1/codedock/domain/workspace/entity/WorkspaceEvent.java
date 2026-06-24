@@ -107,6 +107,19 @@ public class WorkspaceEvent extends BaseCreatedEntity {
         return occurredAt != null ? occurredAt : getCreatedAt();
     }
 
+    public String getNavigationType() {
+        return switch (type) {
+            case PR_CREATED, PR_REVIEW -> prId != null ? "PR" : fallbackNavigationType();
+            case ISSUE_CREATED -> issueId != null ? "ISSUE" : fallbackNavigationType();
+            case REPLY -> threadId != null ? "THREAD" : fallbackNavigationType();
+            case MENTION -> threadId != null ? "MENTION" : fallbackNavigationType();
+        };
+    }
+
+    private String fallbackNavigationType() {
+        return channelId != null ? "CHANNEL" : "WORKSPACE";
+    }
+
     public void markAsRead() {
         this.isRead = true;
     }

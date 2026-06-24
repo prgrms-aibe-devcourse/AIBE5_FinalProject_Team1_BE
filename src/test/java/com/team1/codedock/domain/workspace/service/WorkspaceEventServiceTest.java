@@ -301,7 +301,7 @@ class WorkspaceEventServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         workspaceEventService.recordPrCreatedIfAbsent(
-                10L, 5L, "octocat", "PR title", 30L, 7L, "repo", 11L, occurredAt);
+                10L, 5L, "octocat", "PR title", 7L, "repo", 30L, 11L, occurredAt);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
@@ -324,7 +324,7 @@ class WorkspaceEventServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         workspaceEventService.recordIssueCreatedIfAbsent(
-                10L, 6L, "octocat", "Issue title", 30L, 7L, "repo", 12L, occurredAt);
+                10L, 6L, "octocat", "Issue title", 7L, "repo", 30L, 12L, occurredAt);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());

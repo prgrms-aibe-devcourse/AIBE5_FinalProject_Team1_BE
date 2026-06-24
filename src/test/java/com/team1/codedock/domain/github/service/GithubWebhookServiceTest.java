@@ -382,7 +382,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, "octocat", "로그인 버그", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 22, 0, 0));
+                LocalDateTime.of(2026, 6, 22, 9, 0));
     }
 
     @Test
@@ -554,7 +554,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, "octocat", "Recovered next issue", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -599,7 +599,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, "octocat", "Sync issue", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -644,7 +644,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, null, "Issue without user", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -680,7 +680,7 @@ class GithubWebhookServiceTest {
         verify(threadRepository, never()).save(any(Thread.class));
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, "octocat", "Synced existing issue", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -725,7 +725,7 @@ class GithubWebhookServiceTest {
         verify(threadAttachmentRepository).save(any(ThreadAttachment.class));
         verify(githubWebhookEventService).onIssueCreated(
                 10L, 40L, "octocat", "Recovered issue thread", 20L, "repo", 30L, 7L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -770,7 +770,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, "octocat", "Sync PR", 20L, "repo", 30L, 1L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -815,7 +815,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, null, "PR without user", 20L, "repo", 30L, 1L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -854,7 +854,7 @@ class GithubWebhookServiceTest {
         verify(aiSummaryService).generateSummaryForWebhook(100L);
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, "octocat", "Synced existing PR", 20L, "repo", 30L, 1L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -923,7 +923,7 @@ class GithubWebhookServiceTest {
 
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, "octocat", "Recovered next PR", 20L, "repo", 30L, 2L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -973,7 +973,7 @@ class GithubWebhookServiceTest {
         verify(aiSummaryService).generateSummaryForWebhook(100L);
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, "octocat", "Recovered PR thread", 20L, "repo", 30L, 1L,
-                LocalDateTime.of(2026, 6, 25, 0, 0));
+                LocalDateTime.of(2026, 6, 25, 9, 0));
     }
 
     @Test
@@ -1017,7 +1017,7 @@ class GithubWebhookServiceTest {
         verify(pullRequestFileRepository).saveAll(any());
         verify(githubWebhookEventService).onPrCreated(
                 10L, 100L, "octocat", "Feature: Add auth", 20L, "repo", 30L, 1L,
-                LocalDateTime.of(2026, 6, 23, 0, 0));
+                LocalDateTime.of(2026, 6, 23, 9, 0));
     }
 
     @Test
@@ -1419,10 +1419,10 @@ class GithubWebhookServiceTest {
     }
 
     @Test
-    @DisplayName("toLocalDateTime은 UTC Instant를 Asia/Seoul 기준 LocalDateTime으로 변환한다")
-    void toLocalDateTime_UTC를_KST로_변환한다() {
+    @DisplayName("toDashboardEventTime은 UTC Instant를 Asia/Seoul 기준 LocalDateTime으로 변환한다")
+    void toDashboardEventTime_UTC를_KST로_변환한다() {
         LocalDateTime result = ReflectionTestUtils.invokeMethod(
-                githubWebhookService, "toLocalDateTime", Instant.parse("2026-06-25T00:00:00Z"));
+                githubWebhookService, "toDashboardEventTime", Instant.parse("2026-06-25T00:00:00Z"));
 
         assertThat(result).isEqualTo(LocalDateTime.of(2026, 6, 25, 9, 0, 0));
     }
