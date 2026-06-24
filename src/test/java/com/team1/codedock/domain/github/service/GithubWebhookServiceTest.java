@@ -276,7 +276,7 @@ class GithubWebhookServiceTest {
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
         when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
                 .thenReturn(Optional.of(issue));
-        when(threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L))
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L))
                 .thenReturn(Optional.of(thread));
         when(threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(50L))
                 .thenReturn(List.of(attachment));
@@ -510,7 +510,7 @@ class GithubWebhookServiceTest {
         when(approveChannel.getId()).thenReturn(30L);
         when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(approveChannel));
         when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
-        when(threadRepository.findByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
 
         githubWebhookService.approvePullRequest(20L, 1, 3L);
 
@@ -546,7 +546,7 @@ class GithubWebhookServiceTest {
         when(approveChannel.getId()).thenReturn(30L);
         when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(approveChannel));
         when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
-        when(threadRepository.findByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
 
         githubWebhookService.approvePullRequest(20L, 1, 3L);
 
@@ -606,7 +606,7 @@ class GithubWebhookServiceTest {
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
         when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
                 .thenReturn(Optional.of(issue));
-        when(threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L))
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L))
                 .thenReturn(Optional.empty());
 
         githubWebhookService.processIssueEvent(20L, payload);

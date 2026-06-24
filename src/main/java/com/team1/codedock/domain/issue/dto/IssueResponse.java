@@ -24,9 +24,10 @@ public record IssueResponse(
         String issueType,
         List<IssueLabelDto> labels,
         List<String> assignees,
-        LocalDateTime closedAt,
-        LocalDateTime githubCreatedAt,
-        LocalDateTime githubUpdatedAt,
+        // github* 시각은 UTC LocalDateTime이라 JS가 UTC로 파싱하도록 'Z'를 붙인 ISO 문자열로 내려준다.
+        String closedAt,
+        String githubCreatedAt,
+        String githubUpdatedAt,
         LocalDateTime createdAt
 ) {
 
@@ -34,6 +35,11 @@ public record IssueResponse(
         public static IssueLabelDto from(IssueLabel label) {
             return new IssueLabelDto(label.getName(), label.getColor());
         }
+    }
+
+    // UTC LocalDateTime → 'Z' 표식이 붙은 ISO 문자열(없으면 null).
+    private static String toUtcIso(LocalDateTime value) {
+        return value == null ? null : value.toString() + "Z";
     }
 
     public static IssueResponse from(GithubIssue issue, List<IssueLabel> labels, List<IssueAssignee> assignees) {
@@ -58,9 +64,9 @@ public record IssueResponse(
                                 ? a.getWorkspaceMember().getUser().getDisplayName()
                                 : a.getWorkspaceMember().getUser().getUsername())
                         .toList(),
-                issue.getClosedAt(),
-                issue.getGithubCreatedAt(),
-                issue.getGithubUpdatedAt(),
+                toUtcIso(issue.getClosedAt()),
+                toUtcIso(issue.getGithubCreatedAt()),
+                toUtcIso(issue.getGithubUpdatedAt()),
                 issue.getCreatedAt()
         );
     }

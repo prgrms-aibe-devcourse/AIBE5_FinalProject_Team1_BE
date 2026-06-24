@@ -287,7 +287,7 @@ public class GithubWebhookService {
                                           GithubRepository repo,
                                           Channel channel,
                                           GithubPullRequestWebhookPayload.PullRequestDto dto) {
-        threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+        threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> {
                     long approvedCount = pullRequestReviewRepository
                             .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
@@ -464,7 +464,7 @@ public class GithubWebhookService {
                 .filter(i -> i.getRepository().getId().equals(repositoryId))
                 .toList();
         for (GithubIssue issue : issues) {
-            threadRepository.findByThreadableTypeAndThreadableId(
+            threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
                     Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId()
             ).ifPresent(thread -> {
                 List<ThreadAttachment> attachments = threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(thread.getId());
@@ -552,7 +552,7 @@ public class GithubWebhookService {
         for (GithubApiClient.GithubIssueItem item : issues) {
             if (item.pullRequest() != null) continue; // 이슈 API가 PR도 반환 → PR 항목 제외
             try {
-                syncSingleIssue(repo, channel, repositoryId, item);
+                syncSingleIssue(repo, channel, repositoryId, item, token);
             } catch (Exception e) {
                 log.warn("이슈 동기화 실패 → issue#{}", item.number(), e);
             }
@@ -561,10 +561,14 @@ public class GithubWebhookService {
 
     @Transactional
     public void syncSingleIssue(GithubRepository repo, Channel channel, Long repositoryId,
-                                GithubApiClient.GithubIssueItem item) {
+                                GithubApiClient.GithubIssueItem item, String token) {
         String githubIssueId = String.valueOf(item.id());
         Optional<GithubIssue> existingOpt =
                 githubIssueRepository.findByRepository_IdAndGithubIssueId(repositoryId, githubIssueId);
+
+        // GitHub Projects(우선순위)/네이티브 타입 조회 (실패 시 null → 기존/기본값 유지)
+        GithubApiClient.IssueClassification cls =
+                githubApiClient.fetchIssueClassification(repo.getOwner(), repo.getName(), item.number(), token);
 
         if (existingOpt.isPresent()) {
             GithubIssue issue = existingOpt.get();
@@ -573,10 +577,11 @@ public class GithubWebhookService {
                     item.title(), item.body(), item.state(), item.htmlUrl(),
                     buildIssueLabelsJson(item.labels()),
                     toLocalDateTime(item.closedAt()), toLocalDateTime(item.updatedAt()));
+            issue.applyClassification(cls.priority(), cls.issueType());
             githubIssueRepository.save(issue);
 
             // 스레드가 있으면 attachment meta를 최신 정보로 갱신(생성/닫힘 시각 포함), 없으면 복구 생성
-            threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId())
+            threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId())
                     .ifPresentOrElse(thread -> {
                         List<ThreadAttachment> atts = threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(thread.getId());
                         if (atts.isEmpty()) return;
@@ -589,6 +594,8 @@ public class GithubWebhookService {
                             meta.put("issueStatus", item.state());
                             meta.put("issueTitle", item.title());
                             if (item.body() != null) meta.put("issueBody", item.body());
+                            if (issue.getPriority() != null) meta.put("issuePriority", issue.getPriority());
+                            if (issue.getIssueType() != null) meta.put("issueType", issue.getIssueType());
                             if (item.createdAt() != null) meta.put("githubCreatedAt", item.createdAt().toString());
                             if (item.closedAt() != null) meta.put("githubClosedAt", item.closedAt().toString());
                             att.updateMeta(objectMapper.writeValueAsString(meta));
@@ -609,6 +616,7 @@ public class GithubWebhookService {
                 toLocalDateTime(item.createdAt()),
                 toLocalDateTime(item.updatedAt())
         );
+        issue.applyClassification(cls.priority(), cls.issueType());
         GithubIssue savedIssue = githubIssueRepository.save(issue);
         createIssueThreadAndAttachment(channel, savedIssue, item);
     }
@@ -677,7 +685,7 @@ public class GithubWebhookService {
     }
 
     private void broadcastIssueStatusUpdate(GithubIssue issue, GithubIssueWebhookPayload.IssueDto dto) {
-        threadRepository.findByThreadableTypeAndThreadableId(
+        threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
                 Thread.THREADABLE_TYPE_GITHUB_ISSUE, issue.getId()
         ).ifPresent(thread -> {
             List<ThreadAttachment> attachments = threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(thread.getId());
@@ -944,7 +952,7 @@ public class GithubWebhookService {
                 });
 
         // 승인 상태 변경을 실시간으로 메신저에 반영 (이슈 닫힘과 동일 패턴)
-        threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+        threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> broadcastPrMessageUpdated(thread, approveChannel));
 
         String actorName = member.getUser().getGithubUsername() != null
@@ -1077,7 +1085,7 @@ public class GithubWebhookService {
                 });
 
         // 병합됨 상태를 실시간으로 메신저에 반영
-        threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+        threadRepository.findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
                 .ifPresent(thread -> broadcastPrMessageUpdated(thread, channel));
     }
 
@@ -1298,7 +1306,7 @@ public class GithubWebhookService {
             // Thread/ThreadAttachment가 없으면 생성 (webhook 실패 등으로 누락된 경우 복구)
             if (!foundAttachment) {
                 boolean threadExists = threadRepository
-                        .findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, existingPr.getId())
+                        .findFirstThreadByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_PR, existingPr.getId())
                         .isPresent();
                 if (!threadExists) {
                     log.info("PR Thread 누락 감지 → 재생성 pr#{}", item.number());

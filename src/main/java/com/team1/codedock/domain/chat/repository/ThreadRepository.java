@@ -119,6 +119,19 @@ public interface ThreadRepository extends JpaRepository<Thread, Long> {
             @Param("threadableId") Long threadableId
     );
 
+    // 동일 (threadableType, threadableId)로 스레드가 중복 생성된 데이터가 있어도
+    // 단건 조회가 NonUniqueResultException으로 터지지 않도록 가장 오래된 1건만 반환한다.
+    @Query("SELECT t FROM Thread t WHERE t.threadableType = :threadableType AND t.threadableId = :threadableId ORDER BY t.id ASC")
+    List<Thread> findAllByThreadableTypeAndThreadableIdOrderByIdAsc(
+            @Param("threadableType") String threadableType,
+            @Param("threadableId") Long threadableId
+    );
+
+    default Optional<Thread> findFirstThreadByThreadableTypeAndThreadableId(String threadableType, Long threadableId) {
+        return findAllByThreadableTypeAndThreadableIdOrderByIdAsc(threadableType, threadableId)
+                .stream().findFirst();
+    }
+
     @Query("SELECT c FROM Channel c WHERE c.githubRepository.id = :githubRepositoryId")
     Optional<Channel> findChannelByGithubRepositoryId(@Param("githubRepositoryId") Long githubRepositoryId);
 

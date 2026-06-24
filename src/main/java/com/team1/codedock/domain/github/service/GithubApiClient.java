@@ -2,6 +2,8 @@ package com.team1.codedock.domain.github.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.core.ParameterizedTypeReference;
@@ -13,7 +15,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
+@Slf4j
 @Service
 public class GithubApiClient {
 
@@ -265,6 +269,109 @@ public class GithubApiClient {
                 .retrieve()
                 .body(new ParameterizedTypeReference<List<GithubIssueItem>>() {});
         return result != null ? result : List.of();
+    }
+
+    // 이슈의 분류 정보(우선순위/타입). priority는 GitHub Projects v2의 단일 선택 필드,
+    // issueType은 네이티브 이슈 타입. 둘 다 REST 이슈 객체엔 없어 GraphQL로 조회한다.
+    public record IssueClassification(String priority, String issueType) {}
+
+    // Type = 네이티브 issueType (scope 불필요), Priority = 네이티브 Issue fields(2026 preview)/Projects v2.
+    // priority 필드의 name은 read:project scope를 요구하며, 권한이 없으면 GraphQL이 issue 전체를 null로 만든다.
+    // 그래서 type/priority를 별도 쿼리로 분리해, scope가 없어도 Type은 항상 살아남도록 한다.
+    private static final String ISSUE_TYPE_QUERY =
+            "query($owner:String!,$repo:String!,$number:Int!){" +
+            "repository(owner:$owner,name:$repo){issue(number:$number){issueType{name}}}}";
+
+    private static final String ISSUE_PRIORITY_QUERY =
+            "query($owner:String!,$repo:String!,$number:Int!){" +
+            "repository(owner:$owner,name:$repo){issue(number:$number){" +
+            "issueFieldValues(first:20){nodes{__typename " +
+            "... on IssueFieldSingleSelectValue{name field{... on IssueFieldSingleSelect{name}}}}} " +
+            "projectItems(first:20){nodes{fieldValues(first:50){nodes{__typename " +
+            "... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}}}}}}" +
+            "}}}";
+
+    public IssueClassification fetchIssueClassification(String owner, String repo, int issueNumber, String token) {
+        String issueType = fetchIssueType(owner, repo, issueNumber, token);
+        String priority = fetchIssuePriority(owner, repo, issueNumber, token);
+        log.info("[issue-classification] issue#{} type='{}' priorityRaw='{}' → priority='{}'",
+                issueNumber, issueType, priority, normalizePriority(priority));
+        return new IssueClassification(normalizePriority(priority), issueType);
+    }
+
+    // 이슈 타입(예: Bug). read:project scope 없이도 읽힌다.
+    private String fetchIssueType(String owner, String repo, int issueNumber, String token) {
+        JsonNode root = postGraphql(ISSUE_TYPE_QUERY, owner, repo, issueNumber, token);
+        if (root == null) return null;
+        JsonNode name = root.path("data").path("repository").path("issue").path("issueType").path("name");
+        return name.isTextual() ? name.asText() : null;
+    }
+
+    // 우선순위. priority 필드 name은 read:project scope를 요구한다(없으면 GraphQL errors → null).
+    private String fetchIssuePriority(String owner, String repo, int issueNumber, String token) {
+        JsonNode root = postGraphql(ISSUE_PRIORITY_QUERY, owner, repo, issueNumber, token);
+        if (root == null) return null;
+        JsonNode issue = root.path("data").path("repository").path("issue");
+        // 1) 네이티브 Issue fields에서 Priority
+        String priority = findSingleSelectByFieldName(issue.path("issueFieldValues").path("nodes"), "Priority");
+        // 2) 폴백: Projects v2 단일선택 Priority
+        if (priority == null) {
+            for (JsonNode item : issue.path("projectItems").path("nodes")) {
+                priority = findSingleSelectByFieldName(item.path("fieldValues").path("nodes"), "Priority");
+                if (priority != null) break;
+            }
+        }
+        return priority;
+    }
+
+    // GraphQL POST 공통 처리. 에러는 로깅만 하고 부분 데이터를 그대로 반환한다(스레드/sync를 막지 않음).
+    private JsonNode postGraphql(String query, String owner, String repo, int issueNumber, String token) {
+        try {
+            Map<String, Object> body = Map.of(
+                    "query", query,
+                    "variables", Map.of("owner", owner, "repo", repo, "number", issueNumber)
+            );
+            JsonNode root = restClient.post()
+                    .uri("/graphql")
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/json")
+                    .body(body)
+                    .retrieve()
+                    .body(JsonNode.class);
+            if (root == null) {
+                log.warn("[issue-classification] 빈 응답 → issue#{}", issueNumber);
+                return null;
+            }
+            if (root.has("errors")) {
+                log.warn("[issue-classification] GraphQL errors → issue#{} {}", issueNumber, root.path("errors"));
+            }
+            return root;
+        } catch (Exception e) {
+            log.warn("[issue-classification] 조회 실패 → issue#{}: {}", issueNumber, e.toString());
+            return null;
+        }
+    }
+
+    // 단일선택 필드 값 노드 배열에서 주어진 필드명(예: "Priority")의 선택값(name)을 찾는다.
+    private String findSingleSelectByFieldName(JsonNode nodes, String fieldName) {
+        if (nodes == null || !nodes.isArray()) return null;
+        for (JsonNode fv : nodes) {
+            if (fieldName.equalsIgnoreCase(fv.path("field").path("name").asText(""))) {
+                String name = fv.path("name").asText(null);
+                if (name != null && !name.isBlank()) return name;
+            }
+        }
+        return null;
+    }
+
+    // Projects의 Priority 단일 선택 값(High/Medium/Low, P0~P3 등)을 프론트 규격(high/medium/low)으로 정규화.
+    private String normalizePriority(String raw) {
+        if (raw == null) return null;
+        String s = raw.toLowerCase();
+        if (s.contains("high") || s.contains("urgent") || s.contains("p0") || s.contains("p1")) return "high";
+        if (s.contains("medium") || s.contains("normal") || s.contains("p2")) return "medium";
+        if (s.contains("low") || s.contains("p3")) return "low";
+        return null; // 알 수 없는 값 → null(프론트 기본값 medium)
     }
 
     // [준우님 기능] 특정 PR의 변경 파일 목록 조회 (파일명/status/추가·삭제 수/patch)

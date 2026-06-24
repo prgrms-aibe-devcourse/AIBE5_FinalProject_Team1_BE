@@ -135,4 +135,10 @@ public class GithubIssue extends BaseEntity {
     public void updateLocalStatus(String localStatus) {
         this.localStatus = localStatus;
     }
+
+    // GitHub에서 가져온 분류 정보 반영. null이면 기존 값을 덮어쓰지 않는다(조회 실패 시 보존).
+    public void applyClassification(String priority, String issueType) {
+        if (priority != null && !priority.isBlank()) this.priority = priority;
+        if (issueType != null && !issueType.isBlank()) this.issueType = issueType;
+    }
 }
