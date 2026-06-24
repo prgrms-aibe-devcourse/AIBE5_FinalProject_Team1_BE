@@ -50,7 +50,7 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -138,7 +138,7 @@ public class GithubWebhookService {
 
         String secret = repo.getWebhookSecret();
         if (secret == null || secret.isBlank()) {
-            return;
+            throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
         }
         if (signatureHeader == null || !signatureHeader.startsWith("sha256=")) {
             throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
@@ -196,7 +196,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
         } else {
             issue = existing.get();
             issue.syncFromWebhook(
@@ -271,7 +271,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), savedPr.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
 
             savePullRequestFiles(repo, savedPr, dto.number());
             aiSummaryService.generateSummaryForWebhook(savedPr.getId());
@@ -285,6 +285,9 @@ public class GithubWebhookService {
                     githubPullRequestRepository.save(pr);
                 } else if ("reopened".equals(action)) {
                     pr.updateState("open");
+                    githubPullRequestRepository.save(pr);
+                } else if (ACTION_CLOSED.equals(action) && pr.getMergedAt() == null) {
+                    pr.updateState("closed");
                     githubPullRequestRepository.save(pr);
                 }
                 broadcastPrStatusUpdate(pr, repo, channel, dto);
@@ -654,7 +657,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
             return;
         }
 
@@ -673,7 +676,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onIssueCreated(
                 repo.getWorkspace().getId(), savedIssue.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
     }
 
     private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
@@ -875,7 +878,7 @@ public class GithubWebhookService {
     }
 
     private LocalDateTime toLocalDateTime(java.time.Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.of("Asia/Seoul"));
     }
 
     private String computeHmacSha256(String secret, byte[] payload) {
@@ -1016,7 +1019,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrReview(
                 repo.getWorkspace().getId(), pr.getId(),
                 actorName, "승인",
-                repo.getId(), repo.getName(), (long) prNumber);
+                repo.getId(), repo.getName(), approveChannel.getId(), (long) prNumber);
     }
 
     @Transactional
@@ -1054,11 +1057,44 @@ public class GithubWebhookService {
                                 )
                 );
 
+        Channel channel = getRepoChannel(repo);
+        if ("approved".equals(state) && pr.getMergedAt() == null) {
+            pr.updateState("approved");
+            githubPullRequestRepository.save(pr);
+            if (channel != null) {
+                long approvedCount = pullRequestReviewRepository
+                        .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
+                final long finalApprovedCount = approvedCount;
+                threadAttachmentRepository.findAllPrByChannelId(channel.getId())
+                        .forEach(ta -> {
+                            if (ta.getMeta() == null) return;
+                            try {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                                Object num = meta.get("prNumber");
+                                if (num != null && Integer.parseInt(num.toString()) == prDto.number()) {
+                                    if (!"merged".equals(meta.get("prStatus"))) {
+                                        meta.put("prStatus", "approved");
+                                    }
+                                    meta.put("approved", (int) finalApprovedCount);
+                                    ta.updateMeta(objectMapper.writeValueAsString(meta));
+                                    threadAttachmentRepository.save(ta);
+                                }
+                            } catch (Exception e) {
+                                log.warn("PR meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
+                            }
+                        });
+                threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                        Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+                        .ifPresent(thread -> broadcastPrMessageUpdated(thread, channel));
+            }
+        }
+
         githubWebhookEventService.onPrReview(
                 workspaceId, pr.getId(),
                 reviewerLogin,
                 review.body() != null && !review.body().isBlank() ? review.body() : state,
-                repo.getId(), repo.getName(), (long) prDto.number()
+                repo.getId(), repo.getName(), channel != null ? channel.getId() : null, (long) prDto.number()
         );
     }
 
@@ -1389,7 +1425,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), existingPr.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
             return;
         }
 
@@ -1417,7 +1453,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrCreated(
                 repo.getWorkspace().getId(), savedPr.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
         // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
         aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }

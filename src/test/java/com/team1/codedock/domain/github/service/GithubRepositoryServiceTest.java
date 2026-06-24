@@ -4,6 +4,7 @@ import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
+import com.team1.codedock.domain.github.dto.GithubWebhookRegisterResponse;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
@@ -64,6 +65,9 @@ class GithubRepositoryServiceTest {
 
     @Mock
     private GithubApiService githubApiService;
+
+    @Mock
+    private GithubWebhookRegistrationService githubWebhookRegistrationService;
 
     @InjectMocks
     private GithubRepositoryService githubRepositoryService;
@@ -727,6 +731,119 @@ class GithubRepositoryServiceTest {
 
         assertThat(repository.getName()).isEqualTo(name);
         verify(githubRepositoryRepository).save(any(GithubRepository.class));
+    }
+
+    @Test
+    @DisplayName("connectRepository 시 webhook을 자동 등록한다")
+    void connectRepository_webhook_등록_성공() {
+        Workspace workspace = workspace(1L);
+        User user = mockGithubUser();
+        WorkspaceMember member = mockWorkspaceMember(workspace, "admin");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(member));
+        when(githubApiService.getRepo("octocat", "hello-world", "github-token")).thenReturn(githubRepoResponse());
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(1L, "12345"))
+                .thenReturn(Optional.empty());
+        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenAnswer(invocation -> {
+            GithubRepository repository = invocation.getArgument(0);
+            ReflectionTestUtils.setField(repository, "id", 30L);
+            return repository;
+        });
+        when(channelRepository.findRepositoryChannel(1L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+        when(githubWebhookRegistrationService.registerWebhook(1L, 30L, 1L))
+                .thenReturn(new GithubWebhookRegisterResponse(30L, "hook-id", "http://example.com/webhook", true));
+
+        githubRepositoryService.connectRepository(1L, 1L, connectRequest());
+
+        verify(githubWebhookRegistrationService).registerWebhook(1L, 30L, 1L);
+    }
+
+    @Test
+    @DisplayName("connectRepository 시 webhook 등록이 실패해도 응답을 반환한다")
+    void connectRepository_webhook_등록_실패해도_응답반환() {
+        Workspace workspace = workspace(1L);
+        User user = mockGithubUser();
+        WorkspaceMember member = mockWorkspaceMember(workspace, "admin");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(1L, 1L))
+                .thenReturn(Optional.of(member));
+        when(githubApiService.getRepo("octocat", "hello-world", "github-token")).thenReturn(githubRepoResponse());
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(1L, "12345"))
+                .thenReturn(Optional.empty());
+        when(githubRepositoryRepository.save(any(GithubRepository.class))).thenAnswer(invocation -> {
+            GithubRepository repository = invocation.getArgument(0);
+            ReflectionTestUtils.setField(repository, "id", 30L);
+            return repository;
+        });
+        when(channelRepository.findRepositoryChannel(1L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+        when(githubWebhookRegistrationService.registerWebhook(1L, 30L, 1L))
+                .thenThrow(new RuntimeException("GitHub API down"));
+
+        GithubConnectResponse response = githubRepositoryService.connectRepository(1L, 1L, connectRequest());
+
+        assertThat(response.getId()).isEqualTo(30L);
+        assertThat(response.getChannelId()).isEqualTo(40L);
+    }
+
+    @Test
+    @DisplayName("createRepositoryChannel 시 webhook을 자동 등록한다")
+    void createRepositoryChannel_webhook_등록_성공() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = repository(workspace);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+        when(githubWebhookRegistrationService.registerWebhook(10L, 30L, 100L))
+                .thenReturn(new GithubWebhookRegisterResponse(30L, "hook-id", "http://example.com/webhook", true));
+
+        githubRepositoryService.createRepositoryChannel(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        verify(githubWebhookRegistrationService).registerWebhook(10L, 30L, 100L);
+    }
+
+    @Test
+    @DisplayName("createRepositoryChannel 시 webhook 등록이 실패해도 채널을 반환한다")
+    void createRepositoryChannel_webhook_등록_실패해도_채널반환() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = repository(workspace);
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(10L, "123456"))
+                .thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> {
+            Channel channel = invocation.getArgument(0);
+            ReflectionTestUtils.setField(channel, "id", 40L);
+            return channel;
+        });
+        when(githubWebhookRegistrationService.registerWebhook(10L, 30L, 100L))
+                .thenThrow(new RuntimeException("GitHub API down"));
+
+        ChannelListResponse response =
+                githubRepositoryService.createRepositoryChannel(10L, 100L, linkRequest("123456", "team1", "codedock"));
+
+        assertThat(response.id()).isEqualTo(40L);
+        assertThat(response.githubRepositoryId()).isEqualTo(30L);
     }
 
     private GithubConnectRequest connectRequest() {

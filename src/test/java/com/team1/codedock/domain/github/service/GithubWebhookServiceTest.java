@@ -230,26 +230,28 @@ class GithubWebhookServiceTest {
     }
 
     @Test
-    @DisplayName("secret이 null인 경우 signature 검증을 건너뛴다")
+    @DisplayName("secret이 null인 경우 GITHUB_WEBHOOK_INVALID 예외가 발생한다")
     void verifySignature_secret_null이면_검증_스킵() {
         GithubRepository repo = githubRepository(workspace(10L), 20L);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        assertThatCode(() ->
+        assertThatThrownBy(() ->
                 githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
-                .doesNotThrowAnyException();
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
     }
 
     @Test
-    @DisplayName("secret이 빈 문자열인 경우 signature 검증을 건너뛴다")
+    @DisplayName("secret이 빈 문자열인 경우 GITHUB_WEBHOOK_INVALID 예외가 발생한다")
     void verifySignature_secret_blank이면_검증_스킵() {
         GithubRepository repo = githubRepository(workspace(10L), 20L);
         repo.updateWebhook("1", "", "url", true);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        assertThatCode(() ->
+        assertThatThrownBy(() ->
                 githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
-                .doesNotThrowAnyException();
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
     }
 
     @Test
@@ -378,7 +380,7 @@ class GithubWebhookServiceTest {
         assertThat(labelsCaptor.getValue()).hasSize(1);
         assertThat(labelsCaptor.getValue().get(0).getName()).isEqualTo("bug");
 
-        verify(githubWebhookEventService).onIssueCreated(10L, 40L, "octocat", "로그인 버그", 20L, "repo", 7L);
+        verify(githubWebhookEventService).onIssueCreated(10L, 40L, "octocat", "로그인 버그", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -549,7 +551,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncIssuesFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onIssueCreated(
-                10L, 40L, "octocat", "Recovered next issue", 20L, "repo", 7L);
+                10L, 40L, "octocat", "Recovered next issue", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -593,7 +595,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncIssuesFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onIssueCreated(
-                10L, 40L, "octocat", "Sync issue", 20L, "repo", 7L);
+                10L, 40L, "octocat", "Sync issue", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -637,7 +639,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncIssuesFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onIssueCreated(
-                10L, 40L, null, "Issue without user", 20L, "repo", 7L);
+                10L, 40L, null, "Issue without user", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -672,7 +674,7 @@ class GithubWebhookServiceTest {
         verify(githubIssueRepository).save(existingIssue);
         verify(threadRepository, never()).save(any(Thread.class));
         verify(githubWebhookEventService).onIssueCreated(
-                10L, 40L, "octocat", "Synced existing issue", 20L, "repo", 7L);
+                10L, 40L, "octocat", "Synced existing issue", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -716,7 +718,7 @@ class GithubWebhookServiceTest {
         verify(threadRepository).save(any(Thread.class));
         verify(threadAttachmentRepository).save(any(ThreadAttachment.class));
         verify(githubWebhookEventService).onIssueCreated(
-                10L, 40L, "octocat", "Recovered issue thread", 20L, "repo", 7L);
+                10L, 40L, "octocat", "Recovered issue thread", 20L, "repo", 30L, 7L);
     }
 
     @Test
@@ -760,7 +762,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onPrCreated(
-                10L, 100L, "octocat", "Sync PR", 20L, "repo", 1L);
+                10L, 100L, "octocat", "Sync PR", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -804,7 +806,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onPrCreated(
-                10L, 100L, null, "PR without user", 20L, "repo", 1L);
+                10L, 100L, null, "PR without user", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -842,7 +844,7 @@ class GithubWebhookServiceTest {
         verify(threadRepository, never()).save(any(Thread.class));
         verify(aiSummaryService).generateSummaryForWebhook(100L);
         verify(githubWebhookEventService).onPrCreated(
-                10L, 100L, "octocat", "Synced existing PR", 20L, "repo", 1L);
+                10L, 100L, "octocat", "Synced existing PR", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -910,7 +912,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
 
         verify(githubWebhookEventService).onPrCreated(
-                10L, 100L, "octocat", "Recovered next PR", 20L, "repo", 2L);
+                10L, 100L, "octocat", "Recovered next PR", 20L, "repo", 30L, 2L);
     }
 
     @Test
@@ -959,7 +961,7 @@ class GithubWebhookServiceTest {
         verify(threadAttachmentRepository).save(any(ThreadAttachment.class));
         verify(aiSummaryService).generateSummaryForWebhook(100L);
         verify(githubWebhookEventService).onPrCreated(
-                10L, 100L, "octocat", "Recovered PR thread", 20L, "repo", 1L);
+                10L, 100L, "octocat", "Recovered PR thread", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -1001,7 +1003,7 @@ class GithubWebhookServiceTest {
         githubWebhookService.processPullRequestEvent(20L, payload);
 
         verify(pullRequestFileRepository).saveAll(any());
-        verify(githubWebhookEventService).onPrCreated(10L, 100L, "octocat", "Feature: Add auth", 20L, "repo", 1L);
+        verify(githubWebhookEventService).onPrCreated(10L, 100L, "octocat", "Feature: Add auth", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -1185,7 +1187,7 @@ class GithubWebhookServiceTest {
 
         githubWebhookService.approvePullRequest(20L, 1, 3L);
 
-        verify(githubWebhookEventService).onPrReview(10L, 100L, "테스터", "승인", 20L, "repo", 1L);
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "테스터", "승인", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -1221,7 +1223,7 @@ class GithubWebhookServiceTest {
 
         githubWebhookService.approvePullRequest(20L, 1, 3L);
 
-        verify(githubWebhookEventService).onPrReview(10L, 100L, "githubuser", "승인", 20L, "repo", 1L);
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "githubuser", "승인", 20L, "repo", 30L, 1L);
     }
 
     @Test
@@ -1245,7 +1247,7 @@ class GithubWebhookServiceTest {
 
         githubWebhookService.processPullRequestReviewEvent(20L, payload);
 
-        verify(githubWebhookEventService).onPrReview(10L, 100L, "reviewer", "LGTM", 20L, "repo", 1L);
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "reviewer", "LGTM", 20L, "repo", null, 1L);
     }
 
     @Test
@@ -1303,6 +1305,112 @@ class GithubWebhookServiceTest {
         githubWebhookService.processPullRequestEvent(20L, payload);
 
         verify(pullRequestReviewRequestRepository).deleteAllByGithubPullRequest_Id(100L);
+    }
+
+    @Test
+    @DisplayName("PR closed 웹훅 수신 시 mergedAt이 null이면 상태를 closed로 변경한다")
+    void processPullRequestEvent_closed_이면_PR상태_closed로_변경() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+        when(pr.getMergedAt()).thenReturn(null);
+        GithubPullRequestWebhookPayload payload = prPayload("closed", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.of(pr));
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.save(pr)).thenReturn(pr);
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(pr).updateState("closed");
+        verify(githubPullRequestRepository).save(pr);
+    }
+
+    @Test
+    @DisplayName("PR closed 웹훅 수신 시 mergedAt이 있으면 상태를 closed로 변경하지 않는다")
+    void processPullRequestEvent_이미_merged면_closed로_상태변경_안함() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+        when(pr.getMergedAt()).thenReturn(LocalDateTime.of(2026, 6, 20, 0, 0));
+        GithubPullRequestWebhookPayload payload = prPayload("closed", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001")).thenReturn(Optional.of(pr));
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(pr, never()).updateState(any());
+    }
+
+    @Test
+    @DisplayName("PR 리뷰 approved 이벤트 수신 시 mergedAt이 있으면 상태 변경을 하지 않는다")
+    void processPullRequestReviewEvent_approved_mergedAt있으면_상태변경_안함() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+        when(pr.getMergedAt()).thenReturn(LocalDateTime.of(2026, 6, 25, 0, 0));
+
+        GithubPullRequestReviewWebhookPayload payload = new GithubPullRequestReviewWebhookPayload(
+                "submitted",
+                new GithubPullRequestReviewWebhookPayload.ReviewDto(1L,
+                        new GithubPullRequestReviewWebhookPayload.UserDto("reviewer"), "LGTM", "approved"),
+                new GithubPullRequestReviewWebhookPayload.PullRequestDto(1001L, 1, "Feature",
+                        new GithubPullRequestReviewWebhookPayload.UserDto("author"))
+        );
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndPrNumber(20L, 1)).thenReturn(Optional.of(pr));
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.empty());
+
+        githubWebhookService.processPullRequestReviewEvent(20L, payload);
+
+        verify(pr, never()).updateState(any());
+        verify(githubPullRequestRepository, never()).save(pr);
+    }
+
+    @Test
+    @DisplayName("PR 리뷰 submitted 이벤트 중 approved가 아닌 리뷰는 상태를 변경하지 않고 onPrReview를 발행한다")
+    void processPullRequestReviewEvent_submitted_approved아닌_리뷰는_상태변경_없이_onPrReview_발행() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+
+        GithubPullRequestReviewWebhookPayload payload = new GithubPullRequestReviewWebhookPayload(
+                "submitted",
+                new GithubPullRequestReviewWebhookPayload.ReviewDto(1L,
+                        new GithubPullRequestReviewWebhookPayload.UserDto("reviewer"), "Please fix this", "changes_requested"),
+                new GithubPullRequestReviewWebhookPayload.PullRequestDto(1001L, 1, "Feature",
+                        new GithubPullRequestReviewWebhookPayload.UserDto("author"))
+        );
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndPrNumber(20L, 1)).thenReturn(Optional.of(pr));
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.empty());
+
+        githubWebhookService.processPullRequestReviewEvent(20L, payload);
+
+        verify(pr, never()).updateState(any());
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "reviewer", "Please fix this", 20L, "repo", null, 1L);
+    }
+
+    @Test
+    @DisplayName("toLocalDateTime은 UTC Instant를 Asia/Seoul 기준 LocalDateTime으로 변환한다")
+    void toLocalDateTime_UTC를_KST로_변환한다() {
+        LocalDateTime result = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "toLocalDateTime", Instant.parse("2026-06-25T00:00:00Z"));
+
+        assertThat(result).isEqualTo(LocalDateTime.of(2026, 6, 25, 9, 0, 0));
     }
 
     private static ChatEventResponse<?> assertChatEvent(Object value, ChatEventType expectedType) {

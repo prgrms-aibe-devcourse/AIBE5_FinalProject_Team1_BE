@@ -35,19 +35,19 @@ class GithubWebhookEventServiceTest {
     @Test
     @DisplayName("PR 생성 이벤트를 기록한다")
     void onPrCreated() {
-        githubWebhookEventService.onPrCreated(10L, 5L, "actor", "PR title", 7L, "my-repo", 234L);
+        githubWebhookEventService.onPrCreated(10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
 
         verify(workspaceEventService).recordPrCreatedIfAbsent(
-                10L, 5L, "actor", "PR title", 7L, "my-repo", 234L);
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
     }
 
     @Test
     @DisplayName("이슈 생성 이벤트를 기록한다")
     void onIssueCreated() {
-        githubWebhookEventService.onIssueCreated(10L, 3L, "actor", "Issue title", 7L, "my-repo", 42L);
+        githubWebhookEventService.onIssueCreated(10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
 
         verify(workspaceEventService).recordIssueCreatedIfAbsent(
-                10L, 3L, "actor", "Issue title", 7L, "my-repo", 42L);
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
     }
 
     @Test
@@ -61,7 +61,7 @@ class GithubWebhookEventServiceTest {
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.of(pr));
         when(userRepository.findByGithubUsername("octocat")).thenReturn(Optional.of(user));
 
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", 234L);
+        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
                 10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, 99L);
@@ -72,7 +72,7 @@ class GithubWebhookEventServiceTest {
     void onPrReview_작성자_조회_실패_PR없음() {
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.empty());
 
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", 234L);
+        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
                 10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
@@ -87,7 +87,7 @@ class GithubWebhookEventServiceTest {
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.of(pr));
         when(userRepository.findByGithubUsername("octocat")).thenReturn(Optional.empty());
 
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", 234L);
+        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
                 10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);

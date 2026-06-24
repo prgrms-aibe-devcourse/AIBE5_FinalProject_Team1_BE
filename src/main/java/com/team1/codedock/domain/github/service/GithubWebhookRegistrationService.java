@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
@@ -40,7 +41,7 @@ public class GithubWebhookRegistrationService {
     @Value("${app.base-url:http://localhost:8080}")
     private String appBaseUrl;
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public GithubWebhookRegisterResponse registerWebhook(Long workspaceId, Long repositoryId, Long userId) {
         validateAuthority(workspaceId, userId);
 
@@ -61,7 +62,7 @@ public class GithubWebhookRegistrationService {
 
         String webhookSecret = UUID.randomUUID().toString().replace("-", "");
         // 경로에 DB id 대신 불변인 GitHub repo id를 사용 → DB 재생성/재연결 후에도 URL이 동일하게 유지된다.
-        String webhookUrl = appBaseUrl + "/api/v1/github/webhooks/gh/" + repo.getGithubRepoId();
+        String webhookUrl = appBaseUrl.replaceAll("/+$", "") + "/api/v1/github/webhooks/gh/" + repo.getGithubRepoId();
 
         RestClient client = restClientBuilder.clone()
                 .baseUrl(GITHUB_API)

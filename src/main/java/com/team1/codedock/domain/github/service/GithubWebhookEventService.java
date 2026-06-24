@@ -17,23 +17,23 @@ public class GithubWebhookEventService {
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final UserRepository userRepository;
 
-    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, String repositoryName, Long prNumber) {
+    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
         workspaceEventService.recordPrCreatedIfAbsent(
-                workspaceId, prId, actorName, title, repositoryId, repositoryName, prNumber);
+                workspaceId, prId, actorName, title, repositoryId, repositoryName, channelId, prNumber);
     }
 
-    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, String repositoryName, Long issueNumber) {
+    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long issueNumber) {
         workspaceEventService.recordIssueCreatedIfAbsent(
-                workspaceId, issueId, actorName, title, repositoryId, repositoryName, issueNumber);
+                workspaceId, issueId, actorName, title, repositoryId, repositoryName, channelId, issueNumber);
     }
 
-    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, String repositoryName, Long prNumber) {
+    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
         Long targetUserId = githubPullRequestRepository.findById(prId)
                 .flatMap(pr -> userRepository.findByGithubUsername(pr.getAuthor()))
                 .map(user -> user.getId())
                 .orElse(null);
 
         workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.PR_REVIEW,
-                actorName, prId, null, null, comment, repositoryId, repositoryName, null, prNumber, null, targetUserId);
+                actorName, prId, null, channelId, comment, repositoryId, repositoryName, null, prNumber, null, targetUserId);
     }
 }
