@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,12 +31,25 @@ public class IssueService {
     @Transactional(readOnly = true)
     public List<IssueResponse> getWorkspaceIssues(Long workspaceId, Long userId) {
         validateWorkspaceMember(workspaceId, userId);
-        return githubIssueRepository.findAllByWorkspaceId(workspaceId).stream()
-                .map(issue -> {
-                    List<IssueLabel> labels = issueLabelRepository.findAllByGithubIssue_Id(issue.getId());
-                    List<IssueAssignee> assignees = issueAssigneeRepository.findAllByGithubIssue_Id(issue.getId());
-                    return IssueResponse.from(issue, labels, assignees);
-                })
+
+        List<GithubIssue> issues = githubIssueRepository.findAllByWorkspaceId(workspaceId);
+        if (issues.isEmpty()) {
+            return List.of();
+        }
+
+        // 이슈별 라벨/담당자를 각각 1회 배치 조회한 뒤 이슈 id로 묶어 매핑한다.
+        // 기존의 이슈당 2쿼리(N+1)를 전체 2쿼리로 줄인다.
+        List<Long> issueIds = issues.stream().map(GithubIssue::getId).toList();
+        Map<Long, List<IssueLabel>> labelsByIssueId = issueLabelRepository.findAllByGithubIssue_IdIn(issueIds).stream()
+                .collect(Collectors.groupingBy(label -> label.getGithubIssue().getId()));
+        Map<Long, List<IssueAssignee>> assigneesByIssueId = issueAssigneeRepository.findAllByIssueIdInFetchUser(issueIds).stream()
+                .collect(Collectors.groupingBy(assignee -> assignee.getGithubIssue().getId()));
+
+        return issues.stream()
+                .map(issue -> IssueResponse.from(
+                        issue,
+                        labelsByIssueId.getOrDefault(issue.getId(), List.of()),
+                        assigneesByIssueId.getOrDefault(issue.getId(), List.of())))
                 .toList();
     }
 

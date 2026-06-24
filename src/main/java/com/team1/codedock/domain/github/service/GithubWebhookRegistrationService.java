@@ -57,13 +57,9 @@ public class GithubWebhookRegistrationService {
             throw new BusinessException(ErrorCode.GITHUB_NOT_CONNECTED);
         }
 
-        // 안정적 식별자(githubRepoId) 기반 URL — DB auto-increment id가 아니라 GitHub repo id를 써
-        // DB 재생성/재링크 후에도 동일 URL이 유효하다.
+        String webhookSecret = UUID.randomUUID().toString().replace("-", "");
+        // 경로에 DB id 대신 불변인 GitHub repo id를 사용 → DB 재생성/재연결 후에도 URL이 동일하게 유지된다.
         String webhookUrl = appBaseUrl + "/api/v1/github/webhooks/gh/" + repo.getGithubRepoId();
-        // 기존 secret을 재사용(없으면 새로 생성)해 DB와 GitHub의 secret을 일치시킨다.
-        String webhookSecret = (repo.getWebhookSecret() != null && !repo.getWebhookSecret().isBlank())
-                ? repo.getWebhookSecret()
-                : UUID.randomUUID().toString().replace("-", "");
 
         RestClient client = restClientBuilder.clone()
                 .baseUrl(GITHUB_API)
@@ -73,7 +69,7 @@ public class GithubWebhookRegistrationService {
                 .build();
 
         // 멱등 처리: 이 레포를 가리키는 우리 webhook(구 /webhooks/{dbId}, 신 /webhooks/gh/{githubRepoId})을
-        // 추적 여부와 무관하게 전부 삭제한다. → 중복 hook 누적 방지 + 옛 URL을 새 URL로 마이그레이션
+        // 추적 여부와 무관하게 전부 삭제한 뒤 새로 1개 생성한다. → 중복 hook 누적 방지 + 옛 URL 마이그레이션
         // (DB가 모르는 중복 hook까지 정리되므로 수동 삭제가 불필요해진다.)
         deleteOurHooks(client, repo);
 

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.ai.dto.AiSummaryResponse;
 import com.team1.codedock.domain.ai.entity.AiSummary;
 import com.team1.codedock.domain.ai.repository.AiSummaryRepository;
+import com.team1.codedock.domain.github.entity.GithubRepository;
+import com.team1.codedock.domain.github.service.GithubApiClient;
 import com.team1.codedock.domain.pr.entity.PullRequestFile;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
@@ -27,11 +29,15 @@ import java.util.stream.Collectors;
 @Transactional
 public class AiSummaryService {
 
+    private static final String EMPTY_SUMMARY_TEXT = "AI 요약 정보 없음";
+    private static final String EMPTY_SUMMARY_TEXT_SHORT = "요약 정보 없음";
+
     private final AiSummaryRepository aiSummaryRepository;
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final PullRequestFileRepository pullRequestFileRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final GeminiClient geminiClient;
+    private final GithubApiClient githubApiClient;
     private final ObjectMapper objectMapper;
 
     public AiSummaryResponse generateSummary(Long workspaceId, Long prId) {
@@ -48,6 +54,14 @@ public class AiSummaryService {
 
     public void generateSummaryForWebhook(Long prId) {
         try {
+            // 이미 완료된 요약이 있으면 재생성하지 않는다(LLM 호출 비용 절약, 멱등).
+            // 미완료/실패/빈 요약만 (재)생성해 sync 시 자동 복구되게 한다.
+            boolean alreadyDone = aiSummaryRepository.findByGithubPullRequest_Id(prId)
+                    .filter(this::isReusableCompletedSummary)
+                    .isPresent();
+            if (alreadyDone) {
+                return;
+            }
             githubPullRequestRepository.findById(prId).ifPresent(pr -> generateSummaryInternal(pr, prId));
         } catch (Exception e) {
             log.warn("Webhook AI 요약 생성 실패 → prId={}", prId, e);
@@ -62,6 +76,11 @@ public class AiSummaryService {
         aiSummary.startProcessing();
 
         List<PullRequestFile> files = pullRequestFileRepository.findAllByGithubPullRequest_Id(prId);
+        // webhook 시점에 토큰/타이밍 문제로 파일이 저장되지 않았으면, 여기서 GitHub에서 보강한다.
+        // (이 보강이 없으면 빈 diff로 분석돼 "AI 요약 정보 없음"이 영구히 남는다)
+        if (files.isEmpty()) {
+            files = fetchAndSavePullRequestFiles(pr, prId);
+        }
         String combinedDiff = buildCombinedDiff(files);
 
         try {
@@ -77,6 +96,32 @@ public class AiSummaryService {
         return toResponse(aiSummary);
     }
 
+    private boolean isReusableCompletedSummary(AiSummary aiSummary) {
+        if (!"completed".equals(aiSummary.getStatus())) {
+            return false;
+        }
+        if (aiSummary.getSummary() == null || aiSummary.getSummary().isBlank()) {
+            return false;
+        }
+        try {
+            GeminiClient.PrAnalysisResult result = objectMapper.readValue(
+                    aiSummary.getSummary(), GeminiClient.PrAnalysisResult.class);
+            return hasMeaningfulSummaryText(result.summaryText());
+        } catch (Exception e) {
+            // 기존에 잘못 저장된 JSON은 재생성 대상임.
+            return false;
+        }
+    }
+
+    private boolean hasMeaningfulSummaryText(String summaryText) {
+        if (summaryText == null || summaryText.isBlank()) {
+            return false;
+        }
+        String normalized = summaryText.trim();
+        return !EMPTY_SUMMARY_TEXT.equals(normalized)
+                && !EMPTY_SUMMARY_TEXT_SHORT.equals(normalized);
+    }
+
     @Transactional(readOnly = true)
     public AiSummaryResponse getSummary(Long workspaceId, Long prId) {
         githubPullRequestRepository.findByIdAndRepository_Workspace_Id(prId, workspaceId)
@@ -86,6 +131,43 @@ public class AiSummaryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.AI_SUMMARY_NOT_FOUND));
 
         return toResponse(aiSummary);
+    }
+
+    // pull_request_files가 비어 있을 때 GitHub API에서 PR 파일 diff를 가져와 저장하고 반환한다.
+    // 워크스페이스 멤버 중 유효한 GitHub 토큰을 사용한다(없으면 빈 목록).
+    private List<PullRequestFile> fetchAndSavePullRequestFiles(GithubPullRequest pr, Long prId) {
+        GithubRepository repo = pr.getRepository();
+        if (repo == null || repo.getWorkspace() == null) {
+            return List.of();
+        }
+        String token = workspaceMemberRepository
+                .findAllByWorkspace_IdAndIsActiveTrue(repo.getWorkspace().getId())
+                .stream()
+                .map(m -> m.getUser().getGithubAccessToken())
+                .filter(t -> t != null && !t.isBlank())
+                .findFirst()
+                .orElse(null);
+        if (token == null) {
+            log.warn("AI 요약용 PR 파일 보강 실패: GitHub 토큰 없음 → prId={}", prId);
+            return List.of();
+        }
+        try {
+            List<GithubApiClient.GithubPrFileItem> fetched = githubApiClient.fetchPullRequestFiles(
+                    repo.getOwner(), repo.getName(), pr.getPrNumber(), token);
+            if (fetched.isEmpty()) {
+                return List.of();
+            }
+            List<PullRequestFile> toSave = fetched.stream()
+                    .map(f -> PullRequestFile.create(pr, f.filename(), f.status(),
+                            f.additions() != null ? f.additions() : 0,
+                            f.deletions() != null ? f.deletions() : 0,
+                            f.filename(), f.patch()))
+                    .toList();
+            return pullRequestFileRepository.saveAll(toSave);
+        } catch (Exception e) {
+            log.warn("AI 요약용 PR 파일 보강 실패 → prId={}", prId, e);
+            return List.of();
+        }
     }
 
     private String buildCombinedDiff(List<PullRequestFile> files) {
