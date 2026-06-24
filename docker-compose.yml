@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     image: ${APP_IMAGE:-codedock-backend:local}
     container_name: codedock-backend
+    mem_limit: 2g
+    mem_reservation: 1g
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:8080"

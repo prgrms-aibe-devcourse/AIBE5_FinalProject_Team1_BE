@@ -10,6 +10,7 @@ import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
@@ -38,6 +39,7 @@ public class ChatMessageService {
     private static final int MAX_MESSAGE_LIMIT = 100;
 
     private final ThreadRepository threadRepository;
+    private final BookmarkRepository bookmarkRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
     private final MentionService mentionService;
@@ -122,6 +124,8 @@ public class ChatMessageService {
         Thread message = findEditableChannelMessage(channel, messageId, member);
 
         message.markAsDeleted();
+        // 삭제된 메시지를 가리키는 북마크도 함께 제거(북마크 목록/통합 개요에 잔존하지 않도록)
+        bookmarkRepository.deleteAllByThread_Id(message.getId());
         return responseWithAttachments(message);
     }
 

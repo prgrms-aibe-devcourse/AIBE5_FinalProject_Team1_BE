@@ -17,6 +17,9 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     // 북마크 목록을 최신 저장 순서로 조회함
     List<Bookmark> findAllByWorkspaceMember_IdOrderByCreatedAtDesc(Long workspaceMemberId);
 
+    // 메시지(스레드)가 삭제될 때 해당 메시지를 가리키는 모든 북마크를 함께 제거함
+    void deleteAllByThread_Id(Long threadId);
+
     @Modifying
     @Query(value = """
             DELETE FROM bookmarks
