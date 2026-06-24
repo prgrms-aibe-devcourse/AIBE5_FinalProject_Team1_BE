@@ -61,8 +61,8 @@ class DashboardControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/dashboard/summary - 성공 시 200과 요약 통계를 반환한다")
-    void getSummary_성공() throws Exception {
+    @DisplayName("GET /api/dashboard/summary - 200과 요약 통계를 반환한다")
+    void getSummary_success() throws Exception {
         DashboardSummaryResponse response = DashboardSummaryResponse.of(3L, 2L, 1L, 5L);
         when(dashboardService.getSummary(USER_ID)).thenReturn(response);
 
@@ -76,8 +76,8 @@ class DashboardControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/dashboard/workspaces - 성공 시 200과 워크스페이스 통계 목록을 반환한다")
-    void getWorkspaceStats_성공() throws Exception {
+    @DisplayName("GET /api/dashboard/workspaces - 200과 워크스페이스 통계 목록을 반환한다")
+    void getWorkspaceStats_success() throws Exception {
         List<WorkspaceDashboardResponse> response = List.of(
                 new WorkspaceDashboardResponse(10L, "프로젝트", null, 2L, 3L, 1L, 4L)
         );
@@ -93,13 +93,16 @@ class DashboardControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/dashboard/events - 성공 시 200과 이벤트 목록을 반환한다")
-    void getEvents_성공() throws Exception {
+    @DisplayName("GET /api/dashboard/events - 주요 이벤트 시간과 이동 타입을 반환한다")
+    void getEvents_success() throws Exception {
         List<DashboardEventResponse> response = List.of(
                 new DashboardEventResponse(
                         1L, "PR_CREATED", 10L, "프로젝트", "alice",
                         5L, null, null, 7L, "my-repo", null, 1L, null,
-                        "PR 생성", false, LocalDateTime.of(2026, 6, 23, 10, 0)
+                        "PR 생성", false,
+                        LocalDateTime.of(2026, 6, 23, 10, 0),
+                        LocalDateTime.of(2026, 6, 22, 9, 30),
+                        "PR"
                 )
         );
         when(dashboardService.getEvents(USER_ID)).thenReturn(response);
@@ -110,12 +113,18 @@ class DashboardControllerTest {
                 .andExpect(jsonPath("$.data[0].eventId").value(1))
                 .andExpect(jsonPath("$.data[0].type").value("PR_CREATED"))
                 .andExpect(jsonPath("$.data[0].actorName").value("alice"))
+                .andExpect(jsonPath("$.data[0].occurredAt[0]").value(2026))
+                .andExpect(jsonPath("$.data[0].occurredAt[1]").value(6))
+                .andExpect(jsonPath("$.data[0].occurredAt[2]").value(22))
+                .andExpect(jsonPath("$.data[0].occurredAt[3]").value(9))
+                .andExpect(jsonPath("$.data[0].occurredAt[4]").value(30))
+                .andExpect(jsonPath("$.data[0].navigationType").value("PR"))
                 .andExpect(jsonPath("$.data[0].isRead").value(false));
     }
 
     @Test
-    @DisplayName("PATCH /api/dashboard/events/{eventId}/read - 성공 시 200을 반환하고 서비스를 호출한다")
-    void markEventAsRead_성공() throws Exception {
+    @DisplayName("PATCH /api/dashboard/events/{eventId}/read - 서비스에 읽음 처리를 위임한다")
+    void markEventAsRead_success() throws Exception {
         mockMvc.perform(patch("/api/dashboard/events/200/read"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
@@ -124,8 +133,8 @@ class DashboardControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /api/dashboard/events/{eventId}/read - 권한 없으면 403을 반환한다")
-    void markEventAsRead_권한없으면_403() throws Exception {
+    @DisplayName("PATCH /api/dashboard/events/{eventId}/read - 권한이 없으면 403을 반환한다")
+    void markEventAsRead_forbidden() throws Exception {
         org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.FORBIDDEN))
                 .when(dashboardService).markEventAsRead(200L, USER_ID);
 

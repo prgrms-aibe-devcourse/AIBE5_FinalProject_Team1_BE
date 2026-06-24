@@ -6,6 +6,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "workspace_events")
 @Getter
@@ -58,6 +60,9 @@ public class WorkspaceEvent extends BaseCreatedEntity {
     @Column(name = "target_user_id")
     private Long targetUserId;
 
+    @Column(name = "occurred_at")
+    private LocalDateTime occurredAt;
+
     @Column(name = "is_read", nullable = false)
     private boolean isRead;
 
@@ -70,6 +75,15 @@ public class WorkspaceEvent extends BaseCreatedEntity {
             Long prId, Long issueId, Long channelId, String content,
             Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
             Long targetUserId) {
+        return create(workspace, type, actorName, prId, issueId, channelId, content,
+                repositoryId, repositoryName, threadId, prNumber, issueNumber, targetUserId, null);
+    }
+
+    public static WorkspaceEvent create(
+            Workspace workspace, EventType type, String actorName,
+            Long prId, Long issueId, Long channelId, String content,
+            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
+            Long targetUserId, LocalDateTime occurredAt) {
         WorkspaceEvent event = new WorkspaceEvent();
         event.workspace = workspace;
         event.type = type;
@@ -84,8 +98,13 @@ public class WorkspaceEvent extends BaseCreatedEntity {
         event.prNumber = prNumber;
         event.issueNumber = issueNumber;
         event.targetUserId = targetUserId;
+        event.occurredAt = occurredAt;
         event.isRead = false;
         return event;
+    }
+
+    public LocalDateTime getDisplayOccurredAt() {
+        return occurredAt != null ? occurredAt : getCreatedAt();
     }
 
     public void markAsRead() {
