@@ -5,6 +5,7 @@ import com.team1.codedock.domain.auth.handler.OAuth2SuccessHandler;
 import com.team1.codedock.domain.auth.service.CustomOAuth2UserService;
 import com.team1.codedock.global.security.CookieOAuth2AuthorizationRequestRepository;
 import com.team1.codedock.global.security.CustomUserDetailsService;
+import com.team1.codedock.global.security.GithubOAuth2AuthorizationRequestResolver;
 import com.team1.codedock.global.security.JwtAuthFilter;
 import com.team1.codedock.global.security.JwtProvider;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -77,6 +78,7 @@ public class SecurityConfig {
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
     private final OAuth2FailureHandler oAuth2FailureHandler;
     private final CookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository;
+    private final GithubOAuth2AuthorizationRequestResolver githubAuthorizationRequestResolver;
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService userDetailsService;
 
@@ -116,6 +118,7 @@ public class SecurityConfig {
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .authorizationEndpoint(auth -> auth
+                                .authorizationRequestResolver(githubAuthorizationRequestResolver)
                                 .authorizationRequestRepository(cookieAuthorizationRequestRepository))
                         .redirectionEndpoint(redirect -> redirect
                                 .baseUri("/login/oauth2/code/*"))
