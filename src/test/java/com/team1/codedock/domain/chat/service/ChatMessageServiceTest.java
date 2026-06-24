@@ -1400,7 +1400,8 @@ class ChatMessageServiceTest {
 
         verify(workspaceEventService).recordEvent(
                 workspaceId, WorkspaceEvent.EventType.REPLY, "Sender", null, null, channelId,
-                "reply content", null, null, 50L, null, null, 99L);
+                "reply content", null, null, 50L, null, null, 99L,
+                LocalDateTime.of(2026, 6, 23, 10, 0));
     }
 
     @Test

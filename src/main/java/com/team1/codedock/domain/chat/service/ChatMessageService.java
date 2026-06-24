@@ -194,7 +194,7 @@ public class ChatMessageService {
             workspaceEventService.recordEvent(
                     channel.getWorkspace().getId(), WorkspaceEvent.EventType.REPLY,
                     sender.getUser().getDisplayName(), null, null, channel.getId(), content,
-                    null, null, replyTo.getId(), null, null, targetUserId);
+                    null, null, replyTo.getId(), null, null, targetUserId, savedThread.getCreatedAt());
         }
 
         // 채팅 메시지 이벤트 발행(Kafka). 실패해도 채팅 전송에는 영향 없음.

@@ -196,7 +196,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number(),
+                    toLocalDateTime(dto.createdAt()));
         } else {
             issue = existing.get();
             issue.syncFromWebhook(
@@ -271,7 +272,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), savedPr.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number(),
+                    toLocalDateTime(dto.createdAt()));
 
             savePullRequestFiles(repo, savedPr, dto.number());
             aiSummaryService.generateSummaryForWebhook(savedPr.getId());
@@ -657,7 +659,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                    toLocalDateTime(item.createdAt()));
             return;
         }
 
@@ -676,7 +679,8 @@ public class GithubWebhookService {
         githubWebhookEventService.onIssueCreated(
                 repo.getWorkspace().getId(), savedIssue.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                savedIssue.getGithubCreatedAt());
     }
 
     private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
@@ -1425,7 +1429,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), existingPr.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                    toLocalDateTime(item.createdAt()));
             return;
         }
 
@@ -1453,7 +1458,8 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrCreated(
                 repo.getWorkspace().getId(), savedPr.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                savedPr.getGithubCreatedAt());
         // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
         aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }

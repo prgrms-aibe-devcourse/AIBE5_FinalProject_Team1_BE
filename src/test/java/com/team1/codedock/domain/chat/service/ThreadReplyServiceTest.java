@@ -168,7 +168,8 @@ class ThreadReplyServiceTest {
                 threadId,
                 null,
                 null,
-                101L
+                101L,
+                LocalDateTime.of(2026, 6, 9, 10, 2)
         );
     }
 

@@ -51,7 +51,7 @@ public class ThreadReplyService {
         ThreadReply reply = ThreadReply.create(thread, member, ChatContentEmojiCodec.encode(request.content()));
         ThreadReply savedReply = threadReplyRepository.save(reply);
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
-        recordReplyEventForThreadOwner(thread, member, request.content());
+        recordReplyEventForThreadOwner(savedReply, member, request.content());
         return ThreadReplyResponse.from(savedReply);
     }
 
@@ -111,7 +111,8 @@ public class ThreadReplyService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
     }
 
-    private void recordReplyEventForThreadOwner(Thread thread, WorkspaceMember replier, String content) {
+    private void recordReplyEventForThreadOwner(ThreadReply reply, WorkspaceMember replier, String content) {
+        Thread thread = reply.getThread();
         WorkspaceMember threadOwner = thread.getCreatedBy();
         var channel = thread.getChannel();
         // 스레드 답글은 원글 작성자에게만 개인 대시보드 이벤트로 남김
@@ -137,7 +138,8 @@ public class ThreadReplyService {
                 thread.getId(),
                 null,
                 null,
-                threadOwner.getUser().getId()
+                threadOwner.getUser().getId(),
+                reply.getCreatedAt()
         );
     }
 

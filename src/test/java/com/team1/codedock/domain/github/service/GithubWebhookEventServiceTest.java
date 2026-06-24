@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.mockito.Mockito.mock;
@@ -33,26 +34,32 @@ class GithubWebhookEventServiceTest {
     private GithubWebhookEventService githubWebhookEventService;
 
     @Test
-    @DisplayName("PR 생성 이벤트를 기록한다")
+    @DisplayName("PR 생성 이벤트를 채널과 원본 발생 시각까지 함께 기록한다")
     void onPrCreated() {
-        githubWebhookEventService.onPrCreated(10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 23, 9, 30);
+
+        githubWebhookEventService.onPrCreated(
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L, occurredAt);
 
         verify(workspaceEventService).recordPrCreatedIfAbsent(
-                10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L, occurredAt);
     }
 
     @Test
-    @DisplayName("이슈 생성 이벤트를 기록한다")
+    @DisplayName("Issue 생성 이벤트를 채널과 원본 발생 시각까지 함께 기록한다")
     void onIssueCreated() {
-        githubWebhookEventService.onIssueCreated(10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 22, 8, 0);
+
+        githubWebhookEventService.onIssueCreated(
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L, occurredAt);
 
         verify(workspaceEventService).recordIssueCreatedIfAbsent(
-                10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L, occurredAt);
     }
 
     @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR 작성자 조회 성공 시 targetUserId를 설정한다")
-    void onPrReview_작성자_조회_성공() {
+    @DisplayName("PR 리뷰 이벤트는 PR 작성자를 targetUserId로 설정한다")
+    void onPrReview_authorFound() {
         GithubPullRequest pr = mock(GithubPullRequest.class);
         when(pr.getAuthor()).thenReturn("octocat");
         User user = mock(User.class);
@@ -64,23 +71,25 @@ class GithubWebhookEventServiceTest {
         githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, 99L);
+                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null,
+                "LGTM", 7L, "my-repo", null, 234L, null, 99L);
     }
 
     @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR 작성자 조회 실패 시 targetUserId는 null이다")
-    void onPrReview_작성자_조회_실패_PR없음() {
+    @DisplayName("PR 리뷰 이벤트에서 PR을 찾지 못하면 targetUserId를 null로 기록한다")
+    void onPrReview_prNotFound() {
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.empty());
 
         githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
+                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null,
+                "LGTM", 7L, "my-repo", null, 234L, null, null);
     }
 
     @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR은 찾았으나 GitHub 유저 조회 실패 시 targetUserId는 null이다")
-    void onPrReview_작성자_조회_실패_유저없음() {
+    @DisplayName("PR 리뷰 이벤트에서 GitHub 사용자를 찾지 못하면 targetUserId를 null로 기록한다")
+    void onPrReview_userNotFound() {
         GithubPullRequest pr = mock(GithubPullRequest.class);
         when(pr.getAuthor()).thenReturn("octocat");
 
@@ -90,6 +99,7 @@ class GithubWebhookEventServiceTest {
         githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
 
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
+                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null,
+                "LGTM", 7L, "my-repo", null, 234L, null, null);
     }
 }

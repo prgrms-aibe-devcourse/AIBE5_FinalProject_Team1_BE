@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -17,17 +19,34 @@ public class GithubWebhookEventService {
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final UserRepository userRepository;
 
-    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
+    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title,
+                            Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
         workspaceEventService.recordPrCreatedIfAbsent(
                 workspaceId, prId, actorName, title, repositoryId, repositoryName, channelId, prNumber);
     }
 
-    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long issueNumber) {
+    public void onPrCreated(Long workspaceId, Long prId, String actorName, String title,
+                            Long repositoryId, String repositoryName, Long channelId, Long prNumber,
+                            LocalDateTime occurredAt) {
+        workspaceEventService.recordPrCreatedIfAbsent(
+                workspaceId, prId, actorName, title, repositoryId, repositoryName, channelId, prNumber, occurredAt);
+    }
+
+    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title,
+                               Long repositoryId, String repositoryName, Long channelId, Long issueNumber) {
         workspaceEventService.recordIssueCreatedIfAbsent(
                 workspaceId, issueId, actorName, title, repositoryId, repositoryName, channelId, issueNumber);
     }
 
-    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
+    public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title,
+                               Long repositoryId, String repositoryName, Long channelId, Long issueNumber,
+                               LocalDateTime occurredAt) {
+        workspaceEventService.recordIssueCreatedIfAbsent(
+                workspaceId, issueId, actorName, title, repositoryId, repositoryName, channelId, issueNumber, occurredAt);
+    }
+
+    public void onPrReview(Long workspaceId, Long prId, String actorName, String comment,
+                           Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
         Long targetUserId = githubPullRequestRepository.findById(prId)
                 .flatMap(pr -> userRepository.findByGithubUsername(pr.getAuthor()))
                 .map(user -> user.getId())
