@@ -657,7 +657,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
             return;
         }
 
@@ -676,7 +676,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onIssueCreated(
                 repo.getWorkspace().getId(), savedIssue.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
     }
 
     private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
@@ -1425,7 +1425,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), existingPr.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
             return;
         }
 
@@ -1453,7 +1453,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrCreated(
                 repo.getWorkspace().getId(), savedPr.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
         // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
         aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }
