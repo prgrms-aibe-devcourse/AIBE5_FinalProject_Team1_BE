@@ -17,10 +17,12 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDateTime;
 
 @Entity
+@DynamicUpdate
 @Table(
         name = "github_repositories",
         uniqueConstraints = @UniqueConstraint(name = "uq_github_repos", columnNames = {"workspace_id", "github_repo_id"})

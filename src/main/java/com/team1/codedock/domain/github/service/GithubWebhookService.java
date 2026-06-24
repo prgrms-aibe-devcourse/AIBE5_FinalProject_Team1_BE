@@ -286,7 +286,7 @@ public class GithubWebhookService {
                 } else if ("reopened".equals(action)) {
                     pr.updateState("open");
                     githubPullRequestRepository.save(pr);
-                } else if (ACTION_CLOSED.equals(action)) {
+                } else if (ACTION_CLOSED.equals(action) && pr.getMergedAt() == null) {
                     pr.updateState("closed");
                     githubPullRequestRepository.save(pr);
                 }
@@ -1058,7 +1058,7 @@ public class GithubWebhookService {
                 );
 
         Channel channel = getRepoChannel(repo);
-        if ("approved".equals(state)) {
+        if ("approved".equals(state) && pr.getMergedAt() == null) {
             pr.updateState("approved");
             githubPullRequestRepository.save(pr);
             if (channel != null) {

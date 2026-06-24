@@ -20,9 +20,11 @@ import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -37,6 +39,7 @@ public class GithubRepositoryService {
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final ChannelRepository channelRepository;
     private final GithubApiService githubApiService;
+    private final GithubWebhookRegistrationService githubWebhookRegistrationService;
 
     public GithubConnectResponse connectRepository(Long workspaceId, Long userId, GithubConnectRequest request) {
         User user = userRepository.findById(userId)
@@ -76,6 +79,12 @@ public class GithubRepositoryService {
                         repoInfo.getDefaultBranch()
                 )));
         Channel repositoryChannel = findOrCreateRepositoryChannel(saved);
+
+        try {
+            githubWebhookRegistrationService.registerWebhook(workspaceId, saved.getId(), userId);
+        } catch (Exception e) {
+            log.warn("Webhook 자동 등록 실패 (수동 등록 필요) → repoId={}, reason={}", saved.getId(), e.getMessage());
+        }
 
         return GithubConnectResponse.builder()
                 .id(saved.getId())
@@ -157,7 +166,15 @@ public class GithubRepositoryService {
             GithubRepositoryLinkRequest request
     ) {
         GithubRepository githubRepository = linkRepository(workspaceId, userId, request);
-        return ChannelListResponse.from(findOrCreateRepositoryChannel(githubRepository));
+        Channel channel = findOrCreateRepositoryChannel(githubRepository);
+
+        try {
+            githubWebhookRegistrationService.registerWebhook(workspaceId, githubRepository.getId(), userId);
+        } catch (Exception e) {
+            log.warn("Webhook 자동 등록 실패 (수동 등록 필요) → repoId={}, reason={}", githubRepository.getId(), e.getMessage());
+        }
+
+        return ChannelListResponse.from(channel);
     }
 
     private Channel findOrCreateRepositoryChannel(GithubRepository githubRepository) {
