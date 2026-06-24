@@ -285,7 +285,7 @@ class MonitoringConfigTest {
     @Test
     @DisplayName("docker-compose.yml은 Promtail이 Docker 로그를 읽고 Loki 이후에 시작되도록 구성함")
     void dockerComposeConfiguresPromtailDockerLogCollection() throws IOException {
-        String compose = Files.readString(Path.of("docker-compose.yml"));
+        String compose = normalizeLineEndings(Files.readString(Path.of("docker-compose.yml")));
 
         assertThat(compose)
                 .contains("image: grafana/promtail:3.2.1")

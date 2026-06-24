@@ -17,8 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -104,11 +106,16 @@ public class GithubWebhookRegistrationService {
         return new GithubWebhookRegisterResponse(repositoryId, String.valueOf(hookResponse.id()), webhookUrl, true);
     }
 
-    // 이 레포를 가리키는 우리 webhook을 모두 찾아 삭제한다. 구/신 URL(경로 suffix)로 매칭하므로
-    // 호스트가 바뀌어도, 추적되지 않은 중복 hook이어도 정리된다. 목록 조회 실패 시 추적 hook만이라도 삭제.
+    // 이 레포를 가리키는 우리 webhook을 모두 찾아 삭제한다. 신 URL(/gh/{githubRepoId})뿐 아니라
+    // 같은 githubRepoId로 연결된 "모든" 레포 row의 옛 URL(/webhooks/{id})까지 삭제 대상에 포함한다.
+    // → 과거 다른 워크스페이스 row가 만든 dbId 기반 중복 hook까지 정리(경로 suffix 매칭이라 호스트 변경에도 안전).
+    // 목록 조회 실패 시 최소한 추적 중인 hook만이라도 삭제.
     private void deleteOurHooks(RestClient client, GithubRepository repo) {
-        String pathNew = "/api/v1/github/webhooks/gh/" + repo.getGithubRepoId();
-        String pathOld = "/api/v1/github/webhooks/" + repo.getId();
+        Set<String> ourPaths = new HashSet<>();
+        ourPaths.add("/api/v1/github/webhooks/gh/" + repo.getGithubRepoId());
+        for (GithubRepository row : githubRepositoryRepository.findAllByGithubRepoId(repo.getGithubRepoId())) {
+            ourPaths.add("/api/v1/github/webhooks/" + row.getId());
+        }
         try {
             GithubHookListItem[] hooks = client.get()
                     .uri("/repos/{owner}/{repo}/hooks", repo.getOwner(), repo.getName())
@@ -119,7 +126,7 @@ public class GithubWebhookRegistrationService {
             }
             for (GithubHookListItem hook : hooks) {
                 String url = hook.config() != null ? hook.config().url() : null;
-                if (url != null && (url.endsWith(pathNew) || url.endsWith(pathOld))) {
+                if (url != null && ourPaths.stream().anyMatch(url::endsWith)) {
                     deleteHookById(client, repo, String.valueOf(hook.id()));
                 }
             }
