@@ -1,0 +1,93 @@
+# 모니터링 스택 오버레이.
+# EC2처럼 docker-compose.yml을 수동 관리하는 환경에서, 기존 app/redis/kafka 정의를
+# 건드리지 않고 모니터링 서비스만 얹기 위한 파일이다. 함께 사용:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# (또는 .env에 COMPOSE_FILE=docker-compose.yml:docker-compose.monitoring.yml 설정)
+#
+# 모든 모니터링 컨테이너는 베이스와 같은 기본 네트워크(codedock_default)에 합류해
+# app:8080 / redis:6379 / kafka:9092 를 서비스 이름으로 스크랩한다.
+services:
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: codedock-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    expose:
+      - "9121"
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: codedock-kafka-exporter
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka:9092
+    expose:
+      - "9308"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: codedock-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    depends_on:
+      - redis-exporter
+      - kafka-exporter
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: codedock-loki
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:${LOKI_HOST_PORT:-3100}:3100"
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: codedock-promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+      - -log.level=${PROMTAIL_LOG_LEVEL:-info}
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: codedock-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/codedock-overview.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
