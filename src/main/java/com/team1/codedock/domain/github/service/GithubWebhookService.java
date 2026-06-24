@@ -50,7 +50,7 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -285,6 +285,9 @@ public class GithubWebhookService {
                     githubPullRequestRepository.save(pr);
                 } else if ("reopened".equals(action)) {
                     pr.updateState("open");
+                    githubPullRequestRepository.save(pr);
+                } else if (ACTION_CLOSED.equals(action)) {
+                    pr.updateState("closed");
                     githubPullRequestRepository.save(pr);
                 }
                 broadcastPrStatusUpdate(pr, repo, channel, dto);
@@ -875,7 +878,7 @@ public class GithubWebhookService {
     }
 
     private LocalDateTime toLocalDateTime(java.time.Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.of("Asia/Seoul"));
     }
 
     private String computeHmacSha256(String secret, byte[] payload) {
@@ -1053,6 +1056,39 @@ public class GithubWebhookService {
                                         () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, state))
                                 )
                 );
+
+        if ("approved".equals(state)) {
+            pr.updateState("approved");
+            githubPullRequestRepository.save(pr);
+            Channel channel = getRepoChannel(repo);
+            if (channel != null) {
+                long approvedCount = pullRequestReviewRepository
+                        .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
+                final long finalApprovedCount = approvedCount;
+                threadAttachmentRepository.findAllPrByChannelId(channel.getId())
+                        .forEach(ta -> {
+                            if (ta.getMeta() == null) return;
+                            try {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> meta = objectMapper.readValue(ta.getMeta(), Map.class);
+                                Object num = meta.get("prNumber");
+                                if (num != null && Integer.parseInt(num.toString()) == prDto.number()) {
+                                    if (!"merged".equals(meta.get("prStatus"))) {
+                                        meta.put("prStatus", "approved");
+                                    }
+                                    meta.put("approved", (int) finalApprovedCount);
+                                    ta.updateMeta(objectMapper.writeValueAsString(meta));
+                                    threadAttachmentRepository.save(ta);
+                                }
+                            } catch (Exception e) {
+                                log.warn("PR meta 업데이트 실패 → attachmentId={}", ta.getId(), e);
+                            }
+                        });
+                threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                        Thread.THREADABLE_TYPE_GITHUB_PR, pr.getId())
+                        .ifPresent(thread -> broadcastPrMessageUpdated(thread, channel));
+            }
+        }
 
         githubWebhookEventService.onPrReview(
                 workspaceId, pr.getId(),
