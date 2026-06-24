@@ -11,6 +11,7 @@ import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
@@ -48,6 +49,9 @@ class ChatMessageServiceTest {
 
     @Mock
     private ThreadRepository threadRepository;
+
+    @Mock
+    private BookmarkRepository bookmarkRepository;
 
     @Mock
     private WorkspaceMemberRepository workspaceMemberRepository;
@@ -730,6 +734,8 @@ class ChatMessageServiceTest {
         assertThat(response.attachments()).isEmpty();
         assertThat(message.getContent()).isEqualTo(Thread.DELETED_MESSAGE_CONTENT);
         verify(threadRepository, never()).delete(org.mockito.ArgumentMatchers.any(Thread.class));
+        // 메시지 삭제 시 해당 메시지를 가리키는 북마크도 함께 제거한다
+        verify(bookmarkRepository).deleteAllByThread_Id(messageId);
     }
 
     @Test

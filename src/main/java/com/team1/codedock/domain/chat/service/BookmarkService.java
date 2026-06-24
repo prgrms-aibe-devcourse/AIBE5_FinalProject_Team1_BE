@@ -53,7 +53,10 @@ public class BookmarkService {
         // 현재 워크스페이스 멤버가 저장한 북마크만 조회함
         WorkspaceMember member = findActiveWorkspaceMember(workspaceId, userId);
 
+        // 삭제된 메시지("삭제된 메시지입니다")를 가리키는 북마크는 목록에서 제외함
+        // (메시지 삭제 시 북마크도 같이 지우지만, 이미 남아있던 항목도 즉시 안 보이게 처리)
         return bookmarkRepository.findAllByWorkspaceMember_IdOrderByCreatedAtDesc(member.getId()).stream()
+                .filter(bookmark -> !bookmark.getThread().isDeleted())
                 .map(BookmarkResponse::from)
                 .toList();
     }
