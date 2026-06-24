@@ -211,6 +211,31 @@ class KafkaConfigTest {
                 .contains("condition: service_healthy");
     }
 
+    @Test
+    @DisplayName("docker-compose.yml은 app 내부 Kafka 주소와 host 점검 주소를 분리함")
+    void dockerComposeSeparatesInternalKafkaAddressFromHostAccessAddress() throws IOException {
+        String compose = Files.readString(Path.of("docker-compose.yml"));
+
+        assertThat(compose)
+                .contains("KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}")
+                .contains("- \"${KAFKA_HOST_PORT:-9092}:29092\"")
+                .contains("KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}");
+    }
+
+    @Test
+    @DisplayName("Kafka 가이드는 외부 listener와 compose 설정 출력 주의사항을 설명함")
+    void kafkaGuideDocumentsExternalListenerAndComposeConfigSecretCaution() throws IOException {
+        String guide = Files.readString(Path.of("docs/kafka-setup-guide.md"));
+
+        assertThat(guide)
+                .contains("외부 listener 주의사항")
+                .contains("보안그룹에서 Kafka 포트 `9092`를 인터넷에 열지 않는다")
+                .contains("KAFKA_ADVERTISED_LISTENERS")
+                .contains("docker compose config")
+                .contains("민감 정보가 그대로 포함될 수 있다")
+                .contains("마스킹");
+    }
+
     private Properties loadProperties(String path) throws IOException {
         Properties properties = new Properties();
         try (InputStream inputStream = Files.newInputStream(Path.of(path))) {

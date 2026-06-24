@@ -62,6 +62,24 @@ KAFKA_HOST_PORT=9092
 
 이 값은 host PC에 노출되는 포트만 바꾼다. Compose 내부 통신은 계속 `kafka:9092`를 사용한다.
 
+### 외부 listener 주의사항
+
+현재 Compose의 Kafka `EXTERNAL` listener는 host PC에서 직접 Kafka를 확인하기 위한 로컬 개발용 경로다.
+
+- Compose 내부 app 컨테이너: `kafka:9092` 사용
+- host PC의 Kafka CLI/테스트 도구: `localhost:${KAFKA_HOST_PORT}` 사용
+- 다른 서버나 외부 클라이언트: 기본 설정으로 직접 접속하지 않음
+
+운영 EC2 배포에서는 백엔드와 Kafka가 같은 Compose 네트워크 안에서 통신하므로, 보안그룹에서 Kafka 포트 `9092`를 인터넷에 열지 않는다. 외부 클라이언트가 Kafka에 직접 접속해야 하는 별도 요구가 생기면 `KAFKA_ADVERTISED_LISTENERS`의 `EXTERNAL` host를 EC2 private DNS 또는 별도 내부 DNS로 바꾸고, 네트워크 접근 제어와 인증 방식을 다시 설계한다.
+
+### 설정 출력 주의사항
+
+`docker compose config`는 `.env` 값을 치환한 최종 설정을 출력한다. 이 출력에는 `DB_PASSWORD`, `JWT_SECRET`, `GITHUB_CLIENT_SECRET` 같은 민감 정보가 그대로 포함될 수 있다.
+
+- 팀 채팅, 이슈, PR 코멘트에 `docker compose config` 전체 출력을 붙이지 않음
+- 공유가 필요하면 민감 정보를 마스킹한 뒤 일부 구간만 공유함
+- CI/CD 로그에서도 `.env` 전체 출력이나 compose config 전체 출력은 남기지 않음
+
 ## Health Check
 
 Compose의 Kafka 컨테이너는 `kafka-broker-api-versions.sh`로 broker 응답 여부를 확인한다.
