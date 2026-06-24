@@ -16,6 +16,7 @@ public class ReceivedInviteResponse {
     private String inviterName;
     private String role;
     private LocalDateTime expiresAt;
+    private LocalDateTime createdAt;
     private int memberCount;
 
     public static ReceivedInviteResponse from(Invitation invitation, int memberCount) {
@@ -26,6 +27,7 @@ public class ReceivedInviteResponse {
                 .inviterName(invitation.getInviterMember().getUser().getUsername())
                 .role(invitation.getInvitedAuthority())
                 .expiresAt(invitation.getExpiresAt())
+                .createdAt(invitation.getCreatedAt())
                 .memberCount(memberCount)
                 .build();
     }
