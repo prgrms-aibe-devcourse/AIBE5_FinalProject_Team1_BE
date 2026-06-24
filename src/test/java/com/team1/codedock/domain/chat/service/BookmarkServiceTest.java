@@ -129,6 +129,38 @@ class BookmarkServiceTest {
     }
 
     @Test
+    @DisplayName("Excludes bookmarks of deleted messages from the list")
+    void getMyBookmarksExcludesDeletedMessage() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember member = workspaceMember(20L, workspace, user("sender"));
+
+        Thread liveMessage = message(100L, channel, member, "alive");
+        ReflectionTestUtils.setField(liveMessage, "createdAt", LocalDateTime.of(2026, 6, 11, 10, 0));
+        Bookmark liveBookmark = Bookmark.create(member, liveMessage);
+        ReflectionTestUtils.setField(liveBookmark, "id", 200L);
+        ReflectionTestUtils.setField(liveBookmark, "createdAt", LocalDateTime.of(2026, 6, 11, 11, 0));
+
+        Thread deletedMessage = message(101L, channel, member, "to delete");
+        deletedMessage.markAsDeleted();
+        ReflectionTestUtils.setField(deletedMessage, "createdAt", LocalDateTime.of(2026, 6, 11, 9, 0));
+        Bookmark deletedBookmark = Bookmark.create(member, deletedMessage);
+        ReflectionTestUtils.setField(deletedBookmark, "id", 201L);
+        ReflectionTestUtils.setField(deletedBookmark, "createdAt", LocalDateTime.of(2026, 6, 11, 12, 0));
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 30L))
+                .thenReturn(Optional.of(member));
+        when(bookmarkRepository.findAllByWorkspaceMember_IdOrderByCreatedAtDesc(20L))
+                .thenReturn(List.of(deletedBookmark, liveBookmark));
+
+        var response = bookmarkService.getMyBookmarks(10L, 30L);
+
+        // 삭제된 메시지(messageId=101)의 북마크는 제외되고 살아있는 메시지만 남는다
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).messageId()).isEqualTo(100L);
+    }
+
+    @Test
     @DisplayName("Rejects bookmark without user")
     void toggleMessageBookmarkWithoutUser() {
         Workspace workspace = workspace(10L);
