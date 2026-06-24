@@ -29,6 +29,14 @@ services:
       APP_LOCAL_NETWORK_ORIGIN_ENABLED: ${APP_LOCAL_NETWORK_ORIGIN_ENABLED:-false}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      # File upload (S3 presigned) — 미설정이면 비활성(기존 동작 영향 없음)
+      UPLOAD_ENABLED: ${UPLOAD_ENABLED:-false}
+      UPLOAD_S3_BUCKET: ${UPLOAD_S3_BUCKET:-}
+      UPLOAD_PUBLIC_BASE_URL: ${UPLOAD_PUBLIC_BASE_URL:-}
+      UPLOAD_REGION: ${UPLOAD_REGION:-ap-northeast-2}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
     depends_on:
       redis:
         condition: service_healthy
