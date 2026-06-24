@@ -41,6 +41,7 @@ class AiSummaryServiceTest {
     @Mock private PullRequestFileRepository pullRequestFileRepository;
     @Mock private WorkspaceMemberRepository workspaceMemberRepository;
     @Mock private GeminiClient geminiClient;
+    @Mock private com.team1.codedock.domain.github.service.GithubApiClient githubApiClient;
     @Spy private ObjectMapper objectMapper = new ObjectMapper();
 
     private AiSummaryService aiSummaryService;
@@ -56,7 +57,7 @@ class AiSummaryServiceTest {
 
         aiSummaryService = new AiSummaryService(
                 aiSummaryRepository, githubPullRequestRepository, pullRequestFileRepository,
-                workspaceMemberRepository, geminiClient, objectMapper
+                workspaceMemberRepository, geminiClient, githubApiClient, objectMapper
         );
     }
 
