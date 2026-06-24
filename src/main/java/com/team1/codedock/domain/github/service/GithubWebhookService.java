@@ -196,7 +196,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
         } else {
             issue = existing.get();
             issue.syncFromWebhook(
@@ -271,7 +271,7 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), savedPr.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
 
             savePullRequestFiles(repo, savedPr, dto.number());
             aiSummaryService.generateSummaryForWebhook(savedPr.getId());
@@ -1019,7 +1019,7 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrReview(
                 repo.getWorkspace().getId(), pr.getId(),
                 actorName, "승인",
-                repo.getId(), repo.getName(), (long) prNumber);
+                repo.getId(), repo.getName(), approveChannel.getId(), (long) prNumber);
     }
 
     @Transactional
@@ -1057,10 +1057,10 @@ public class GithubWebhookService {
                                 )
                 );
 
+        Channel channel = getRepoChannel(repo);
         if ("approved".equals(state)) {
             pr.updateState("approved");
             githubPullRequestRepository.save(pr);
-            Channel channel = getRepoChannel(repo);
             if (channel != null) {
                 long approvedCount = pullRequestReviewRepository
                         .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
@@ -1094,7 +1094,7 @@ public class GithubWebhookService {
                 workspaceId, pr.getId(),
                 reviewerLogin,
                 review.body() != null && !review.body().isBlank() ? review.body() : state,
-                repo.getId(), repo.getName(), (long) prDto.number()
+                repo.getId(), repo.getName(), channel != null ? channel.getId() : null, (long) prDto.number()
         );
     }
 
