@@ -10,22 +10,30 @@ import com.team1.codedock.domain.pr.repository.PullRequestReviewRequestRepositor
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEventReadStatus;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventReadStatusRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
 public class DashboardService {
+
+    private static final int DASHBOARD_EVENT_LIMIT = 50;
 
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
@@ -34,26 +42,27 @@ public class DashboardService {
     private final PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
     private final PullRequestReviewRepository pullRequestReviewRepository;
     private final WorkspaceEventRepository workspaceEventRepository;
+    private final WorkspaceEventReadStatusRepository workspaceEventReadStatusRepository;
 
     public DashboardSummaryResponse getSummary(Long userId) {
         User user = findUser(userId);
         String githubUsername = user.getGithubUsername();
-        List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
+        List<Long> workspaceIds = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId).stream()
+                .map(m -> m.getWorkspace().getId())
+                .toList();
 
-        long openIssueCount = 0;
-        long openPrCount = 0;
-        long reviewRequestCount = 0;
-        long receivedReviewCount = 0;
-
-        for (WorkspaceMember member : memberships) {
-            Long workspaceId = member.getWorkspace().getId();
-            openIssueCount += issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(userId, workspaceId);
-            reviewRequestCount += pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(userId, workspaceId);
-            if (githubUsername != null) {
-                openPrCount += githubPullRequestRepository.countOpenByWorkspaceIdAndAuthor(workspaceId, githubUsername);
-                receivedReviewCount += pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceId(githubUsername, workspaceId);
-            }
+        if (workspaceIds.isEmpty()) {
+            return DashboardSummaryResponse.of(0, 0, 0, 0);
         }
+
+        long openIssueCount = issueAssigneeRepository.countOpenByUserIdAndWorkspaceIdIn(userId, workspaceIds);
+        long reviewRequestCount = pullRequestReviewRequestRepository.countByUserIdAndWorkspaceIdIn(userId, workspaceIds);
+        long openPrCount = githubUsername != null
+                ? githubPullRequestRepository.countOpenByAuthorAndWorkspaceIdIn(githubUsername, workspaceIds)
+                : 0;
+        long receivedReviewCount = githubUsername != null
+                ? pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceIdIn(githubUsername, workspaceIds)
+                : 0;
 
         return DashboardSummaryResponse.of(openIssueCount, openPrCount, reviewRequestCount, receivedReviewCount);
     }
@@ -62,33 +71,37 @@ public class DashboardService {
         User user = findUser(userId);
         String githubUsername = user.getGithubUsername();
         List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
+        List<Long> workspaceIds = memberships.stream().map(m -> m.getWorkspace().getId()).toList();
+
+        if (workspaceIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Long> openIssueCounts = toCountMap(
+                issueAssigneeRepository.countOpenGroupByWorkspaceId(userId, workspaceIds));
+        Map<Long, Long> reviewRequestCounts = toCountMap(
+                pullRequestReviewRequestRepository.countGroupByWorkspaceId(userId, workspaceIds));
+        Map<Long, Long> openPrCounts = githubUsername != null
+                ? toCountMap(githubPullRequestRepository.countOpenGroupByWorkspaceId(githubUsername, workspaceIds))
+                : Map.of();
+        Map<Long, Long> receivedReviewCounts = githubUsername != null
+                ? toCountMap(pullRequestReviewRepository.countOnOpenPrsGroupByWorkspaceId(githubUsername, workspaceIds))
+                : Map.of();
 
         return memberships.stream()
-                .map(member -> buildWorkspaceStats(member, userId, githubUsername))
+                .map(member -> {
+                    Long wid = member.getWorkspace().getId();
+                    return new WorkspaceDashboardResponse(
+                            wid,
+                            member.getWorkspace().getName(),
+                            member.getWorkspace().getLogoUrl(),
+                            openIssueCounts.getOrDefault(wid, 0L),
+                            openPrCounts.getOrDefault(wid, 0L),
+                            reviewRequestCounts.getOrDefault(wid, 0L),
+                            receivedReviewCounts.getOrDefault(wid, 0L)
+                    );
+                })
                 .toList();
-    }
-
-    private WorkspaceDashboardResponse buildWorkspaceStats(WorkspaceMember member, Long userId, String githubUsername) {
-        Long workspaceId = member.getWorkspace().getId();
-
-        long openIssueCount = issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(userId, workspaceId);
-        long reviewRequestCount = pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(userId, workspaceId);
-        long openPrCount = githubUsername != null
-                ? githubPullRequestRepository.countOpenByWorkspaceIdAndAuthor(workspaceId, githubUsername)
-                : 0;
-        long receivedReviewCount = githubUsername != null
-                ? pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceId(githubUsername, workspaceId)
-                : 0;
-
-        return new WorkspaceDashboardResponse(
-                workspaceId,
-                member.getWorkspace().getName(),
-                member.getWorkspace().getLogoUrl(),
-                openIssueCount,
-                openPrCount,
-                reviewRequestCount,
-                receivedReviewCount
-        );
     }
 
     public List<DashboardEventResponse> getEvents(Long userId) {
@@ -108,15 +121,25 @@ public class DashboardService {
         List<WorkspaceEvent.EventType> targetedTypes = List.of(
                 WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
 
-        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes).stream()
+        List<WorkspaceEvent> events = workspaceEventRepository
+                .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes,
+                        PageRequest.of(0, DASHBOARD_EVENT_LIMIT)).stream()
                 .filter(e -> {
                     if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
                             || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
-                        return !Objects.equals(e.getActorName(), githubUsername);
+                        if (githubUsername == null) return true;
+                        return !githubUsername.equals(e.getActorName());
                     }
                     return true;
                 })
-                .map(DashboardEventResponse::from)
+                .toList();
+
+        Set<Long> readEventIds = events.isEmpty() ? Set.of()
+                : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(
+                        userId, events.stream().map(WorkspaceEvent::getId).toList());
+
+        return events.stream()
+                .map(e -> DashboardEventResponse.from(e, readEventIds.contains(e.getId())))
                 .toList();
     }
 
@@ -137,7 +160,17 @@ public class DashboardService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        event.markAsRead();
+        if (!workspaceEventReadStatusRepository.existsByWorkspaceEventIdAndUserId(eventId, userId)) {
+            workspaceEventReadStatusRepository.save(WorkspaceEventReadStatus.create(eventId, userId));
+        }
+    }
+
+    private Map<Long, Long> toCountMap(List<Object[]> rows) {
+        Map<Long, Long> map = new HashMap<>();
+        for (Object[] row : rows) {
+            map.put((Long) row[0], (Long) row[1]);
+        }
+        return map;
     }
 
     private User findUser(Long userId) {

@@ -25,4 +25,11 @@ public class IssueAssignee extends BaseCreatedEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "workspace_member_id", nullable = false)
     private WorkspaceMember workspaceMember;
+
+    public static IssueAssignee create(GithubIssue githubIssue, WorkspaceMember workspaceMember) {
+        IssueAssignee ia = new IssueAssignee();
+        ia.githubIssue = githubIssue;
+        ia.workspaceMember = workspaceMember;
+        return ia;
+    }
 }

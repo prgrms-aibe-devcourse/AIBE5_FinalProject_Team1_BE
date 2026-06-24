@@ -25,4 +25,11 @@ public class PullRequestReviewRequest extends BaseCreatedEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "workspace_member_id", nullable = false)
     private WorkspaceMember workspaceMember;
+
+    public static PullRequestReviewRequest create(GithubPullRequest githubPullRequest, WorkspaceMember workspaceMember) {
+        PullRequestReviewRequest rr = new PullRequestReviewRequest();
+        rr.githubPullRequest = githubPullRequest;
+        rr.workspaceMember = workspaceMember;
+        return rr;
+    }
 }

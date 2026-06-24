@@ -11,7 +11,9 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEventReadStatus;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventReadStatusRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -22,14 +24,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,6 +49,7 @@ class DashboardServiceTest {
     @Mock private PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
     @Mock private PullRequestReviewRepository pullRequestReviewRepository;
     @Mock private WorkspaceEventRepository workspaceEventRepository;
+    @Mock private WorkspaceEventReadStatusRepository workspaceEventReadStatusRepository;
 
     @InjectMocks
     private DashboardService dashboardService;
@@ -51,7 +57,7 @@ class DashboardServiceTest {
     // ── getSummary ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("전체 워크스페이스의 이슈/PR/리뷰 통계를 합산하여 반환한다")
+    @DisplayName("전체 워크스페이스의 이슈/PR/리뷰 통계를 배치 조회하여 반환한다")
     void getSummary_성공() {
         User user = user(1L, "octocat");
         Workspace ws1 = workspace(10L, "워크스페이스1");
@@ -61,14 +67,10 @@ class DashboardServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m1, m2));
-        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(1L, 10L)).thenReturn(3L);
-        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(1L, 10L)).thenReturn(2L);
-        when(githubPullRequestRepository.countOpenByWorkspaceIdAndAuthor(10L, "octocat")).thenReturn(1L);
-        when(pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceId("octocat", 10L)).thenReturn(5L);
-        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(1L, 20L)).thenReturn(1L);
-        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(1L, 20L)).thenReturn(1L);
-        when(githubPullRequestRepository.countOpenByWorkspaceIdAndAuthor(20L, "octocat")).thenReturn(2L);
-        when(pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceId("octocat", 20L)).thenReturn(3L);
+        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceIdIn(1L, List.of(10L, 20L))).thenReturn(4L);
+        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceIdIn(1L, List.of(10L, 20L))).thenReturn(3L);
+        when(githubPullRequestRepository.countOpenByAuthorAndWorkspaceIdIn("octocat", List.of(10L, 20L))).thenReturn(3L);
+        when(pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceIdIn("octocat", List.of(10L, 20L))).thenReturn(8L);
 
         DashboardSummaryResponse result = dashboardService.getSummary(1L);
 
@@ -86,8 +88,8 @@ class DashboardServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
-        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(1L, 10L)).thenReturn(3L);
-        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(1L, 10L)).thenReturn(2L);
+        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceIdIn(1L, List.of(10L))).thenReturn(3L);
+        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceIdIn(1L, List.of(10L))).thenReturn(2L);
 
         DashboardSummaryResponse result = dashboardService.getSummary(1L);
 
@@ -111,7 +113,7 @@ class DashboardServiceTest {
     // ── getWorkspaceStats ─────────────────────────────────────────────────
 
     @Test
-    @DisplayName("워크스페이스별 이슈/PR/리뷰 통계를 반환한다")
+    @DisplayName("워크스페이스별 이슈/PR/리뷰 통계를 GROUP BY 배치 조회하여 반환한다")
     void getWorkspaceStats_성공() {
         User user = user(1L, "octocat");
         Workspace ws = workspace(10L, "프로젝트");
@@ -119,10 +121,14 @@ class DashboardServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
-        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(1L, 10L)).thenReturn(2L);
-        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(1L, 10L)).thenReturn(1L);
-        when(githubPullRequestRepository.countOpenByWorkspaceIdAndAuthor(10L, "octocat")).thenReturn(3L);
-        when(pullRequestReviewRepository.countOnOpenPrsByAuthorAndWorkspaceId("octocat", 10L)).thenReturn(4L);
+        when(issueAssigneeRepository.countOpenGroupByWorkspaceId(1L, List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 2L}));
+        when(pullRequestReviewRequestRepository.countGroupByWorkspaceId(1L, List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 1L}));
+        when(githubPullRequestRepository.countOpenGroupByWorkspaceId("octocat", List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 3L}));
+        when(pullRequestReviewRepository.countOnOpenPrsGroupByWorkspaceId("octocat", List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 4L}));
 
         List<WorkspaceDashboardResponse> result = dashboardService.getWorkspaceStats(1L);
 
@@ -144,8 +150,10 @@ class DashboardServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
-        when(issueAssigneeRepository.countOpenByUserIdAndWorkspaceId(1L, 10L)).thenReturn(2L);
-        when(pullRequestReviewRequestRepository.countByUserIdAndWorkspaceId(1L, 10L)).thenReturn(1L);
+        when(issueAssigneeRepository.countOpenGroupByWorkspaceId(1L, List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 2L}));
+        when(pullRequestReviewRequestRepository.countGroupByWorkspaceId(1L, List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 1L}));
 
         List<WorkspaceDashboardResponse> result = dashboardService.getWorkspaceStats(1L);
 
@@ -184,10 +192,13 @@ class DashboardServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
         when(workspaceEventRepository.findDashboardEvents(
-                List.of(10L), 1L,
-                List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED),
-                List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)
+                eq(List.of(10L)), eq(1L),
+                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED)),
+                eq(List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)),
+                any(Pageable.class)
         )).thenReturn(List.of(myPrEvent, otherPrEvent, replyEvent));
+        when(workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(1L, List.of(2L, 3L)))
+                .thenReturn(Set.of());
 
         List<DashboardEventResponse> result = dashboardService.getEvents(1L);
 
@@ -208,7 +219,7 @@ class DashboardServiceTest {
         List<DashboardEventResponse> result = dashboardService.getEvents(1L);
 
         assertThat(result).isEmpty();
-        verify(workspaceEventRepository, never()).findDashboardEvents(any(), any(), any(), any());
+        verify(workspaceEventRepository, never()).findDashboardEvents(any(), any(), any(), any(), any(Pageable.class));
     }
 
     @Test
@@ -225,7 +236,7 @@ class DashboardServiceTest {
     // ── markEventAsRead ───────────────────────────────────────────────────
 
     @Test
-    @DisplayName("targetUserId가 있고 본인이면 이벤트를 읽음 처리한다")
+    @DisplayName("targetUserId가 있고 본인이면 ReadStatus를 저장한다")
     void markEventAsRead_성공_targetUserId있고_본인이면() {
         Workspace ws = workspace(10L, "워크스페이스");
         WorkspaceEvent ev = event(ws, WorkspaceEvent.EventType.REPLY, "alice", 1L);
@@ -237,11 +248,11 @@ class DashboardServiceTest {
 
         dashboardService.markEventAsRead(200L, 1L);
 
-        assertThat(ev.isRead()).isTrue();
+        verify(workspaceEventReadStatusRepository).save(any(WorkspaceEventReadStatus.class));
     }
 
     @Test
-    @DisplayName("targetUserId가 없고 워크스페이스 멤버이면 이벤트를 읽음 처리한다")
+    @DisplayName("targetUserId가 없고 워크스페이스 멤버이면 ReadStatus를 저장한다")
     void markEventAsRead_성공_targetUserId없고_워크스페이스멤버면() {
         Workspace ws = workspace(10L, "워크스페이스");
         WorkspaceEvent ev = event(ws, WorkspaceEvent.EventType.PR_CREATED, "alice", null);
@@ -253,7 +264,7 @@ class DashboardServiceTest {
 
         dashboardService.markEventAsRead(200L, 1L);
 
-        assertThat(ev.isRead()).isTrue();
+        verify(workspaceEventReadStatusRepository).save(any(WorkspaceEventReadStatus.class));
     }
 
     @Test
@@ -295,7 +306,6 @@ class DashboardServiceTest {
         WorkspaceEvent ev = event(ws, WorkspaceEvent.EventType.PR_CREATED, "alice", null);
         ReflectionTestUtils.setField(ev, "id", 200L);
 
-        // userId=1L은 workspace 20L의 멤버이지, 이벤트가 속한 workspace 10L의 멤버가 아님
         WorkspaceMember m = membership(user(1L, null), workspace(20L, "다른 워크스페이스"));
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
         when(workspaceEventRepository.findByIdWithWorkspace(200L)).thenReturn(Optional.of(ev));

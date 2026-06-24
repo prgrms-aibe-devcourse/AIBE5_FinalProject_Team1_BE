@@ -21,6 +21,12 @@ public interface GithubPullRequestRepository extends JpaRepository<GithubPullReq
     @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.channel.id = :channelId")
     long countByChannelId(@Param("channelId") Long channelId);
 
-    @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.repository.workspace.id = :workspaceId AND pr.author = :author AND pr.state = 'open'")
+    @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.repository.workspace.id = :workspaceId AND pr.author = :author AND pr.state IN ('open', 'approved')")
     long countOpenByWorkspaceIdAndAuthor(@Param("workspaceId") Long workspaceId, @Param("author") String author);
+
+    @Query("SELECT COUNT(pr) FROM GithubPullRequest pr WHERE pr.repository.workspace.id IN :workspaceIds AND pr.author = :author AND pr.state IN ('open', 'approved')")
+    long countOpenByAuthorAndWorkspaceIdIn(@Param("author") String author, @Param("workspaceIds") List<Long> workspaceIds);
+
+    @Query("SELECT pr.repository.workspace.id, COUNT(pr) FROM GithubPullRequest pr WHERE pr.repository.workspace.id IN :workspaceIds AND pr.author = :author AND pr.state IN ('open', 'approved') GROUP BY pr.repository.workspace.id")
+    List<Object[]> countOpenGroupByWorkspaceId(@Param("author") String author, @Param("workspaceIds") List<Long> workspaceIds);
 }

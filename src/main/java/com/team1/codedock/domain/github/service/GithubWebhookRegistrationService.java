@@ -74,7 +74,7 @@ public class GithubWebhookRegistrationService {
                     .body(Map.of(
                             "name", "web",
                             "active", true,
-                            "events", List.of("issues", "push", "pull_request"),
+                            "events", List.of("issues", "push", "pull_request", "pull_request_review"),
                             "config", Map.of(
                                     "url", webhookUrl,
                                     "content_type", "json",
