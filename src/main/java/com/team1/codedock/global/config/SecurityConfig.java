@@ -103,6 +103,7 @@ public class SecurityConfig {
                                 "/api/swagger-ui.html",
                                 "/api/v3/api-docs/**",
                                 "/actuator/health",
+                                "/actuator/prometheus",
                                 "/ws/**"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup").permitAll()
