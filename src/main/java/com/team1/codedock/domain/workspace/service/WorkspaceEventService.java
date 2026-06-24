@@ -11,6 +11,7 @@ import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,7 +57,7 @@ public class WorkspaceEventService {
         List<WorkspaceEvent.EventType> targetedTypes = List.of(
                 WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
         List<WorkspaceEvent> events = workspaceEventRepository
-                .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes);
+                .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes, PageRequest.of(0, 50));
 
         Set<Long> readEventIds = events.isEmpty() ? Set.of()
                 : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(

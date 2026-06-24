@@ -13,4 +13,10 @@ public interface IssueAssigneeRepository extends JpaRepository<IssueAssignee, Lo
 
     @Query("SELECT COUNT(ia) FROM IssueAssignee ia WHERE ia.workspaceMember.user.id = :userId AND ia.workspaceMember.workspace.id = :workspaceId AND ia.workspaceMember.isActive = true AND ia.githubIssue.state = 'open'")
     long countOpenByUserIdAndWorkspaceId(@Param("userId") Long userId, @Param("workspaceId") Long workspaceId);
+
+    @Query("SELECT COUNT(ia) FROM IssueAssignee ia WHERE ia.workspaceMember.user.id = :userId AND ia.workspaceMember.workspace.id IN :workspaceIds AND ia.workspaceMember.isActive = true AND ia.githubIssue.state = 'open'")
+    long countOpenByUserIdAndWorkspaceIdIn(@Param("userId") Long userId, @Param("workspaceIds") List<Long> workspaceIds);
+
+    @Query("SELECT ia.workspaceMember.workspace.id, COUNT(ia) FROM IssueAssignee ia WHERE ia.workspaceMember.user.id = :userId AND ia.workspaceMember.workspace.id IN :workspaceIds AND ia.workspaceMember.isActive = true AND ia.githubIssue.state = 'open' GROUP BY ia.workspaceMember.workspace.id")
+    List<Object[]> countOpenGroupByWorkspaceId(@Param("userId") Long userId, @Param("workspaceIds") List<Long> workspaceIds);
 }
