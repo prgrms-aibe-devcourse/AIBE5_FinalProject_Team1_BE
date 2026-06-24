@@ -11,6 +11,7 @@ import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.event.ChatMessageEventProducer;
 import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
@@ -69,6 +70,9 @@ class ChatMessageServiceTest {
 
     @Mock
     private WorkspaceEventService workspaceEventService;
+
+    @Mock
+    private ChatMessageEventProducer chatMessageEventProducer;
 
     @InjectMocks
     private ChatMessageService chatMessageService;
