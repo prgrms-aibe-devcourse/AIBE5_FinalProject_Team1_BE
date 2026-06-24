@@ -7,7 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface PullRequestReviewRequestRepository extends JpaRepository<PullRequestReviewRequest, Long> {
 
-    @Query("SELECT COUNT(rr) FROM PullRequestReviewRequest rr WHERE rr.workspaceMember.user.id = :userId AND rr.workspaceMember.workspace.id = :workspaceId")
+    @Query("SELECT COUNT(rr) FROM PullRequestReviewRequest rr WHERE rr.workspaceMember.user.id = :userId AND rr.workspaceMember.workspace.id = :workspaceId AND rr.githubPullRequest.state IN ('open', 'approved')")
     long countByUserIdAndWorkspaceId(@Param("userId") Long userId, @Param("workspaceId") Long workspaceId);
 
     void deleteAllByGithubPullRequest_Id(Long pullRequestId);

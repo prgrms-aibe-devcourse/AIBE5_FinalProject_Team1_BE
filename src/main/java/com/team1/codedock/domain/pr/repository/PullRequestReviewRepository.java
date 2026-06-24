@@ -14,6 +14,6 @@ public interface PullRequestReviewRepository extends JpaRepository<PullRequestRe
 
     long countByGithubPullRequest_IdAndReviewState(Long pullRequestId, String reviewState);
 
-    @Query("SELECT COUNT(r) FROM PullRequestReview r WHERE r.githubPullRequest.author = :author AND r.githubPullRequest.repository.workspace.id = :workspaceId AND r.githubPullRequest.state = 'open'")
+    @Query("SELECT COUNT(r) FROM PullRequestReview r WHERE r.githubPullRequest.author = :author AND r.githubPullRequest.repository.workspace.id = :workspaceId AND r.githubPullRequest.state IN ('open', 'approved')")
     long countOnOpenPrsByAuthorAndWorkspaceId(@Param("author") String author, @Param("workspaceId") Long workspaceId);
 }
