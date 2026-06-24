@@ -10,6 +10,8 @@ import com.team1.codedock.domain.chat.dto.ThreadTypingEventResponse;
 import com.team1.codedock.domain.chat.dto.TypingEventRequest;
 import com.team1.codedock.domain.chat.dto.TypingEventResponse;
 import com.team1.codedock.domain.chat.entity.Thread;
+import com.team1.codedock.domain.chat.event.ChatMessageEvent;
+import com.team1.codedock.domain.chat.event.ChatMessageEventProducer;
 import com.team1.codedock.domain.chat.repository.BookmarkRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
@@ -45,6 +47,7 @@ public class ChatMessageService {
     private final MentionService mentionService;
     private final ThreadAttachmentService threadAttachmentService;
     private final WorkspaceEventService workspaceEventService;
+    private final ChatMessageEventProducer chatMessageEventProducer;
 
     @Transactional
     public ChannelMessageResponse createChannelMessage(Long channelId, Long userId, ChannelMessageCreateRequest request) {
@@ -193,6 +196,18 @@ public class ChatMessageService {
                     sender.getUser().getDisplayName(), null, null, channel.getId(), content,
                     null, null, replyTo.getId(), null, null, targetUserId);
         }
+
+        // 채팅 메시지 이벤트 발행(Kafka). 실패해도 채팅 전송에는 영향 없음.
+        chatMessageEventProducer.publish(new ChatMessageEvent(
+                savedThread.getId(),
+                channel.getId(),
+                channel.getWorkspace().getId(),
+                sender.getId(),
+                sender.getUser().getDisplayName(),
+                content,
+                savedThread.getCreatedAt() == null ? null : savedThread.getCreatedAt().toString()
+        ));
+
         return savedThread;
     }
 
