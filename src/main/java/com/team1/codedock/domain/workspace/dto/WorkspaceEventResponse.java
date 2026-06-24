@@ -21,7 +21,7 @@ public record WorkspaceEventResponse(
         Long issueNumber,
         boolean isRead
 ) {
-    public static WorkspaceEventResponse from(WorkspaceEvent event) {
+    public static WorkspaceEventResponse from(WorkspaceEvent event, boolean isRead) {
         return new WorkspaceEventResponse(
                 event.getId(),
                 event.getWorkspace().getId(),
@@ -37,7 +37,7 @@ public record WorkspaceEventResponse(
                 event.getThreadId(),
                 event.getPrNumber(),
                 event.getIssueNumber(),
-                event.isRead()
+                isRead
         );
     }
 }

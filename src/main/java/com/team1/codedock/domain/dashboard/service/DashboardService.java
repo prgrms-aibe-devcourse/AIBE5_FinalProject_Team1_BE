@@ -10,6 +10,8 @@ import com.team1.codedock.domain.pr.repository.PullRequestReviewRequestRepositor
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEventReadStatus;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventReadStatusRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 @Transactional(readOnly = true)
@@ -34,6 +37,7 @@ public class DashboardService {
     private final PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
     private final PullRequestReviewRepository pullRequestReviewRepository;
     private final WorkspaceEventRepository workspaceEventRepository;
+    private final WorkspaceEventReadStatusRepository workspaceEventReadStatusRepository;
 
     public DashboardSummaryResponse getSummary(Long userId) {
         User user = findUser(userId);
@@ -108,7 +112,8 @@ public class DashboardService {
         List<WorkspaceEvent.EventType> targetedTypes = List.of(
                 WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
 
-        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes).stream()
+        List<WorkspaceEvent> events = workspaceEventRepository
+                .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes).stream()
                 .filter(e -> {
                     if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
                             || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
@@ -117,7 +122,14 @@ public class DashboardService {
                     }
                     return true;
                 })
-                .map(DashboardEventResponse::from)
+                .toList();
+
+        Set<Long> readEventIds = events.isEmpty() ? Set.of()
+                : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(
+                        userId, events.stream().map(WorkspaceEvent::getId).toList());
+
+        return events.stream()
+                .map(e -> DashboardEventResponse.from(e, readEventIds.contains(e.getId())))
                 .toList();
     }
 
@@ -138,7 +150,9 @@ public class DashboardService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        event.markAsRead();
+        if (!workspaceEventReadStatusRepository.existsByWorkspaceEventIdAndUserId(eventId, userId)) {
+            workspaceEventReadStatusRepository.save(WorkspaceEventReadStatus.create(eventId, userId));
+        }
     }
 
     private User findUser(Long userId) {

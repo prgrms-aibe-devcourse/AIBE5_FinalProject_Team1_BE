@@ -4,6 +4,7 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.dto.WorkspaceEventResponse;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventReadStatusRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -22,6 +24,7 @@ import java.util.List;
 public class WorkspaceEventService {
 
     private final WorkspaceEventRepository workspaceEventRepository;
+    private final WorkspaceEventReadStatusRepository workspaceEventReadStatusRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
@@ -52,8 +55,15 @@ public class WorkspaceEventService {
                 WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED);
         List<WorkspaceEvent.EventType> targetedTypes = List.of(
                 WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
-        return workspaceEventRepository.findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes).stream()
-                .map(WorkspaceEventResponse::from)
+        List<WorkspaceEvent> events = workspaceEventRepository
+                .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes);
+
+        Set<Long> readEventIds = events.isEmpty() ? Set.of()
+                : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(
+                        userId, events.stream().map(WorkspaceEvent::getId).toList());
+
+        return events.stream()
+                .map(e -> WorkspaceEventResponse.from(e, readEventIds.contains(e.getId())))
                 .toList();
     }
 }
