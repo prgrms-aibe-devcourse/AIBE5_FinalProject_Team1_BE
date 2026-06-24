@@ -35,6 +35,13 @@ public interface GithubIssueRepository extends JpaRepository<GithubIssue, Long> 
             Pageable pageable
     );
 
-    @Query("SELECT gi FROM GithubIssue gi WHERE gi.repository.workspace.id = :workspaceId ORDER BY gi.githubCreatedAt DESC")
+    // repository/channel은 DTO 매핑에서 즉시 사용되므로 fetch join 해 이슈별 지연 로딩 N+1을 막는다.
+    @Query("""
+        SELECT gi FROM GithubIssue gi
+        JOIN FETCH gi.repository
+        JOIN FETCH gi.channel
+        WHERE gi.repository.workspace.id = :workspaceId
+        ORDER BY gi.githubCreatedAt DESC
+        """)
     List<GithubIssue> findAllByWorkspaceId(@Param("workspaceId") Long workspaceId);
 }

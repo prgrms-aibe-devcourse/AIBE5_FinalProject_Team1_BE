@@ -120,7 +120,7 @@ class DashboardServiceTest {
         WorkspaceMember m = membership(user, ws);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrueWithWorkspace(1L)).thenReturn(List.of(m));
         when(issueAssigneeRepository.countOpenGroupByWorkspaceId(1L, List.of(10L)))
                 .thenReturn(List.<Object[]>of(new Object[]{10L, 2L}));
         when(pullRequestReviewRequestRepository.countGroupByWorkspaceId(1L, List.of(10L)))
@@ -149,7 +149,7 @@ class DashboardServiceTest {
         WorkspaceMember m = membership(user, ws);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrueWithWorkspace(1L)).thenReturn(List.of(m));
         when(issueAssigneeRepository.countOpenGroupByWorkspaceId(1L, List.of(10L)))
                 .thenReturn(List.<Object[]>of(new Object[]{10L, 2L}));
         when(pullRequestReviewRequestRepository.countGroupByWorkspaceId(1L, List.of(10L)))

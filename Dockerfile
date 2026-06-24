@@ -18,7 +18,7 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
-ENV JAVA_TOOL_OPTIONS="-Duser.timezone=Asia/Seoul -Doracle.jdbc.timezoneAsRegion=false"
+ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -Duser.timezone=Asia/Seoul -Doracle.jdbc.timezoneAsRegion=false"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

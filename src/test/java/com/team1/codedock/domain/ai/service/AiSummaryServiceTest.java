@@ -31,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +42,7 @@ class AiSummaryServiceTest {
     @Mock private PullRequestFileRepository pullRequestFileRepository;
     @Mock private WorkspaceMemberRepository workspaceMemberRepository;
     @Mock private GeminiClient geminiClient;
+    @Mock private com.team1.codedock.domain.github.service.GithubApiClient githubApiClient;
     @Spy private ObjectMapper objectMapper = new ObjectMapper();
 
     private AiSummaryService aiSummaryService;
@@ -56,7 +58,7 @@ class AiSummaryServiceTest {
 
         aiSummaryService = new AiSummaryService(
                 aiSummaryRepository, githubPullRequestRepository, pullRequestFileRepository,
-                workspaceMemberRepository, geminiClient, objectMapper
+                workspaceMemberRepository, geminiClient, githubApiClient, objectMapper
         );
     }
 
@@ -401,5 +403,130 @@ class AiSummaryServiceTest {
 
         verify(aiSummaryRepository).save(summaryCaptor.capture());
         assertThat(summaryCaptor.getValue().getStatus()).isEqualTo("failed");
+    }
+
+    @Test
+    @DisplayName("웹훅 요약은 의미 있는 completed 요약이 있으면 재생성하지 않는다")
+    void generateSummaryForWebhook_completed_의미있는_요약이면_skip() throws Exception {
+        GithubPullRequest pr = mockPr();
+        GeminiClient.PrAnalysisResult result = new GeminiClient.PrAnalysisResult(
+                "이미 생성된 요약", List.of(), List.of(), "Low", List.of()
+        );
+        AiSummary completedSummary = AiSummary.create(pr);
+        completedSummary.complete(objectMapper.writeValueAsString(result), "Low", "gemini-2.0-flash");
+
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.of(completedSummary));
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(githubPullRequestRepository, never()).findById(any());
+        verify(aiSummaryRepository, never()).delete(any());
+        verify(aiSummaryRepository, never()).save(any());
+        verifyNoInteractions(geminiClient);
+    }
+
+    @Test
+    @DisplayName("웹훅 요약은 completed 상태라도 placeholder 요약이면 재생성한다")
+    void generateSummaryForWebhook_completed_placeholder_요약이면_재생성() throws Exception {
+        GithubPullRequest pr = mockPr();
+        PullRequestFile file = mockFile("Fix.java", "@@ -1 +1 @@");
+        GeminiClient.PrAnalysisResult placeholder = new GeminiClient.PrAnalysisResult(
+                "AI 요약 정보 없음", List.of(), List.of(), "Low", List.of()
+        );
+        GeminiClient.PrAnalysisResult regenerated = new GeminiClient.PrAnalysisResult(
+                "파일 diff 기반으로 다시 생성된 요약", List.of("주의"), List.of("개선"), "Medium", List.of()
+        );
+        AiSummary completedSummary = AiSummary.create(pr);
+        completedSummary.complete(objectMapper.writeValueAsString(placeholder), "Low", "gemini-2.0-flash");
+
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.of(completedSummary));
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of(file));
+        when(geminiClient.generatePrAnalysis(any())).thenReturn(regenerated);
+        when(geminiClient.getModel()).thenReturn("gemini-2.0-flash");
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        ArgumentCaptor<String> diffCaptor = ArgumentCaptor.forClass(String.class);
+        verify(aiSummaryRepository).delete(completedSummary);
+        verify(aiSummaryRepository).save(any(AiSummary.class));
+        verify(geminiClient).generatePrAnalysis(diffCaptor.capture());
+        assertThat(diffCaptor.getValue()).contains("Fix.java", "@@ -1 +1 @@");
+    }
+
+    @Test
+    @DisplayName("웹훅 요약은 completed 상태라도 짧은 placeholder 요약이면 재생성한다")
+    void generateSummaryForWebhook_completed_짧은_placeholder_요약이면_재생성() throws Exception {
+        GithubPullRequest pr = mockPr();
+        PullRequestFile file = mockFile("ShortPlaceholder.java", "@@ -3 +3 @@");
+        GeminiClient.PrAnalysisResult placeholder = new GeminiClient.PrAnalysisResult(
+                "요약 정보 없음", List.of(), List.of(), "Low", List.of()
+        );
+        GeminiClient.PrAnalysisResult regenerated = new GeminiClient.PrAnalysisResult(
+                "짧은 placeholder를 복구한 요약", List.of(), List.of(), "Low", List.of()
+        );
+        AiSummary completedSummary = AiSummary.create(pr);
+        completedSummary.complete(objectMapper.writeValueAsString(placeholder), "Low", "gemini-2.0-flash");
+
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.of(completedSummary));
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of(file));
+        when(geminiClient.generatePrAnalysis(any())).thenReturn(regenerated);
+        when(geminiClient.getModel()).thenReturn("gemini-2.0-flash");
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository).delete(completedSummary);
+        verify(geminiClient).generatePrAnalysis(contains("ShortPlaceholder.java"));
+    }
+
+    @Test
+    @DisplayName("웹훅 요약은 completed 상태라도 저장된 JSON이 깨져 있으면 재생성한다")
+    void generateSummaryForWebhook_completed_JSON_깨져있으면_재생성() {
+        GithubPullRequest pr = mockPr();
+        PullRequestFile file = mockFile("Recover.java", "@@ -2 +2 @@");
+        GeminiClient.PrAnalysisResult regenerated = new GeminiClient.PrAnalysisResult(
+                "깨진 기존 요약을 복구한 요약", List.of(), List.of(), "Low", List.of()
+        );
+        AiSummary brokenSummary = AiSummary.create(pr);
+        brokenSummary.complete("{not-json", "Low", "gemini-2.0-flash");
+
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.of(brokenSummary));
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of(file));
+        when(geminiClient.generatePrAnalysis(any())).thenReturn(regenerated);
+        when(geminiClient.getModel()).thenReturn("gemini-2.0-flash");
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository).delete(brokenSummary);
+        verify(geminiClient).generatePrAnalysis(contains("Recover.java"));
+    }
+
+    @Test
+    @DisplayName("웹훅 요약은 completed 상태라도 summary가 blank면 재생성한다")
+    void generateSummaryForWebhook_completed_blank_요약이면_재생성() {
+        GithubPullRequest pr = mockPr();
+        PullRequestFile file = mockFile("Blank.java", "@@ -4 +4 @@");
+        GeminiClient.PrAnalysisResult regenerated = new GeminiClient.PrAnalysisResult(
+                "blank 요약을 복구한 요약", List.of(), List.of(), "Low", List.of()
+        );
+        AiSummary blankSummary = AiSummary.create(pr);
+        blankSummary.complete("   ", "Low", "gemini-2.0-flash");
+
+        when(aiSummaryRepository.findByGithubPullRequest_Id(1L)).thenReturn(Optional.of(blankSummary));
+        when(githubPullRequestRepository.findById(1L)).thenReturn(Optional.of(pr));
+        when(aiSummaryRepository.save(any(AiSummary.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestFileRepository.findAllByGithubPullRequest_Id(1L)).thenReturn(List.of(file));
+        when(geminiClient.generatePrAnalysis(any())).thenReturn(regenerated);
+        when(geminiClient.getModel()).thenReturn("gemini-2.0-flash");
+
+        aiSummaryService.generateSummaryForWebhook(1L);
+
+        verify(aiSummaryRepository).delete(blankSummary);
+        verify(geminiClient).generatePrAnalysis(contains("Blank.java"));
     }
 }

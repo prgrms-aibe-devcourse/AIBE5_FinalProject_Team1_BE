@@ -59,7 +59,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        log.error("예상하지 못한 오류 발생: ", e);
+        // 첫 줄에 예외 타입+메시지를 함께 남겨, 멀티라인 스택이 잘리는 로그 수집(Loki 등)에서도
+        // 한 줄만으로 원인을 파악할 수 있게 한다. 스택트레이스는 마지막 인자로 그대로 첨부된다.
+        log.error("예상하지 못한 오류 발생: {} - {}", e.getClass().getName(), e.getMessage(), e);
         return ResponseEntity
                 .internalServerError()
                 .body(ApiResponse.fail(

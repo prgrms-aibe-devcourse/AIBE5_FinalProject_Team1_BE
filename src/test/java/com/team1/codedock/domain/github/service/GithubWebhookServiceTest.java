@@ -49,6 +49,12 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -120,6 +126,95 @@ class GithubWebhookServiceTest {
                 aiSummaryService,
                 githubWebhookEventService
         );
+    }
+
+    @Test
+    @DisplayName("sync 쿨다운은 첫 요청만 통과시키고 쿨다운 안의 반복 요청은 차단한다")
+    void withinSyncCooldown_순차_요청_차단() {
+        ConcurrentHashMap<Long, Long> lastSyncByRepo = new ConcurrentHashMap<>();
+
+        boolean firstBlocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+        boolean secondBlocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+
+        assertThat(firstBlocked).isFalse();
+        assertThat(secondBlocked).isTrue();
+        assertThat(lastSyncByRepo).containsOnlyKeys(20L);
+    }
+
+    @Test
+    @DisplayName("sync 쿨다운은 repositoryId별로 독립 적용된다")
+    void withinSyncCooldown_repository별_독립_적용() {
+        ConcurrentHashMap<Long, Long> lastSyncByRepo = new ConcurrentHashMap<>();
+
+        boolean firstRepoBlocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+        boolean secondRepoBlocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 21L);
+        boolean firstRepoRetryBlocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+
+        assertThat(firstRepoBlocked).isFalse();
+        assertThat(secondRepoBlocked).isFalse();
+        assertThat(firstRepoRetryBlocked).isTrue();
+        assertThat(lastSyncByRepo).containsOnlyKeys(20L, 21L);
+    }
+
+    @Test
+    @DisplayName("sync 쿨다운이 지나면 같은 repositoryId도 다시 통과한다")
+    void withinSyncCooldown_만료되면_다시_통과() {
+        ConcurrentHashMap<Long, Long> lastSyncByRepo = new ConcurrentHashMap<>();
+        long expiredAt = System.currentTimeMillis() - 16_000;
+        lastSyncByRepo.put(20L, expiredAt);
+
+        boolean blocked = ReflectionTestUtils.invokeMethod(
+                githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+
+        assertThat(blocked).isFalse();
+        assertThat(lastSyncByRepo.get(20L)).isGreaterThan(expiredAt);
+    }
+
+    @Test
+    @DisplayName("sync 쿨다운은 동시 요청이 몰려도 한 repositoryId에서 하나만 통과시킨다")
+    void withinSyncCooldown_동시_요청도_하나만_통과() throws Exception {
+        ConcurrentHashMap<Long, Long> lastSyncByRepo = new ConcurrentHashMap<>();
+        int requestCount = 32;
+        ExecutorService executorService = Executors.newFixedThreadPool(requestCount);
+        CountDownLatch readyLatch = new CountDownLatch(requestCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(requestCount);
+        AtomicInteger passedCount = new AtomicInteger();
+        AtomicInteger blockedCount = new AtomicInteger();
+
+        for (int i = 0; i < requestCount; i++) {
+            executorService.submit(() -> {
+                readyLatch.countDown();
+                try {
+                    startLatch.await();
+                    boolean blocked = ReflectionTestUtils.invokeMethod(
+                            githubWebhookService, "withinSyncCooldown", lastSyncByRepo, 20L);
+                    if (blocked) {
+                        blockedCount.incrementAndGet();
+                    } else {
+                        passedCount.incrementAndGet();
+                    }
+                } catch (InterruptedException e) {
+                    java.lang.Thread.currentThread().interrupt();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        assertThat(readyLatch.await(3, TimeUnit.SECONDS)).isTrue();
+        startLatch.countDown();
+        assertThat(doneLatch.await(3, TimeUnit.SECONDS)).isTrue();
+        executorService.shutdownNow();
+
+        assertThat(passedCount.get()).isEqualTo(1);
+        assertThat(blockedCount.get()).isEqualTo(requestCount - 1);
+        assertThat(lastSyncByRepo).containsOnlyKeys(20L);
     }
 
     @Test
@@ -319,6 +414,33 @@ class GithubWebhookServiceTest {
     }
 
     @Test
+    @DisplayName("이슈 sync는 쿨다운 안의 반복 호출이면 GitHub fetch를 다시 수행하지 않는다")
+    void syncIssuesFromGithub_쿨다운_반복호출_fetch_차단() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of());
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubRepositoryRepository).findById(20L);
+        verify(workspaceMemberRepository).findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L);
+        verify(userRepository).findById(3L);
+        verify(threadRepository).findChannelByGithubRepositoryId(20L);
+        verify(githubApiClient).fetchIssues("team", "repo", "ghtoken");
+    }
+
+    @Test
     @DisplayName("PR opened 웹훅 수신 시 PullRequestFile을 저장한다")
     void processPullRequestEvent_opened_PullRequestFile_저장() {
         Workspace workspace = workspace(10L);
@@ -399,6 +521,33 @@ class GithubWebhookServiceTest {
         githubWebhookService.processPullRequestEvent(20L, payload);
 
         verify(aiSummaryService).generateSummaryForWebhook(100L);
+    }
+
+    @Test
+    @DisplayName("PR sync는 쿨다운 안의 반복 호출이면 GitHub fetch를 다시 수행하지 않는다")
+    void syncPullRequestsFromGithub_쿨다운_반복호출_fetch_차단() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of());
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(githubRepositoryRepository).findById(20L);
+        verify(workspaceMemberRepository).findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L);
+        verify(userRepository).findById(3L);
+        verify(threadRepository).findChannelByGithubRepositoryId(20L);
+        verify(githubApiClient).fetchPullRequests("team", "repo", "ghtoken");
     }
 
     @Test
