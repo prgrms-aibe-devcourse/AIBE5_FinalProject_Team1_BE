@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,22 +31,31 @@ class ChatMessageEventProducerTest {
         return new ChatMessageEvent(1L, 10L, 100L, 5L, "tester", "hello", "2026-06-24T00:00:00");
     }
 
-    @Test
-    void publishesToTopicWhenKafkaTemplateAvailable() {
-        when(kafkaTemplateProvider.getIfAvailable()).thenReturn(kafkaTemplate);
-        ChatMessageEventProducer producer = new ChatMessageEventProducer(kafkaTemplateProvider, objectMapper);
+    private ChatMessageEventProducer producer(boolean enabled) {
+        return new ChatMessageEventProducer(kafkaTemplateProvider, objectMapper, enabled);
+    }
 
-        producer.publish(sampleEvent());
+    @Test
+    void publishesToTopicWhenEnabledAndKafkaTemplateAvailable() {
+        when(kafkaTemplateProvider.getIfAvailable()).thenReturn(kafkaTemplate);
+
+        producer(true).publish(sampleEvent());
 
         verify(kafkaTemplate).send(eq(ChatMessageEventProducer.TOPIC), eq("10"), anyString());
     }
 
     @Test
+    void doesNothingWhenDisabled() {
+        // 플래그가 꺼져 있으면 KafkaTemplate 조회조차 하지 않는다(명시적 no-op).
+        assertThatCode(() -> producer(false).publish(sampleEvent())).doesNotThrowAnyException();
+        verifyNoInteractions(kafkaTemplateProvider, kafkaTemplate);
+    }
+
+    @Test
     void doesNothingWhenKafkaTemplateMissing() {
         when(kafkaTemplateProvider.getIfAvailable()).thenReturn(null);
-        ChatMessageEventProducer producer = new ChatMessageEventProducer(kafkaTemplateProvider, objectMapper);
 
-        assertThatCode(() -> producer.publish(sampleEvent())).doesNotThrowAnyException();
+        assertThatCode(() -> producer(true).publish(sampleEvent())).doesNotThrowAnyException();
         verify(kafkaTemplate, never()).send(anyString(), anyString(), anyString());
     }
 
@@ -54,9 +64,8 @@ class ChatMessageEventProducerTest {
         when(kafkaTemplateProvider.getIfAvailable()).thenReturn(kafkaTemplate);
         when(kafkaTemplate.send(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("broker down"));
-        ChatMessageEventProducer producer = new ChatMessageEventProducer(kafkaTemplateProvider, objectMapper);
 
         // 발행 실패가 채팅 전송을 막지 않도록 예외를 흡수해야 한다.
-        assertThatCode(() -> producer.publish(sampleEvent())).doesNotThrowAnyException();
+        assertThatCode(() -> producer(true).publish(sampleEvent())).doesNotThrowAnyException();
     }
 }
