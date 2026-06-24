@@ -15,8 +15,8 @@ import lombok.NoArgsConstructor;
 public class WorkspaceEventReadStatus {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_workspace_event_read_statuses")
-    @SequenceGenerator(name = "seq_workspace_event_read_statuses", sequenceName = "seq_workspace_event_read_statuses", allocationSize = 1)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_ws_event_read_status")
+    @SequenceGenerator(name = "seq_ws_event_read_status", sequenceName = "seq_ws_event_read_status", allocationSize = 1)
     private Long id;
 
     @Column(name = "workspace_event_id", nullable = false)
