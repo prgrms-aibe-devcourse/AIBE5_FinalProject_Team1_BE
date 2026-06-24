@@ -39,7 +39,26 @@ public class GithubWebhookController {
             @RequestBody byte[] rawBody
     ) {
         githubWebhookService.verifySignature(repositoryId, signature, rawBody);
+        dispatchWebhookEvent(repositoryId, event, rawBody);
+    }
 
+    /**
+     * GitHub Webhook 수신 (githubRepoId 기반) — DB auto-increment id 대신 GitHub의 안정적 repo id를 사용해
+     * DB 재생성/재링크 후에도 동일 URL이 유효하다. 서명으로 대상 레포 행을 식별한다. 인증 불필요.
+     */
+    @PostMapping("/api/v1/github/webhooks/gh/{githubRepoId}")
+    @ResponseStatus(HttpStatus.OK)
+    public void receiveWebhookByGithubRepoId(
+            @PathVariable String githubRepoId,
+            @RequestHeader(value = "X-GitHub-Event", required = false) String event,
+            @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
+            @RequestBody byte[] rawBody
+    ) {
+        Long repositoryId = githubWebhookService.resolveAndVerifyByGithubRepoId(githubRepoId, signature, rawBody);
+        dispatchWebhookEvent(repositoryId, event, rawBody);
+    }
+
+    private void dispatchWebhookEvent(Long repositoryId, String event, byte[] rawBody) {
         if (EVENT_ISSUES.equals(event)) {
             try {
                 GithubIssueWebhookPayload payload = objectMapper.readValue(rawBody, GithubIssueWebhookPayload.class);

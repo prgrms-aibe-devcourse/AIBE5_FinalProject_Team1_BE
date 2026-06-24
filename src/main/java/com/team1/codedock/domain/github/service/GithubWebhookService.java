@@ -96,16 +96,47 @@ public class GithubWebhookService {
         if (secret == null || secret.isBlank()) {
             return;
         }
-        if (signatureHeader == null || !signatureHeader.startsWith("sha256=")) {
+        if (!signatureMatches(secret, signatureHeader, rawBody)) {
             throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
         }
+    }
 
-        String expected = "sha256=" + computeHmacSha256(secret, rawBody);
-        if (!MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8),
-                signatureHeader.getBytes(StandardCharsets.UTF_8))) {
-            throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
+    /**
+     * githubRepoId(GitHub의 안정적 repo id)로 들어온 Webhook을 처리할 DB 레포 id로 해석한다.
+     * 같은 githubRepoId가 여러 워크스페이스에 링크될 수 있으므로, 서명이 일치하는(=해당 hook의 secret을
+     * 보유한) 행을 골라 그 DB id를 반환한다. DB auto-increment id가 아닌 안정 id를 쓰므로 DB 재생성에도 견딘다.
+     */
+    public Long resolveAndVerifyByGithubRepoId(String githubRepoId, String signatureHeader, byte[] rawBody) {
+        List<GithubRepository> repos = githubRepositoryRepository.findByGithubRepoId(githubRepoId);
+        if (repos.isEmpty()) {
+            throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
         }
+        for (GithubRepository repo : repos) {
+            String secret = repo.getWebhookSecret();
+            if (secret != null && !secret.isBlank() && signatureMatches(secret, signatureHeader, rawBody)) {
+                return repo.getId();
+            }
+        }
+        // 모든 행에 secret이 없으면(기존 동작과 동일하게) 검증 생략하고 첫 행으로 처리한다.
+        boolean noSecretAnywhere = repos.stream()
+                .allMatch(r -> r.getWebhookSecret() == null || r.getWebhookSecret().isBlank());
+        if (noSecretAnywhere) {
+            return repos.get(0).getId();
+        }
+        throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
+    }
+
+    private boolean signatureMatches(String secret, String signatureHeader, byte[] rawBody) {
+        if (secret == null || secret.isBlank()) {
+            return false;
+        }
+        if (signatureHeader == null || !signatureHeader.startsWith("sha256=")) {
+            return false;
+        }
+        String expected = "sha256=" + computeHmacSha256(secret, rawBody);
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                signatureHeader.getBytes(StandardCharsets.UTF_8));
     }
 
     @Transactional

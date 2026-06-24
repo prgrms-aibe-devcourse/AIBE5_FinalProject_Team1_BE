@@ -23,4 +23,8 @@ public interface GithubRepositoryRepository extends JpaRepository<GithubReposito
             @Param("workspaceId") Long workspaceId,
             @Param("githubRepoId") String githubRepoId
     );
+
+    // 같은 githubRepoId가 여러 워크스페이스에 링크될 수 있으므로 전체 행을 반환한다.
+    @Query("SELECT g FROM GithubRepository g WHERE g.githubRepoId = :githubRepoId")
+    List<GithubRepository> findByGithubRepoId(@Param("githubRepoId") String githubRepoId);
 }
