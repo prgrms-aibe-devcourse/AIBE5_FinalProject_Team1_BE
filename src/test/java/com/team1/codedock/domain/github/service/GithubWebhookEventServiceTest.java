@@ -37,8 +37,8 @@ class GithubWebhookEventServiceTest {
     void onPrCreated() {
         githubWebhookEventService.onPrCreated(10L, 5L, "actor", "PR title", 7L, "my-repo", 234L);
 
-        verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_CREATED, "actor", 5L, null, null, "PR title", 7L, "my-repo", null, 234L, null, null);
+        verify(workspaceEventService).recordPrCreatedIfAbsent(
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 234L);
     }
 
     @Test
@@ -46,8 +46,8 @@ class GithubWebhookEventServiceTest {
     void onIssueCreated() {
         githubWebhookEventService.onIssueCreated(10L, 3L, "actor", "Issue title", 7L, "my-repo", 42L);
 
-        verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.ISSUE_CREATED, "actor", null, 3L, null, "Issue title", 7L, "my-repo", null, null, 42L, null);
+        verify(workspaceEventService).recordIssueCreatedIfAbsent(
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 42L);
     }
 
     @Test

@@ -651,6 +651,10 @@ public class GithubWebhookService {
                             log.warn("이슈 meta 갱신 실패 → issue#{}", item.number(), e);
                         }
                     }, () -> createIssueThreadAndAttachment(channel, issue, item));
+            githubWebhookEventService.onIssueCreated(
+                    repo.getWorkspace().getId(), issue.getId(),
+                    item.user() != null ? item.user().login() : null,
+                    item.title(), repo.getId(), repo.getName(), (long) item.number());
             return;
         }
 
@@ -666,6 +670,10 @@ public class GithubWebhookService {
         issue.applyClassification(cls.priority(), cls.issueType());
         GithubIssue savedIssue = githubIssueRepository.save(issue);
         createIssueThreadAndAttachment(channel, savedIssue, item);
+        githubWebhookEventService.onIssueCreated(
+                repo.getWorkspace().getId(), savedIssue.getId(),
+                item.user() != null ? item.user().login() : null,
+                item.title(), repo.getId(), repo.getName(), (long) item.number());
     }
 
     private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
@@ -1378,6 +1386,10 @@ public class GithubWebhookService {
 
             // 웹훅 시점에 토큰/파일 누락으로 비어 있던 AI 요약을 sync 시 복구한다(이미 완료면 내부에서 skip).
             aiSummaryService.generateSummaryForWebhook(existingPr.getId());
+            githubWebhookEventService.onPrCreated(
+                    repo.getWorkspace().getId(), existingPr.getId(),
+                    item.user() != null ? item.user().login() : null,
+                    item.title(), repo.getId(), repo.getName(), (long) item.number());
             return;
         }
 
@@ -1402,6 +1414,10 @@ public class GithubWebhookService {
         String initialStatus = (Boolean.TRUE.equals(item.merged()) || item.mergedAt() != null) ? "merged" : item.state();
         long newApproved = countGithubApprovedReviewers(repo, item.number(), token);
         createPrThreadAndAttachment(repo, channel, savedPr, item, commitsJson, initialStatus, newApproved);
+        githubWebhookEventService.onPrCreated(
+                repo.getWorkspace().getId(), savedPr.getId(),
+                item.user() != null ? item.user().login() : null,
+                item.title(), repo.getId(), repo.getName(), (long) item.number());
         // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
         aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }

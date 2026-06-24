@@ -9,9 +9,11 @@ import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
 import com.team1.codedock.domain.user.entity.User;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -49,6 +51,9 @@ class ThreadReplyServiceTest {
 
     @Mock
     private MentionService mentionService;
+
+    @Mock
+    private WorkspaceEventService workspaceEventService;
 
     @InjectMocks
     private ThreadReplyService threadReplyService;
@@ -124,7 +129,150 @@ class ThreadReplyServiceTest {
     }
 
     @Test
-    @DisplayName("답글 이모지는 인코딩해 저장하고 응답과 멘션 입력은 원문을 유지한다")
+    @DisplayName("다른 사용자의 스레드에 답글을 달면 원글 작성자에게 REPLY 이벤트를 기록한다")
+    void createReplyRecordsDashboardReplyEventForThreadOwner() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember owner = workspaceMember(21L, user(101L, "owner", "Owner"));
+        WorkspaceMember replier = workspaceMember(20L, user(102L, "tester", "Tester"));
+        Thread thread = thread(threadId, channel, owner);
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("답글입니다");
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(replier));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 2));
+                    return saved;
+                });
+
+        ThreadReplyResponse response = threadReplyService.createReply(threadId, userId, request);
+
+        assertThat(response.id()).isEqualTo(200L);
+        verify(workspaceEventService).recordEvent(
+                workspaceId,
+                WorkspaceEvent.EventType.REPLY,
+                "Tester",
+                null,
+                null,
+                10L,
+                "답글입니다",
+                null,
+                null,
+                threadId,
+                null,
+                null,
+                101L
+        );
+    }
+
+    @Test
+    @DisplayName("자기 스레드에 직접 답글을 달면 REPLY 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordReplyEventForSelfReply() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember member = workspaceMember(20L, user(101L, "tester", "Tester"));
+        Thread thread = thread(threadId, channel, member);
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("셀프 답글");
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(member));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 2));
+                    return saved;
+                });
+
+        threadReplyService.createReply(threadId, userId, request);
+
+        verify(workspaceEventService, never()).recordEvent(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(WorkspaceEvent.EventType.REPLY),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    @DisplayName("원글 작성자가 없는 스레드에 답글을 달면 REPLY 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordReplyEventWithoutThreadOwner() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember replier = workspaceMember(20L, user(102L, "tester", "Tester"));
+        Thread thread = thread(threadId, channel);
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("작성자 없는 스레드 답글");
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(replier));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 2));
+                    return saved;
+                });
+
+        threadReplyService.createReply(threadId, userId, request);
+
+        verifyReplyEventNotRecorded();
+    }
+
+    @Test
+    @DisplayName("원글 작성자 사용자 정보가 없으면 REPLY 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordReplyEventWithoutThreadOwnerUser() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember ownerWithoutUser = workspaceMember(21L, null);
+        WorkspaceMember replier = workspaceMember(20L, user(102L, "tester", "Tester"));
+        Thread thread = thread(threadId, channel, ownerWithoutUser);
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("작성자 사용자 정보 없는 답글");
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(replier));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 9, 10, 2));
+                    return saved;
+                });
+
+        threadReplyService.createReply(threadId, userId, request);
+
+        verifyReplyEventNotRecorded();
+    }
+
+    @Test
+    @DisplayName("답글 이모지를 인코딩해 저장하고 응답과 멘션 입력은 원문을 유지한다")
     void createReplyEncodesEmojiContent() {
         Long threadId = 1L;
         Long workspaceId = 2L;
@@ -494,6 +642,12 @@ class ThreadReplyServiceTest {
         return thread;
     }
 
+    private static Thread thread(Long id, Channel channel, WorkspaceMember createdBy) {
+        Thread thread = thread(id, channel);
+        ReflectionTestUtils.setField(thread, "createdBy", createdBy);
+        return thread;
+    }
+
     private static Channel channel(Long id, Workspace workspace) {
         Channel channel = newInstance(Channel.class);
         ReflectionTestUtils.setField(channel, "id", id);
@@ -519,6 +673,30 @@ class ThreadReplyServiceTest {
         ReflectionTestUtils.setField(user, "username", username);
         ReflectionTestUtils.setField(user, "displayName", displayName);
         return user;
+    }
+
+    private static User user(Long id, String username, String displayName) {
+        User user = user(username, displayName);
+        ReflectionTestUtils.setField(user, "id", id);
+        return user;
+    }
+
+    private void verifyReplyEventNotRecorded() {
+        verify(workspaceEventService, never()).recordEvent(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(WorkspaceEvent.EventType.REPLY),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     private static <T> T newInstance(Class<T> type) {

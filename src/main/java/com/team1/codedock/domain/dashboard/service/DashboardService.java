@@ -106,8 +106,7 @@ public class DashboardService {
     }
 
     public List<DashboardEventResponse> getEvents(Long userId) {
-        User user = findUser(userId);
-        String githubUsername = user.getGithubUsername();
+        validateUserExists(userId);
         List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
         List<Long> workspaceIds = memberships.stream()
                 .map(m -> m.getWorkspace().getId())
@@ -124,16 +123,7 @@ public class DashboardService {
 
         List<WorkspaceEvent> events = workspaceEventRepository
                 .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes,
-                        PageRequest.of(0, DASHBOARD_EVENT_LIMIT)).stream()
-                .filter(e -> {
-                    if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
-                            || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
-                        if (githubUsername == null) return true;
-                        return !githubUsername.equals(e.getActorName());
-                    }
-                    return true;
-                })
-                .toList();
+                        PageRequest.of(0, DASHBOARD_EVENT_LIMIT));
 
         Set<Long> readEventIds = events.isEmpty() ? Set.of()
                 : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(
@@ -177,5 +167,9 @@ public class DashboardService {
     private User findUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+    }
+
+    private void validateUserExists(Long userId) {
+        findUser(userId);
     }
 }
