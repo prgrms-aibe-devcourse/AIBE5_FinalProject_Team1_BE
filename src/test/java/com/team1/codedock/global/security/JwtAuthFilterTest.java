@@ -152,6 +152,23 @@ class JwtAuthFilterTest {
         verify(filterChain).doFilter(request, response);
     }
 
+    @Test
+    @DisplayName("Prometheus actuator 경로에서는 access token 검증 실패를 HTTP 필터에서 막지 않는다")
+    void doFilterWithInvalidAccessTokenOnPrometheusPathContinuesFilterChain() throws Exception {
+        MockHttpServletRequest request = request("GET", "/actuator/prometheus");
+        request.addHeader("Authorization", "Bearer bad-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtProvider.validateAccessTokenWithResult("bad-token"))
+                .thenReturn(JwtValidationResult.INVALID);
+
+        jwtAuthFilter.doFilter(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verifyNoInteractions(userDetailsService);
+        verify(filterChain).doFilter(request, response);
+    }
+
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setServletPath(path);
