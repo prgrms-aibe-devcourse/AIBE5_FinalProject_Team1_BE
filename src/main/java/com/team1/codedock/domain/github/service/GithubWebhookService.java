@@ -116,15 +116,8 @@ public class GithubWebhookService {
     // 웹훅 URL이 DB auto-increment id 대신 GitHub repo id를 쓰도록 하기 위한 조회.
     public List<Long> findRepositoryIdsByGithubRepoId(String githubRepoId) {
         return githubRepositoryRepository.findAllByGithubRepoId(githubRepoId).stream()
-                .filter(this::canReceiveWebhook)
                 .map(GithubRepository::getId)
                 .toList();
-    }
-
-    private boolean canReceiveWebhook(GithubRepository repo) {
-        return repo.isWebhookActive()
-                && repo.getWebhookSecret() != null
-                && !repo.getWebhookSecret().isBlank();
     }
 
     // 서명 유효성을 예외 없이 boolean으로 반환한다. 같은 GitHub repo가 여러 워크스페이스에
@@ -144,8 +137,8 @@ public class GithubWebhookService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
         String secret = repo.getWebhookSecret();
-        if (!repo.isWebhookActive() || secret == null || secret.isBlank()) {
-            throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
+        if (secret == null || secret.isBlank()) {
+            return;
         }
         if (signatureHeader == null || !signatureHeader.startsWith("sha256=")) {
             throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);

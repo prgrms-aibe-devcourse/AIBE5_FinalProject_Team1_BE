@@ -57,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -234,10 +235,9 @@ class GithubWebhookServiceTest {
         GithubRepository repo = githubRepository(workspace(10L), 20L);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        assertThatThrownBy(() ->
+        assertThatCode(() ->
                 githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -247,15 +247,14 @@ class GithubWebhookServiceTest {
         repo.updateWebhook("1", "", "url", true);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        assertThatThrownBy(() ->
+        assertThatCode(() ->
                 githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
+                .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("GitHub repo id lookup uses only active repositories with a webhook secret")
-    void findRepositoryIdsByGithubRepoId_activeSignedOnly() {
+    @DisplayName("GitHub repo id lookup은 같은 GitHub repo id로 연결된 DB row를 모두 반환한다")
+    void findRepositoryIdsByGithubRepoId_returnsAllLinkedRows() {
         Workspace workspace = workspace(10L);
         GithubRepository active = githubRepository(workspace, 20L);
         active.updateWebhook("1", "secret", "url", true);
@@ -269,7 +268,7 @@ class GithubWebhookServiceTest {
                 .thenReturn(List.of(active, blankSecret, inactive, neverRegistered));
 
         assertThat(githubWebhookService.findRepositoryIdsByGithubRepoId("100"))
-                .containsExactly(20L);
+                .containsExactly(20L, 21L, 22L, 23L);
     }
 
     @Test

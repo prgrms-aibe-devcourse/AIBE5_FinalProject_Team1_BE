@@ -106,7 +106,7 @@ public class DashboardService {
     }
 
     public List<DashboardEventResponse> getEvents(Long userId) {
-        findUser(userId);
+        validateUserExists(userId);
         List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
         List<Long> workspaceIds = memberships.stream()
                 .map(m -> m.getWorkspace().getId())
@@ -167,5 +167,9 @@ public class DashboardService {
     private User findUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+    }
+
+    private void validateUserExists(Long userId) {
+        findUser(userId);
     }
 }

@@ -113,8 +113,11 @@ public class ThreadReplyService {
 
     private void recordReplyEventForThreadOwner(Thread thread, WorkspaceMember replier, String content) {
         WorkspaceMember threadOwner = thread.getCreatedBy();
+        var channel = thread.getChannel();
         // 스레드 답글은 원글 작성자에게만 개인 대시보드 이벤트로 남김
         if (threadOwner == null
+                || channel == null
+                || channel.getWorkspace() == null
                 || threadOwner.getUser() == null
                 || replier.getUser() == null
                 || Objects.equals(replier.getId(), threadOwner.getId())) {
@@ -122,12 +125,12 @@ public class ThreadReplyService {
         }
 
         workspaceEventService.recordEvent(
-                thread.getChannel().getWorkspace().getId(),
+                channel.getWorkspace().getId(),
                 WorkspaceEvent.EventType.REPLY,
                 replier.getUser().getDisplayName(),
                 null,
                 null,
-                thread.getChannel().getId(),
+                channel.getId(),
                 content,
                 null,
                 null,
