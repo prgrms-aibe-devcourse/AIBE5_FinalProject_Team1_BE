@@ -39,7 +39,7 @@ public class GithubConnectService {
         return UriComponentsBuilder.fromUriString("https://github.com/login/oauth/authorize")
                 .queryParam("client_id", clientId)
                 .queryParam("redirect_uri", connectRedirectUri)
-                .queryParam("scope", "read:user user:email")
+                .queryParam("scope", "read:user user:email repo read:project")
                 .queryParam("state", state)
                 .build()
                 .toUriString();
