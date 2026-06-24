@@ -121,7 +121,7 @@ public class GithubRepository extends BaseEntity {
         this.webhookSecret = webhookSecret;
         this.webhookUrl = webhookUrl;
         this.webhookActive = active;
-        this.webhookEvents = "[\"issues\",\"push\",\"pull_request\"]";
+        this.webhookEvents = "[\"issues\",\"push\",\"pull_request\",\"pull_request_review\"]";
     }
 
     public void recordWebhookDelivery(String status) {

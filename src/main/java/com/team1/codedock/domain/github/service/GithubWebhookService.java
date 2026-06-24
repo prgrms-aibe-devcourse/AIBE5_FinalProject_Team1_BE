@@ -18,17 +18,22 @@ import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.ai.service.AiSummaryService;
+import com.team1.codedock.domain.github.dto.GithubPullRequestReviewWebhookPayload;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
 import com.team1.codedock.domain.pr.entity.PullRequestFile;
 import com.team1.codedock.domain.pr.entity.PullRequestReview;
+import com.team1.codedock.domain.pr.entity.PullRequestReviewRequest;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestFileRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestReviewRequestRepository;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
 import com.team1.codedock.domain.issue.entity.GithubIssue;
+import com.team1.codedock.domain.issue.entity.IssueAssignee;
 import com.team1.codedock.domain.issue.entity.IssueLabel;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.issue.repository.IssueAssigneeRepository;
 import com.team1.codedock.domain.issue.repository.IssueLabelRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -77,7 +82,9 @@ public class GithubWebhookService {
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final PullRequestReviewRepository pullRequestReviewRepository;
+    private final PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
     private final PullRequestFileRepository pullRequestFileRepository;
+    private final IssueAssigneeRepository issueAssigneeRepository;
     private final AiSummaryService aiSummaryService;
     private final GithubWebhookEventService githubWebhookEventService;
 
@@ -140,6 +147,7 @@ public class GithubWebhookService {
             );
             issue = githubIssueRepository.save(issue);
             saveLabels(issue, dto.labels());
+            syncIssueAssignees(issue, dto.assignees(), repo);
             broadcastBotNotification(issue, dto);
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
@@ -156,6 +164,9 @@ public class GithubWebhookService {
             if (ACTION_LABELED.equals(action) || ACTION_UNLABELED.equals(action)) {
                 issueLabelRepository.deleteAllByGithubIssue_Id(issue.getId());
                 saveLabels(issue, dto.labels());
+            }
+            if (ACTION_ASSIGNED.equals(action) || ACTION_UNASSIGNED.equals(action)) {
+                syncIssueAssignees(issue, dto.assignees(), repo);
             }
             if (ACTION_CLOSED.equals(action) || ACTION_REOPENED.equals(action)
                     || ACTION_LABELED.equals(action) || ACTION_UNLABELED.equals(action)
@@ -211,6 +222,7 @@ public class GithubWebhookService {
                     "[]"
             );
             GithubPullRequest savedPr = githubPullRequestRepository.save(pr);
+            syncReviewRequests(savedPr, dto.requestedReviewers(), repo);
             broadcastPrBotNotification(repo, channel, savedPr, dto);
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), savedPr.getId(),
@@ -232,6 +244,8 @@ public class GithubWebhookService {
                     githubPullRequestRepository.save(pr);
                 }
                 broadcastPrStatusUpdate(pr, repo, channel, dto);
+            } else if ("review_requested".equals(action) || "review_request_removed".equals(action)) {
+                syncReviewRequests(pr, dto.requestedReviewers(), repo);
             }
         }
     }
@@ -937,6 +951,75 @@ public class GithubWebhookService {
                 repo.getWorkspace().getId(), pr.getId(),
                 member.getUser().getDisplayName(), "승인",
                 repo.getId(), repo.getName(), (long) prNumber);
+    }
+
+    @Transactional
+    public void processPullRequestReviewEvent(Long repositoryId, GithubPullRequestReviewWebhookPayload payload) {
+        if (!"submitted".equals(payload.action())) return;
+
+        GithubPullRequestReviewWebhookPayload.ReviewDto review = payload.review();
+        GithubPullRequestReviewWebhookPayload.PullRequestDto prDto = payload.pullRequest();
+        if (review == null || prDto == null) return;
+
+        String reviewerLogin = review.user() != null ? review.user().login() : null;
+        if (reviewerLogin == null) return;
+
+        GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        repo.recordWebhookDelivery("success");
+
+        GithubPullRequest pr = githubPullRequestRepository
+                .findByRepository_IdAndPrNumber(repositoryId, prDto.number())
+                .orElse(null);
+        if (pr == null) {
+            log.warn("PR 미등록 상태에서 pull_request_review 이벤트 수신 → skip, repoId={}", repositoryId);
+            return;
+        }
+
+        Long workspaceId = repo.getWorkspace().getId();
+        String state = review.state() != null ? review.state().toLowerCase() : "commented";
+        userRepository.findByGithubUsername(reviewerLogin)
+                .flatMap(user -> workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, user.getId()))
+                .ifPresent(member ->
+                        pullRequestReviewRepository.findByGithubPullRequest_IdAndWorkspaceMember_Id(pr.getId(), member.getId())
+                                .ifPresentOrElse(
+                                        existing -> existing.updateState(state),
+                                        () -> pullRequestReviewRepository.save(PullRequestReview.create(pr, member, state))
+                                )
+                );
+
+        githubWebhookEventService.onPrReview(
+                workspaceId, pr.getId(),
+                reviewerLogin,
+                review.body() != null && !review.body().isBlank() ? review.body() : state,
+                repo.getId(), repo.getName(), (long) prDto.number()
+        );
+    }
+
+    private void syncIssueAssignees(GithubIssue issue,
+                                    List<GithubIssueWebhookPayload.UserDto> assignees,
+                                    GithubRepository repo) {
+        issueAssigneeRepository.deleteAllByGithubIssue_Id(issue.getId());
+        if (assignees == null || assignees.isEmpty()) return;
+        Long workspaceId = repo.getWorkspace().getId();
+        for (GithubIssueWebhookPayload.UserDto assignee : assignees) {
+            userRepository.findByGithubUsername(assignee.login())
+                    .flatMap(user -> workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, user.getId()))
+                    .ifPresent(member -> issueAssigneeRepository.save(IssueAssignee.create(issue, member)));
+        }
+    }
+
+    private void syncReviewRequests(GithubPullRequest pr,
+                                    List<GithubPullRequestWebhookPayload.UserDto> requestedReviewers,
+                                    GithubRepository repo) {
+        pullRequestReviewRequestRepository.deleteAllByGithubPullRequest_Id(pr.getId());
+        if (requestedReviewers == null || requestedReviewers.isEmpty()) return;
+        Long workspaceId = repo.getWorkspace().getId();
+        for (GithubPullRequestWebhookPayload.UserDto reviewer : requestedReviewers) {
+            userRepository.findByGithubUsername(reviewer.login())
+                    .flatMap(user -> workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, user.getId()))
+                    .ifPresent(member -> pullRequestReviewRequestRepository.save(PullRequestReviewRequest.create(pr, member)));
+        }
     }
 
     public void mergePullRequestOnGithub(Long repositoryId, int prNumber, Long userId) {

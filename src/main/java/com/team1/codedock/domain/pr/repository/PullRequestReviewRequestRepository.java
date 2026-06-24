@@ -9,4 +9,6 @@ public interface PullRequestReviewRequestRepository extends JpaRepository<PullRe
 
     @Query("SELECT COUNT(rr) FROM PullRequestReviewRequest rr WHERE rr.workspaceMember.user.id = :userId AND rr.workspaceMember.workspace.id = :workspaceId")
     long countByUserIdAndWorkspaceId(@Param("userId") Long userId, @Param("workspaceId") Long workspaceId);
+
+    void deleteAllByGithubPullRequest_Id(Long pullRequestId);
 }
