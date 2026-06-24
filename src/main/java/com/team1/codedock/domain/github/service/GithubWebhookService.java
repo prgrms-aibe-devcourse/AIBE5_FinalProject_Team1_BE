@@ -55,11 +55,28 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class GithubWebhookService {
+
+    // 목록 화면 진입 시 FE가 sync를 반복 호출해도, 최근에 동기화한 레포는 GitHub fetch를 건너뛴다.
+    // (동시/반복 sync로 같은 이슈/PR을 중복 저장하다 UQ 제약 위반이 폭주하던 문제 방지 + GitHub API 부하 감소)
+    private static final long SYNC_COOLDOWN_MS = 15_000;
+    private final Map<Long, Long> issueSyncAtByRepo = new ConcurrentHashMap<>();
+    private final Map<Long, Long> prSyncAtByRepo = new ConcurrentHashMap<>();
+
+    private boolean withinSyncCooldown(Map<Long, Long> lastSyncByRepo, Long repositoryId) {
+        long now = System.currentTimeMillis();
+        Long last = lastSyncByRepo.get(repositoryId);
+        if (last != null && now - last < SYNC_COOLDOWN_MS) {
+            return true;
+        }
+        lastSyncByRepo.put(repositoryId, now);
+        return false;
+    }
 
     private static final String ACTION_OPENED = "opened";
     private static final String ACTION_CLOSED = "closed";
@@ -543,6 +560,9 @@ public class GithubWebhookService {
     // 과거(기존) 이슈를 GitHub에서 가져와 DB/스레드로 동기화 (PR sync와 동일 패턴).
     // 웹훅을 놓쳤거나 웹훅 등록 이전에 만들어진 이슈도 모든 워크스페이스 멤버에게 보이도록 공유 채널에 영속화한다.
     public void syncIssuesFromGithub(Long repositoryId, Long userId) {
+        if (withinSyncCooldown(issueSyncAtByRepo, repositoryId)) {
+            return;
+        }
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
         validateRepositoryMember(repo, userId);
@@ -1202,6 +1222,9 @@ public class GithubWebhookService {
     }
 
     public void syncPullRequestsFromGithub(Long repositoryId, Long userId) {
+        if (withinSyncCooldown(prSyncAtByRepo, repositoryId)) {
+            return;
+        }
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
@@ -1345,6 +1368,9 @@ public class GithubWebhookService {
                     createPrThreadAndAttachment(repo, channel, existingPr, item, commitsJson, resolvedStatus, finalApprovedCountSync);
                 }
             }
+
+            // 웹훅 시점에 토큰/파일 누락으로 비어 있던 AI 요약을 sync 시 복구한다(이미 완료면 내부에서 skip).
+            aiSummaryService.generateSummaryForWebhook(existingPr.getId());
             return;
         }
 
@@ -1369,6 +1395,8 @@ public class GithubWebhookService {
         String initialStatus = (Boolean.TRUE.equals(item.merged()) || item.mergedAt() != null) ? "merged" : item.state();
         long newApproved = countGithubApprovedReviewers(repo, item.number(), token);
         createPrThreadAndAttachment(repo, channel, savedPr, item, commitsJson, initialStatus, newApproved);
+        // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
+        aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }
 
     private void createPrThreadAndAttachment(GithubRepository repo, Channel channel, GithubPullRequest savedPr,
