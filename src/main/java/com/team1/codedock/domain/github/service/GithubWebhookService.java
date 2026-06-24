@@ -96,6 +96,18 @@ public class GithubWebhookService {
                 .toList();
     }
 
+    // 서명 유효성을 예외 없이 boolean으로 반환한다. 같은 GitHub repo가 여러 워크스페이스에
+    // 연결돼 repo row마다 secret이 다를 수 있을 때, 여러 secret 중 하나라도 통과하는지
+    // 판별하기 위해 사용한다.
+    public boolean isSignatureValid(Long repositoryId, String signatureHeader, byte[] rawBody) {
+        try {
+            verifySignature(repositoryId, signatureHeader, rawBody);
+            return true;
+        } catch (BusinessException e) {
+            return false;
+        }
+    }
+
     public void verifySignature(Long repositoryId, String signatureHeader, byte[] rawBody) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
