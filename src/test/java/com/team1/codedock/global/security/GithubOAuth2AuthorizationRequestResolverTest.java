@@ -130,6 +130,108 @@ class GithubOAuth2AuthorizationRequestResolverTest {
     }
 
     @Test
+    @DisplayName("GitHub 로그인 힌트는 하이픈으로 시작하거나 끝나면 전달하지 않는다")
+    void resolveGithubAuthorizationRequestRejectsLoginStartingOrEndingWithHyphen() {
+        MockHttpServletRequest startsWithHyphenRequest = oauthRequest("/oauth2/authorization/github");
+        startsWithHyphenRequest.addParameter("login", "-jean");
+        MockHttpServletRequest endsWithHyphenRequest = oauthRequest("/oauth2/authorization/github");
+        endsWithHyphenRequest.addParameter("login", "jean-");
+
+        OAuth2AuthorizationRequest startsWithHyphen = resolver.resolve(startsWithHyphenRequest);
+        OAuth2AuthorizationRequest endsWithHyphen = resolver.resolve(endsWithHyphenRequest);
+
+        assertThat(queryParams(startsWithHyphen)).doesNotContainKey("login");
+        assertThat(startsWithHyphen.getAdditionalParameters()).doesNotContainKey("login");
+        assertThat(queryParams(endsWithHyphen)).doesNotContainKey("login");
+        assertThat(endsWithHyphen.getAdditionalParameters()).doesNotContainKey("login");
+    }
+
+    @Test
+    @DisplayName("GitHub 로그인 힌트는 연속 하이픈과 특수문자를 전달하지 않는다")
+    void resolveGithubAuthorizationRequestRejectsInvalidLoginCharacters() {
+        MockHttpServletRequest doubleHyphenRequest = oauthRequest("/oauth2/authorization/github");
+        doubleHyphenRequest.addParameter("login", "jean--2077");
+        MockHttpServletRequest underscoreRequest = oauthRequest("/oauth2/authorization/github");
+        underscoreRequest.addParameter("login", "jean_2077");
+        MockHttpServletRequest dotRequest = oauthRequest("/oauth2/authorization/github");
+        dotRequest.addParameter("login", "jean.2077");
+
+        OAuth2AuthorizationRequest doubleHyphen = resolver.resolve(doubleHyphenRequest);
+        OAuth2AuthorizationRequest underscore = resolver.resolve(underscoreRequest);
+        OAuth2AuthorizationRequest dot = resolver.resolve(dotRequest);
+
+        assertThat(queryParams(doubleHyphen)).doesNotContainKey("login");
+        assertThat(doubleHyphen.getAdditionalParameters()).doesNotContainKey("login");
+        assertThat(queryParams(underscore)).doesNotContainKey("login");
+        assertThat(underscore.getAdditionalParameters()).doesNotContainKey("login");
+        assertThat(queryParams(dot)).doesNotContainKey("login");
+        assertThat(dot.getAdditionalParameters()).doesNotContainKey("login");
+    }
+
+    @Test
+    @DisplayName("허용 옵션이 중복으로 들어오면 첫 번째 값만 기준으로 처리한다")
+    void resolveGithubAuthorizationRequestUsesFirstParameterValueWhenDuplicated() {
+        MockHttpServletRequest validFirstRequest = oauthRequest("/oauth2/authorization/github");
+        validFirstRequest.addParameter("prompt", "select_account", "none");
+        validFirstRequest.addParameter("allow_signup", "false", "true");
+        validFirstRequest.addParameter("login", "jean-2077", "bad user");
+        MockHttpServletRequest invalidFirstRequest = oauthRequest("/oauth2/authorization/github");
+        invalidFirstRequest.addParameter("prompt", "none", "select_account");
+        invalidFirstRequest.addParameter("allow_signup", "yes", "true");
+        invalidFirstRequest.addParameter("login", "bad user", "jean-2077");
+
+        OAuth2AuthorizationRequest validFirst = resolver.resolve(validFirstRequest);
+        OAuth2AuthorizationRequest invalidFirst = resolver.resolve(invalidFirstRequest);
+
+        MultiValueMap<String, String> validFirstQueryParams = queryParams(validFirst);
+        assertThat(validFirstQueryParams.get("prompt")).containsExactly("select_account");
+        assertThat(validFirstQueryParams.get("allow_signup")).containsExactly("false");
+        assertThat(validFirstQueryParams.get("login")).containsExactly("jean-2077");
+        assertThat(validFirst.getAdditionalParameters())
+                .containsEntry("prompt", "select_account")
+                .containsEntry("allow_signup", "false")
+                .containsEntry("login", "jean-2077");
+
+        assertThat(queryParams(invalidFirst)).doesNotContainKeys("prompt", "allow_signup", "login");
+        assertThat(invalidFirst.getAdditionalParameters())
+                .doesNotContainKeys("prompt", "allow_signup", "login");
+    }
+
+    @Test
+    @DisplayName("prompt는 select_account와 정확히 일치할 때만 전달한다")
+    void resolveGithubAuthorizationRequestRejectsInvalidPromptValues() {
+        MockHttpServletRequest uppercaseRequest = oauthRequest("/oauth2/authorization/github");
+        uppercaseRequest.addParameter("prompt", "SELECT_ACCOUNT");
+        MockHttpServletRequest blankRequest = oauthRequest("/oauth2/authorization/github");
+        blankRequest.addParameter("prompt", " ");
+
+        OAuth2AuthorizationRequest uppercase = resolver.resolve(uppercaseRequest);
+        OAuth2AuthorizationRequest blank = resolver.resolve(blankRequest);
+
+        assertThat(queryParams(uppercase)).doesNotContainKey("prompt");
+        assertThat(uppercase.getAdditionalParameters()).doesNotContainKey("prompt");
+        assertThat(queryParams(blank)).doesNotContainKey("prompt");
+        assertThat(blank.getAdditionalParameters()).doesNotContainKey("prompt");
+    }
+
+    @Test
+    @DisplayName("allow_signup은 true 또는 false가 아니면 전달하지 않는다")
+    void resolveGithubAuthorizationRequestRejectsInvalidAllowSignupValues() {
+        MockHttpServletRequest blankRequest = oauthRequest("/oauth2/authorization/github");
+        blankRequest.addParameter("allow_signup", " ");
+        MockHttpServletRequest numberRequest = oauthRequest("/oauth2/authorization/github");
+        numberRequest.addParameter("allow_signup", "1");
+
+        OAuth2AuthorizationRequest blank = resolver.resolve(blankRequest);
+        OAuth2AuthorizationRequest number = resolver.resolve(numberRequest);
+
+        assertThat(queryParams(blank)).doesNotContainKey("allow_signup");
+        assertThat(blank.getAdditionalParameters()).doesNotContainKey("allow_signup");
+        assertThat(queryParams(number)).doesNotContainKey("allow_signup");
+        assertThat(number.getAdditionalParameters()).doesNotContainKey("allow_signup");
+    }
+
+    @Test
     @DisplayName("허용하지 않은 OAuth query parameter는 GitHub authorization URL에 전달하지 않는다")
     void resolveGithubAuthorizationRequestIgnoresUnknownParameters() {
         MockHttpServletRequest request = oauthRequest("/oauth2/authorization/github");

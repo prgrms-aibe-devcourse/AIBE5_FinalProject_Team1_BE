@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -18,7 +19,8 @@ public class GithubOAuth2AuthorizationRequestResolver implements OAuth2Authoriza
     private static final String AUTHORIZATION_BASE_URI = "/oauth2/authorization";
     private static final String GITHUB_REGISTRATION_ID = "github";
     private static final String PROMPT_SELECT_ACCOUNT = "select_account";
-    private static final Pattern GITHUB_LOGIN_PATTERN = Pattern.compile("[A-Za-z0-9-]{1,39}");
+    private static final Pattern GITHUB_LOGIN_PATTERN =
+            Pattern.compile("[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}");
 
     private final OAuth2AuthorizationRequestResolver delegate;
 
@@ -77,7 +79,7 @@ public class GithubOAuth2AuthorizationRequestResolver implements OAuth2Authoriza
 
         String allowSignup = request.getParameter("allow_signup");
         if ("true".equalsIgnoreCase(allowSignup) || "false".equalsIgnoreCase(allowSignup)) {
-            options.put("allow_signup", allowSignup.toLowerCase());
+            options.put("allow_signup", allowSignup.toLowerCase(Locale.ROOT));
         }
 
         String login = request.getParameter("login");
