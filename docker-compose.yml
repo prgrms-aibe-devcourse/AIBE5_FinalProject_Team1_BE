@@ -16,8 +16,14 @@ services:
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_REDIS_ENABLED: ${APP_REDIS_ENABLED:-true}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_USERNAME: ${REDIS_USERNAME:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_TIMEOUT: ${REDIS_TIMEOUT:-2s}
+      REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-2s}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-local}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-local}
@@ -27,6 +33,7 @@ services:
       APP_CORS_ALLOWED_ORIGIN_PATTERNS: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*}
       APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS: ${APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*}
       APP_LOCAL_NETWORK_ORIGIN_ENABLED: ${APP_LOCAL_NETWORK_ORIGIN_ENABLED:-false}
+      SERVER_FORWARD_HEADERS_STRATEGY: ${SERVER_FORWARD_HEADERS_STRATEGY:-framework}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       # File upload (S3 presigned) — 미설정이면 비활성(기존 동작 영향 없음)
@@ -53,12 +60,23 @@ services:
     image: redis:7.2
     container_name: codedock-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+        else
+          redis-server --appendonly yes
+        fi
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD}\" ]; then REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 3s
       retries: 5
