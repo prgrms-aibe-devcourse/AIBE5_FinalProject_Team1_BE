@@ -7,12 +7,16 @@ import com.team1.codedock.domain.github.dto.GithubPullRequestWebhookPayload;
 import com.team1.codedock.domain.github.dto.GithubWebhookRegisterResponse;
 import com.team1.codedock.domain.github.service.GithubWebhookRegistrationService;
 import com.team1.codedock.domain.github.service.GithubWebhookService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -38,29 +42,71 @@ public class GithubWebhookController {
             @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
             @RequestBody byte[] rawBody
     ) {
-        githubWebhookService.verifySignature(repositoryId, signature, rawBody);
+        dispatchWebhook(repositoryId, event, signature, rawBody);
+    }
 
-        if (EVENT_ISSUES.equals(event)) {
-            try {
+    /**
+     * GitHub repo id 기반 Webhook 수신 엔드포인트 — DB auto-increment id 대신 불변인 GitHub repo id를
+     * 경로에 사용하므로, DB 재생성/레포 재연결 후에도 웹훅 URL을 바꿀 필요가 없다.
+     * 같은 GitHub 레포가 여러 워크스페이스에 연결됐을 수 있어 매칭되는 모든 레포를 처리한다.
+     */
+    @PostMapping("/api/v1/github/webhooks/gh/{githubRepoId}")
+    @ResponseStatus(HttpStatus.OK)
+    public void receiveWebhookByGithubRepoId(
+            @PathVariable String githubRepoId,
+            @RequestHeader(value = "X-GitHub-Event", required = false) String event,
+            @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
+            @RequestBody byte[] rawBody
+    ) {
+        List<Long> repositoryIds = githubWebhookService.findRepositoryIdsByGithubRepoId(githubRepoId);
+        if (repositoryIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND);
+        }
+
+        // 같은 GitHub repo가 여러 워크스페이스에 연결되면 repo row마다 webhook secret이 다를 수 있다.
+        // GitHub는 하나의 secret으로만 서명하므로, repo row 중 하나라도 서명을 통과하면 페이로드
+        // 진위가 보장된 것으로 보고 전체를 처리한다. 하나도 통과하지 못하면 위조로 간주해 거절한다.
+        boolean signatureVerified = repositoryIds.stream()
+                .anyMatch(repositoryId -> githubWebhookService.isSignatureValid(repositoryId, signature, rawBody));
+        if (!signatureVerified) {
+            throw new BusinessException(ErrorCode.GITHUB_WEBHOOK_INVALID);
+        }
+
+        int processedCount = 0;
+        for (Long repositoryId : repositoryIds) {
+            if (processWebhookEvent(repositoryId, event, rawBody)) {
+                processedCount++;
+            }
+        }
+        // 매칭된 repo가 있는데 단 하나도 처리되지 못하면 200으로 숨기지 않고 실패를 노출한다(GitHub 재시도 유도).
+        if (processedCount == 0) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private void dispatchWebhook(Long repositoryId, String event, String signature, byte[] rawBody) {
+        githubWebhookService.verifySignature(repositoryId, signature, rawBody);
+        processWebhookEvent(repositoryId, event, rawBody);
+    }
+
+    // 이벤트 본문을 파싱해 처리한다. 서명 검증은 호출 측 책임이다. 처리 성공 여부를 반환한다
+    // (처리 대상이 아닌 이벤트(ping 등)는 성공으로 간주).
+    private boolean processWebhookEvent(Long repositoryId, String event, byte[] rawBody) {
+        try {
+            if (EVENT_ISSUES.equals(event)) {
                 GithubIssueWebhookPayload payload = objectMapper.readValue(rawBody, GithubIssueWebhookPayload.class);
                 githubWebhookService.processIssueEvent(repositoryId, payload);
-            } catch (Exception e) {
-                log.warn("이슈 Webhook 처리 실패 → repoId={}", repositoryId, e);
-            }
-        } else if (EVENT_PULL_REQUEST.equals(event)) {
-            try {
+            } else if (EVENT_PULL_REQUEST.equals(event)) {
                 GithubPullRequestWebhookPayload payload = objectMapper.readValue(rawBody, GithubPullRequestWebhookPayload.class);
                 githubWebhookService.processPullRequestEvent(repositoryId, payload);
-            } catch (Exception e) {
-                log.warn("PR Webhook 처리 실패 → repoId={}", repositoryId, e);
-            }
-        } else if (EVENT_PULL_REQUEST_REVIEW.equals(event)) {
-            try {
+            } else if (EVENT_PULL_REQUEST_REVIEW.equals(event)) {
                 GithubPullRequestReviewWebhookPayload payload = objectMapper.readValue(rawBody, GithubPullRequestReviewWebhookPayload.class);
                 githubWebhookService.processPullRequestReviewEvent(repositoryId, payload);
-            } catch (Exception e) {
-                log.warn("PR 리뷰 Webhook 처리 실패 → repoId={}", repositoryId, e);
             }
+            return true;
+        } catch (Exception e) {
+            log.warn("Webhook 이벤트 처리 실패 → repoId={}, event={}", repositoryId, event, e);
+            return false;
         }
     }
 

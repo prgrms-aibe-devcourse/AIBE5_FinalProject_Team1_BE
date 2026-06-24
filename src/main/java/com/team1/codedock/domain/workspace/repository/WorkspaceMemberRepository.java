@@ -58,4 +58,13 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     void deleteAllByWorkspace(Workspace workspace);
 
     List<WorkspaceMember> findAllByUser_IdAndIsActiveTrue(Long userId);
+
+    // 대시보드 워크스페이스 통계는 workspace의 name/logoUrl을 사용하므로 fetch join 해
+    // 멤버십마다 workspace를 지연 로딩하는 N+1을 막는다.
+    @Query("""
+        SELECT m FROM WorkspaceMember m
+        JOIN FETCH m.workspace
+        WHERE m.user.id = :userId AND m.isActive = true
+        """)
+    List<WorkspaceMember> findAllByUser_IdAndIsActiveTrueWithWorkspace(@Param("userId") Long userId);
 }

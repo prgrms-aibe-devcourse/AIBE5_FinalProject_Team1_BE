@@ -70,7 +70,8 @@ public class DashboardService {
     public List<WorkspaceDashboardResponse> getWorkspaceStats(Long userId) {
         User user = findUser(userId);
         String githubUsername = user.getGithubUsername();
-        List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
+        // name/logoUrl을 사용하므로 workspace를 fetch join 한 버전으로 조회(N+1 방지).
+        List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrueWithWorkspace(userId);
         List<Long> workspaceIds = memberships.stream().map(m -> m.getWorkspace().getId()).toList();
 
         if (workspaceIds.isEmpty()) {

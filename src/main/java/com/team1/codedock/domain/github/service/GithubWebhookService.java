@@ -88,6 +88,26 @@ public class GithubWebhookService {
     private final AiSummaryService aiSummaryService;
     private final GithubWebhookEventService githubWebhookEventService;
 
+    // GitHub repo id(불변)로 매칭되는 DB 레포 id 목록을 반환한다(없으면 빈 목록).
+    // 웹훅 URL이 DB auto-increment id 대신 GitHub repo id를 쓰도록 하기 위한 조회.
+    public List<Long> findRepositoryIdsByGithubRepoId(String githubRepoId) {
+        return githubRepositoryRepository.findAllByGithubRepoId(githubRepoId).stream()
+                .map(GithubRepository::getId)
+                .toList();
+    }
+
+    // 서명 유효성을 예외 없이 boolean으로 반환한다. 같은 GitHub repo가 여러 워크스페이스에
+    // 연결돼 repo row마다 secret이 다를 수 있을 때, 여러 secret 중 하나라도 통과하는지
+    // 판별하기 위해 사용한다.
+    public boolean isSignatureValid(Long repositoryId, String signatureHeader, byte[] rawBody) {
+        try {
+            verifySignature(repositoryId, signatureHeader, rawBody);
+            return true;
+        } catch (BusinessException e) {
+            return false;
+        }
+    }
+
     public void verifySignature(Long repositoryId, String signatureHeader, byte[] rawBody) {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
@@ -1162,10 +1182,22 @@ public class GithubWebhookService {
         GithubRepository repo = githubRepositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
 
-        return githubPullRequestRepository
-                .findAllByRepository_IdOrderByGithubCreatedAtDesc(repositoryId)
-                .stream()
-                .map(pr -> buildPrMessageMap(repo, pr))
+        List<GithubPullRequest> prs = githubPullRequestRepository
+                .findAllByRepository_IdOrderByGithubCreatedAtDesc(repositoryId);
+        if (prs.isEmpty()) {
+            return List.of();
+        }
+
+        // PR별 approved 리뷰 수를 1회 배치 집계해 PR당 COUNT 쿼리(N+1)를 제거한다.
+        List<Long> prIds = prs.stream().map(GithubPullRequest::getId).toList();
+        Map<Long, Long> approvedCountByPrId = new HashMap<>();
+        for (Object[] row : pullRequestReviewRepository
+                .countByPullRequestIdInAndReviewStateGroupByPr(prIds, "approved")) {
+            approvedCountByPrId.put((Long) row[0], (Long) row[1]);
+        }
+
+        return prs.stream()
+                .map(pr -> buildPrMessageMap(repo, pr, approvedCountByPrId.getOrDefault(pr.getId(), 0L)))
                 .toList();
     }
 
@@ -1387,10 +1419,7 @@ public class GithubWebhookService {
         threadAttachmentRepository.save(attachment);
     }
 
-    private Map<String, Object> buildPrMessageMap(GithubRepository repo, GithubPullRequest pr) {
-        long approvedCount = pullRequestReviewRepository
-                .countByGithubPullRequest_IdAndReviewState(pr.getId(), "approved");
-
+    private Map<String, Object> buildPrMessageMap(GithubRepository repo, GithubPullRequest pr, long approvedCount) {
         String prStatus = resolvePrStatus(pr, approvedCount, pr.getState());
 
         Map<String, Object> meta = new HashMap<>();
