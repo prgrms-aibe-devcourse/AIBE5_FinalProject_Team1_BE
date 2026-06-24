@@ -87,6 +87,49 @@ class GithubOAuth2AuthorizationRequestResolverTest {
     }
 
     @Test
+    @DisplayName("GitHub 로그인 옵션 3개를 한 요청에 함께 전달할 수 있다")
+    void resolveGithubAuthorizationRequestWithAllAllowedOptions() {
+        MockHttpServletRequest request = oauthRequest("/oauth2/authorization/github");
+        request.addParameter("prompt", "select_account");
+        request.addParameter("allow_signup", "true");
+        request.addParameter("login", "jean-2077");
+
+        OAuth2AuthorizationRequest authorizationRequest = resolver.resolve(request);
+
+        MultiValueMap<String, String> queryParams = queryParams(authorizationRequest);
+        assertThat(queryParams.getFirst("prompt")).isEqualTo("select_account");
+        assertThat(queryParams.getFirst("allow_signup")).isEqualTo("true");
+        assertThat(queryParams.getFirst("login")).isEqualTo("jean-2077");
+        assertThat(authorizationRequest.getAdditionalParameters())
+                .containsEntry("prompt", "select_account")
+                .containsEntry("allow_signup", "true")
+                .containsEntry("login", "jean-2077");
+    }
+
+    @Test
+    @DisplayName("GitHub 로그인 힌트는 39자까지 허용하고 40자는 차단한다")
+    void resolveGithubAuthorizationRequestChecksLoginLengthBoundary() {
+        String validLogin = "a".repeat(39);
+        String tooLongLogin = "a".repeat(40);
+        MockHttpServletRequest validRequest = oauthRequest("/oauth2/authorization/github");
+        validRequest.addParameter("login", validLogin);
+        MockHttpServletRequest invalidRequest = oauthRequest("/oauth2/authorization/github");
+        invalidRequest.addParameter("login", tooLongLogin);
+
+        OAuth2AuthorizationRequest validAuthorizationRequest = resolver.resolve(validRequest);
+        OAuth2AuthorizationRequest invalidAuthorizationRequest = resolver.resolve(invalidRequest);
+
+        assertThat(queryParams(validAuthorizationRequest).getFirst("login"))
+                .isEqualTo(validLogin);
+        assertThat(validAuthorizationRequest.getAdditionalParameters())
+                .containsEntry("login", validLogin);
+        assertThat(queryParams(invalidAuthorizationRequest))
+                .doesNotContainKey("login");
+        assertThat(invalidAuthorizationRequest.getAdditionalParameters())
+                .doesNotContainKey("login");
+    }
+
+    @Test
     @DisplayName("허용하지 않은 OAuth query parameter는 GitHub authorization URL에 전달하지 않는다")
     void resolveGithubAuthorizationRequestIgnoresUnknownParameters() {
         MockHttpServletRequest request = oauthRequest("/oauth2/authorization/github");
@@ -110,6 +153,33 @@ class GithubOAuth2AuthorizationRequestResolverTest {
         assertThat(queryParams).doesNotContainKeys("next");
         assertThat(authorizationRequest.getAdditionalParameters())
                 .doesNotContainKeys("prompt", "allow_signup", "login", "redirect_uri", "client_id", "scope", "next");
+    }
+
+    @Test
+    @DisplayName("공격자가 core OAuth 파라미터를 보내도 provider 기본값을 덮어쓰지 않는다")
+    void resolveGithubAuthorizationRequestDoesNotOverrideCoreOAuthParameters() {
+        MockHttpServletRequest request = oauthRequest("/oauth2/authorization/github");
+        request.addParameter("client_id", "attacker-client");
+        request.addParameter("redirect_uri", "https://attacker.example/callback");
+        request.addParameter("response_type", "token");
+        request.addParameter("scope", "admin:org");
+        request.addParameter("state", "attacker-state");
+
+        OAuth2AuthorizationRequest authorizationRequest = resolver.resolve(request);
+
+        MultiValueMap<String, String> queryParams = queryParams(authorizationRequest);
+        assertThat(queryParams.getFirst("client_id")).isEqualTo("github-client-id");
+        assertThat(queryParams.getFirst("redirect_uri"))
+                .isEqualTo("http://localhost:8080/login/oauth2/code/github");
+        assertThat(queryParams.getFirst("response_type")).isEqualTo("code");
+        assertThat(queryParams.getFirst("scope"))
+                .contains("read:user")
+                .contains("user:email")
+                .doesNotContain("admin:org");
+        assertThat(queryParams.getFirst("state")).isNotBlank();
+        assertThat(queryParams.getFirst("state")).isNotEqualTo("attacker-state");
+        assertThat(authorizationRequest.getAdditionalParameters())
+                .doesNotContainKeys("client_id", "redirect_uri", "response_type", "scope", "state");
     }
 
     @Test
@@ -147,6 +217,34 @@ class GithubOAuth2AuthorizationRequestResolverTest {
         assertThat(authorizationRequest.getAdditionalParameters())
                 .containsEntry("prompt", "select_account")
                 .containsEntry("allow_signup", "false");
+    }
+
+    @Test
+    @DisplayName("context path가 있어도 GitHub registration id를 올바르게 판별한다")
+    void resolveGithubAuthorizationRequestWithContextPath() {
+        MockHttpServletRequest request = oauthRequest("/codedock/oauth2/authorization/github");
+        request.setContextPath("/codedock");
+        request.setServletPath("/oauth2/authorization/github");
+        request.addParameter("prompt", "select_account");
+
+        OAuth2AuthorizationRequest authorizationRequest = resolver.resolve(request);
+
+        assertThat(authorizationRequest).isNotNull();
+        assertThat(queryParams(authorizationRequest).getFirst("prompt"))
+                .isEqualTo("select_account");
+        assertThat(queryParams(authorizationRequest).getFirst("redirect_uri"))
+                .isEqualTo("http://localhost:8080/codedock/login/oauth2/code/github");
+    }
+
+    @Test
+    @DisplayName("OAuth authorization 요청 경로가 아니면 authorization request를 만들지 않는다")
+    void resolveNonAuthorizationPathReturnsNull() {
+        MockHttpServletRequest request = oauthRequest("/api/v1/auth/login");
+        request.addParameter("prompt", "select_account");
+
+        OAuth2AuthorizationRequest authorizationRequest = resolver.resolve(request);
+
+        assertThat(authorizationRequest).isNull();
     }
 
     private MockHttpServletRequest oauthRequest(String path) {
