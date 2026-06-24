@@ -104,6 +104,15 @@ monitoring/grafana/provisioning/dashboards/dashboards.yml
 monitoring/grafana/dashboards/codedock-overview.json
 ```
 
+Grafana 접속 후 확인 순서:
+
+1. `http://{EC2_PUBLIC_IP}:3000` 접속
+2. `.env`의 `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`로 로그인
+3. Connections 또는 Data sources에서 `Prometheus datasource`가 연결됐는지 확인
+4. Connections 또는 Data sources에서 `Loki datasource`가 연결됐는지 확인
+5. Dashboards에서 `CodeDock Overview` dashboard가 열리는지 확인
+6. Explore에서 Loki를 선택하고 `{service="app"}`으로 백엔드 로그가 조회되는지 확인
+
 ## 로그 수집
 
 Promtail 설정 파일:
