@@ -40,6 +40,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1395,6 +1397,38 @@ class ChatMessageServiceTest {
         verify(workspaceEventService).recordEvent(
                 workspaceId, WorkspaceEvent.EventType.REPLY, "Sender", null, null, channelId,
                 "reply content", null, null, 50L, null, null, 99L);
+    }
+
+    @Test
+    @DisplayName("자신의 메시지에 답장하면 REPLY 이벤트를 기록하지 않는다")
+    void createChannelMessage_자기자신_답장_REPLY_이벤트_없음() {
+        Long channelId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Long senderMemberId = 10L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(channelId, workspace);
+        User senderUser = user("sender", "Sender");
+        WorkspaceMember sender = workspaceMember(senderMemberId, workspace, true, senderUser);
+        Thread replyTo = thread(50L, channel, sender, "내 메시지", LocalDateTime.of(2026, 6, 23, 9, 0));
+
+        ChannelMessageCreateRequest request = new ChannelMessageCreateRequest("self reply", 50L, null);
+
+        when(entityManager.find(Channel.class, channelId)).thenReturn(channel);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(sender));
+        when(threadRepository.findById(50L)).thenReturn(Optional.of(replyTo));
+        when(threadRepository.save(org.mockito.ArgumentMatchers.any(Thread.class))).thenAnswer(invocation -> {
+            Thread saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 23, 10, 0));
+            return saved;
+        });
+
+        chatMessageService.createChannelMessage(channelId, userId, request);
+
+        verify(workspaceEventService, never()).recordEvent(
+                any(), eq(WorkspaceEvent.EventType.REPLY), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     private static Thread thread(

@@ -42,7 +42,9 @@ public class MentionService {
     @Transactional
     public void createMentionsForThread(Thread thread, WorkspaceMember mentionedByMember, String content) {
         Workspace workspace = thread.getChannel().getWorkspace();
-        List<WorkspaceMember> mentionedMembers = findMentionedMembers(workspace.getId(), content);
+        List<WorkspaceMember> mentionedMembers = findMentionedMembers(workspace.getId(), content).stream()
+                .filter(m -> !m.getId().equals(mentionedByMember.getId()))
+                .toList();
         if (mentionedMembers.isEmpty()) {
             return;
         }
@@ -67,7 +69,9 @@ public class MentionService {
     @Transactional
     public void createMentionsForThreadReply(ThreadReply threadReply, WorkspaceMember mentionedByMember, String content) {
         Workspace workspace = threadReply.getThread().getChannel().getWorkspace();
-        List<WorkspaceMember> mentionedMembers = findMentionedMembers(workspace.getId(), content);
+        List<WorkspaceMember> mentionedMembers = findMentionedMembers(workspace.getId(), content).stream()
+                .filter(m -> !m.getId().equals(mentionedByMember.getId()))
+                .toList();
         if (mentionedMembers.isEmpty()) {
             return;
         }

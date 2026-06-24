@@ -22,7 +22,7 @@ public record DashboardEventResponse(
         boolean isRead,
         LocalDateTime createdAt
 ) {
-    public static DashboardEventResponse from(WorkspaceEvent event) {
+    public static DashboardEventResponse from(WorkspaceEvent event, boolean isRead) {
         return new DashboardEventResponse(
                 event.getId(),
                 event.getType().name(),
@@ -38,7 +38,7 @@ public record DashboardEventResponse(
                 event.getPrNumber(),
                 event.getIssueNumber(),
                 event.getContent(),
-                event.isRead(),
+                isRead,
                 event.getCreatedAt()
         );
     }

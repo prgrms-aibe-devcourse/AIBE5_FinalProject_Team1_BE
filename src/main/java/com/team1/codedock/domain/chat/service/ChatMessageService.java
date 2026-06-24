@@ -185,7 +185,8 @@ public class ChatMessageService {
 
         Thread savedThread = threadRepository.save(thread);
         mentionService.createMentionsForThread(savedThread, sender, content);
-        if (replyTo != null && replyTo.getCreatedBy() != null) {
+        if (replyTo != null && replyTo.getCreatedBy() != null
+                && !sender.getId().equals(replyTo.getCreatedBy().getId())) {
             Long targetUserId = replyTo.getCreatedBy().getUser().getId();
             workspaceEventService.recordEvent(
                     channel.getWorkspace().getId(), WorkspaceEvent.EventType.REPLY,

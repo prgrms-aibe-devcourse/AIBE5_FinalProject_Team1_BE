@@ -2,6 +2,7 @@ package com.team1.codedock.domain.github.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.github.dto.GithubIssueWebhookPayload;
+import com.team1.codedock.domain.github.dto.GithubPullRequestReviewWebhookPayload;
 import com.team1.codedock.domain.github.dto.GithubPullRequestWebhookPayload;
 import com.team1.codedock.domain.github.dto.GithubWebhookRegisterResponse;
 import com.team1.codedock.domain.github.service.GithubWebhookRegistrationService;
@@ -20,6 +21,7 @@ public class GithubWebhookController {
 
     private static final String EVENT_ISSUES = "issues";
     private static final String EVENT_PULL_REQUEST = "pull_request";
+    private static final String EVENT_PULL_REQUEST_REVIEW = "pull_request_review";
 
     private final GithubWebhookService githubWebhookService;
     private final GithubWebhookRegistrationService githubWebhookRegistrationService;
@@ -51,6 +53,13 @@ public class GithubWebhookController {
                 githubWebhookService.processPullRequestEvent(repositoryId, payload);
             } catch (Exception e) {
                 log.warn("PR Webhook 처리 실패 → repoId={}", repositoryId, e);
+            }
+        } else if (EVENT_PULL_REQUEST_REVIEW.equals(event)) {
+            try {
+                GithubPullRequestReviewWebhookPayload payload = objectMapper.readValue(rawBody, GithubPullRequestReviewWebhookPayload.class);
+                githubWebhookService.processPullRequestReviewEvent(repositoryId, payload);
+            } catch (Exception e) {
+                log.warn("PR 리뷰 Webhook 처리 실패 → repoId={}", repositoryId, e);
             }
         }
     }

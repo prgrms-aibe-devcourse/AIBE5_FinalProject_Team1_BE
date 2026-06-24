@@ -1,6 +1,7 @@
 package com.team1.codedock.domain.workspace.repository;
 
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,7 +27,8 @@ public interface WorkspaceEventRepository extends JpaRepository<WorkspaceEvent, 
             @Param("workspaceIds") List<Long> workspaceIds,
             @Param("userId") Long userId,
             @Param("broadcastTypes") List<WorkspaceEvent.EventType> broadcastTypes,
-            @Param("targetedTypes") List<WorkspaceEvent.EventType> targetedTypes
+            @Param("targetedTypes") List<WorkspaceEvent.EventType> targetedTypes,
+            Pageable pageable
     );
 
     @Query("SELECT e FROM WorkspaceEvent e JOIN FETCH e.workspace WHERE e.id = :id")

@@ -181,6 +181,23 @@ class MentionServiceTest {
     }
 
     @Test
+    @DisplayName("자기 자신을 멘션하면 이벤트를 기록하지 않는다")
+    void createMentionsForThread_자기자신_멘션_제외() {
+        Workspace workspace = workspace(10L);
+        Channel channel = channel(1L, workspace);
+        WorkspaceMember sender = workspaceMember(20L, workspace, user("sender", "Sender"));
+        Thread thread = thread(100L, channel, sender, "hello @sender");
+
+        when(workspaceMemberRepository.findActiveMentionTargets(10L, List.of("sender")))
+                .thenReturn(List.of(sender));
+
+        mentionService.createMentionsForThread(thread, sender, thread.getContent());
+
+        verify(mentionRepository, never()).saveAll(any());
+        verify(workspaceEventService, never()).recordEvent(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("멘션 토큰이 없으면 조회와 저장을 생략한다")
     void createMentionsForThreadWithoutMentionToken() {
         Workspace workspace = workspace(10L);
