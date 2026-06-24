@@ -5,6 +5,7 @@ import com.team1.codedock.domain.auth.handler.OAuth2SuccessHandler;
 import com.team1.codedock.domain.auth.service.CustomOAuth2UserService;
 import com.team1.codedock.global.security.CookieOAuth2AuthorizationRequestRepository;
 import com.team1.codedock.global.security.CustomUserDetailsService;
+import com.team1.codedock.global.security.GithubOAuth2AuthorizationRequestResolver;
 import com.team1.codedock.global.security.JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,9 @@ class SecurityConfigTest {
     private CookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository;
 
     @Mock
+    private GithubOAuth2AuthorizationRequestResolver githubAuthorizationRequestResolver;
+
+    @Mock
     private JwtProvider jwtProvider;
 
     @Mock
@@ -53,6 +57,7 @@ class SecurityConfigTest {
                 oAuth2SuccessHandler,
                 oAuth2FailureHandler,
                 cookieAuthorizationRequestRepository,
+                githubAuthorizationRequestResolver,
                 jwtProvider,
                 userDetailsService
         );
