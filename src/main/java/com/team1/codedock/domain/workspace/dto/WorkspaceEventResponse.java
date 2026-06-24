@@ -18,7 +18,8 @@ public record WorkspaceEventResponse(
         String repositoryName,
         Long threadId,
         Long prNumber,
-        Long issueNumber
+        Long issueNumber,
+        boolean isRead
 ) {
     public static WorkspaceEventResponse from(WorkspaceEvent event) {
         return new WorkspaceEventResponse(
@@ -35,7 +36,8 @@ public record WorkspaceEventResponse(
                 event.getRepositoryName(),
                 event.getThreadId(),
                 event.getPrNumber(),
-                event.getIssueNumber()
+                event.getIssueNumber(),
+                event.isRead()
         );
     }
 }

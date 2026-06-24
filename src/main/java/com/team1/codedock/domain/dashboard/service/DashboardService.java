@@ -112,7 +112,8 @@ public class DashboardService {
                 .filter(e -> {
                     if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
                             || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
-                        return !Objects.equals(e.getActorName(), githubUsername);
+                        if (githubUsername == null) return true;
+                        return !githubUsername.equals(e.getActorName());
                     }
                     return true;
                 })
