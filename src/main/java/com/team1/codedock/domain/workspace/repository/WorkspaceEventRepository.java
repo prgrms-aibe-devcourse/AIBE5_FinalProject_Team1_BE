@@ -13,6 +13,10 @@ public interface WorkspaceEventRepository extends JpaRepository<WorkspaceEvent, 
 
     List<WorkspaceEvent> findAllByWorkspace_IdInOrderByCreatedAtDesc(List<Long> workspaceIds);
 
+    boolean existsByTypeAndPrId(WorkspaceEvent.EventType type, Long prId);
+
+    boolean existsByTypeAndIssueId(WorkspaceEvent.EventType type, Long issueId);
+
     @Query("""
             SELECT e FROM WorkspaceEvent e
             JOIN FETCH e.workspace w

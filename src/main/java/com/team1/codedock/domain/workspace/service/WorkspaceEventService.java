@@ -42,6 +42,26 @@ public class WorkspaceEventService {
         workspace.updateLastActivityAt(LocalDateTime.now());
     }
 
+    public void recordPrCreatedIfAbsent(Long workspaceId, Long prId, String actorName, String title,
+                                         Long repositoryId, String repositoryName, Long prNumber) {
+        if (prId == null || workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, prId)) {
+            return;
+        }
+
+        recordEvent(workspaceId, WorkspaceEvent.EventType.PR_CREATED,
+                actorName, prId, null, null, title, repositoryId, repositoryName, null, prNumber, null, null);
+    }
+
+    public void recordIssueCreatedIfAbsent(Long workspaceId, Long issueId, String actorName, String title,
+                                            Long repositoryId, String repositoryName, Long issueNumber) {
+        if (issueId == null || workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, issueId)) {
+            return;
+        }
+
+        recordEvent(workspaceId, WorkspaceEvent.EventType.ISSUE_CREATED,
+                actorName, null, issueId, null, title, repositoryId, repositoryName, null, null, issueNumber, null);
+    }
+
     @Transactional(readOnly = true)
     public List<WorkspaceEventResponse> getEventsForUser(Long userId) {
         userRepository.findById(userId)

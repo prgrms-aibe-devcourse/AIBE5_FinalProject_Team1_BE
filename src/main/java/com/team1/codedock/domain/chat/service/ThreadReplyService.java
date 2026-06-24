@@ -7,8 +7,10 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
+import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
+import com.team1.codedock.domain.workspace.service.WorkspaceEventService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import jakarta.persistence.EntityManager;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +29,7 @@ public class ThreadReplyService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final EntityManager entityManager;
     private final MentionService mentionService;
+    private final WorkspaceEventService workspaceEventService;
 
     @Transactional(readOnly = true)
     public List<ThreadReplyResponse> getReplies(Long threadId, Long userId) {
@@ -47,6 +51,7 @@ public class ThreadReplyService {
         ThreadReply reply = ThreadReply.create(thread, member, ChatContentEmojiCodec.encode(request.content()));
         ThreadReply savedReply = threadReplyRepository.save(reply);
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
+        recordReplyEventForThreadOwner(thread, member, request.content());
         return ThreadReplyResponse.from(savedReply);
     }
 
@@ -104,6 +109,33 @@ public class ThreadReplyService {
         Long workspaceId = thread.getChannel().getWorkspace().getId();
         return workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+    }
+
+    private void recordReplyEventForThreadOwner(Thread thread, WorkspaceMember replier, String content) {
+        WorkspaceMember threadOwner = thread.getCreatedBy();
+        // 스레드 답글은 원글 작성자에게만 개인 대시보드 이벤트로 남김
+        if (threadOwner == null
+                || threadOwner.getUser() == null
+                || replier.getUser() == null
+                || Objects.equals(replier.getId(), threadOwner.getId())) {
+            return;
+        }
+
+        workspaceEventService.recordEvent(
+                thread.getChannel().getWorkspace().getId(),
+                WorkspaceEvent.EventType.REPLY,
+                replier.getUser().getDisplayName(),
+                null,
+                null,
+                thread.getChannel().getId(),
+                content,
+                null,
+                null,
+                thread.getId(),
+                null,
+                null,
+                threadOwner.getUser().getId()
+        );
     }
 
     private ThreadReply findEditableReply(Thread thread, Long replyId, WorkspaceMember member) {

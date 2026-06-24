@@ -87,6 +87,134 @@ class WorkspaceEventServiceTest {
     }
 
     @Test
+    @DisplayName("PR 생성 이벤트가 없으면 새로 저장한다")
+    void recordPrCreatedIfAbsent_이벤트없음_저장() {
+        Workspace workspace = workspace(10L);
+        when(workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, 5L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L);
+
+        ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
+        verify(workspaceEventRepository).save(captor.capture());
+        WorkspaceEvent saved = captor.getValue();
+        assertThat(saved.getType()).isEqualTo(WorkspaceEvent.EventType.PR_CREATED);
+        assertThat(saved.getPrId()).isEqualTo(5L);
+        assertThat(saved.getIssueId()).isNull();
+        assertThat(saved.getActorName()).isEqualTo("octocat");
+        assertThat(saved.getContent()).isEqualTo("PR title");
+        assertThat(saved.getRepositoryId()).isEqualTo(7L);
+        assertThat(saved.getRepositoryName()).isEqualTo("repo");
+        assertThat(saved.getPrNumber()).isEqualTo(11L);
+        assertThat(workspace.getLastActivityAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("PR 생성 이벤트가 이미 있으면 중복 저장하지 않는다")
+    void recordPrCreatedIfAbsent_이미있음_저장안함() {
+        when(workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, 5L))
+                .thenReturn(true);
+
+        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L);
+
+        verify(workspaceRepository, never()).findById(any());
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("PR id가 없으면 생성 이벤트를 저장하지 않는다")
+    void recordPrCreatedIfAbsent_PR아이디없음_저장안함() {
+        workspaceEventService.recordPrCreatedIfAbsent(10L, null, "octocat", "PR title", 7L, "repo", 11L);
+
+        verify(workspaceEventRepository, never()).existsByTypeAndPrId(any(), any());
+        verify(workspaceRepository, never()).findById(any());
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("PR 생성 이벤트 보정 중 워크스페이스가 없으면 저장하지 않고 예외가 발생한다")
+    void recordPrCreatedIfAbsent_워크스페이스없음_예외() {
+        when(workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, 5L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
+
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Issue 생성 이벤트가 없으면 새로 저장한다")
+    void recordIssueCreatedIfAbsent_이벤트없음_저장() {
+        Workspace workspace = workspace(10L);
+        when(workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, 6L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L);
+
+        ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
+        verify(workspaceEventRepository).save(captor.capture());
+        WorkspaceEvent saved = captor.getValue();
+        assertThat(saved.getType()).isEqualTo(WorkspaceEvent.EventType.ISSUE_CREATED);
+        assertThat(saved.getPrId()).isNull();
+        assertThat(saved.getIssueId()).isEqualTo(6L);
+        assertThat(saved.getActorName()).isEqualTo("octocat");
+        assertThat(saved.getContent()).isEqualTo("Issue title");
+        assertThat(saved.getRepositoryId()).isEqualTo(7L);
+        assertThat(saved.getRepositoryName()).isEqualTo("repo");
+        assertThat(saved.getIssueNumber()).isEqualTo(12L);
+        assertThat(workspace.getLastActivityAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Issue 생성 이벤트가 이미 있으면 중복 저장하지 않는다")
+    void recordIssueCreatedIfAbsent_이미있음_저장안함() {
+        when(workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, 6L))
+                .thenReturn(true);
+
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L);
+
+        verify(workspaceRepository, never()).findById(any());
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Issue id가 없으면 생성 이벤트를 저장하지 않는다")
+    void recordIssueCreatedIfAbsent_이슈아이디없음_저장안함() {
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, null, "octocat", "Issue title", 7L, "repo", 12L);
+
+        verify(workspaceEventRepository, never()).existsByTypeAndIssueId(any(), any());
+        verify(workspaceRepository, never()).findById(any());
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Issue 생성 이벤트 보정 중 워크스페이스가 없으면 저장하지 않고 예외가 발생한다")
+    void recordIssueCreatedIfAbsent_워크스페이스없음_예외() {
+        when(workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, 6L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
+
+        verify(workspaceEventRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("사용자가 속한 모든 워크스페이스의 이벤트를 최신순으로 반환한다")
     void getEventsForUser_성공() {
         User user = user(1L);

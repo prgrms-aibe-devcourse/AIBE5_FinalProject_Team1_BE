@@ -234,7 +234,10 @@ class GithubWebhookServiceTest {
         GithubRepository repo = githubRepository(workspace(10L), 20L);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
     }
 
     @Test
@@ -244,7 +247,29 @@ class GithubWebhookServiceTest {
         repo.updateWebhook("1", "", "url", true);
         when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
 
-        githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() ->
+                githubWebhookService.verifySignature(20L, null, "body".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.GITHUB_WEBHOOK_INVALID.getMessage());
+    }
+
+    @Test
+    @DisplayName("GitHub repo id lookup uses only active repositories with a webhook secret")
+    void findRepositoryIdsByGithubRepoId_activeSignedOnly() {
+        Workspace workspace = workspace(10L);
+        GithubRepository active = githubRepository(workspace, 20L);
+        active.updateWebhook("1", "secret", "url", true);
+        GithubRepository blankSecret = githubRepository(workspace, 21L);
+        blankSecret.updateWebhook("2", "", "url", true);
+        GithubRepository inactive = githubRepository(workspace, 22L);
+        inactive.updateWebhook("3", "secret", "url", false);
+        GithubRepository neverRegistered = githubRepository(workspace, 23L);
+
+        when(githubRepositoryRepository.findAllByGithubRepoId("100"))
+                .thenReturn(List.of(active, blankSecret, inactive, neverRegistered));
+
+        assertThat(githubWebhookService.findRepositoryIdsByGithubRepoId("100"))
+                .containsExactly(20L);
     }
 
     @Test
@@ -438,6 +463,504 @@ class GithubWebhookServiceTest {
         verify(userRepository).findById(3L);
         verify(threadRepository).findChannelByGithubRepositoryId(20L);
         verify(githubApiClient).fetchIssues("team", "repo", "ghtoken");
+    }
+
+    @Test
+    @DisplayName("이슈 sync에서 GitHub 토큰이 없으면 fetch와 대시보드 이벤트 기록을 수행하지 않는다")
+    void syncIssuesFromGithub_토큰없음_이벤트기록안함() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn(" ");
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(threadRepository, never()).findChannelByGithubRepositoryId(any());
+        verifyNoInteractions(githubApiClient, githubWebhookEventService);
+    }
+
+    @Test
+    @DisplayName("이슈 sync에서 레포지토리 채널이 없으면 fetch와 대시보드 이벤트 기록을 수행하지 않는다")
+    void syncIssuesFromGithub_채널없음_이벤트기록안함() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.empty());
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubApiClient, never()).fetchIssues(any(), any(), any());
+        verifyNoInteractions(githubWebhookEventService);
+    }
+
+    @Test
+    @DisplayName("이슈 sync는 한 항목이 실패해도 다음 이슈를 계속 처리하고 이벤트를 기록한다")
+    void syncIssuesFromGithub_일부항목실패_다음이슈_이벤트기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubIssueItem failingIssue = githubIssueItem(8001L, 6, "Broken issue");
+        GithubApiClient.GithubIssueItem successIssue = githubIssueItem(9001L, 7, "Recovered next issue");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of(failingIssue, successIssue));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "8001"))
+                .thenThrow(new IllegalStateException("첫 번째 이슈 저장 준비 실패"));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.empty());
+        when(githubApiClient.fetchIssueClassification("team", "repo", 7, "ghtoken"))
+                .thenReturn(new GithubApiClient.IssueClassification(null, null));
+        when(githubIssueRepository.save(any(GithubIssue.class))).thenAnswer(invocation -> {
+            GithubIssue issue = invocation.getArgument(0);
+            ReflectionTestUtils.setField(issue, "id", 40L);
+            return issue;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 50L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 60L);
+            return attachment;
+        });
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onIssueCreated(
+                10L, 40L, "octocat", "Recovered next issue", 20L, "repo", 7L);
+    }
+
+    @Test
+    @DisplayName("이슈 sync로 신규 이슈를 저장하면 대시보드 이벤트를 기록한다")
+    void syncIssuesFromGithub_신규이슈_대시보드이벤트_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubIssueItem issueItem = githubIssueItem(9001L, 7, "Sync issue");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of(issueItem));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.empty());
+        when(githubApiClient.fetchIssueClassification("team", "repo", 7, "ghtoken"))
+                .thenReturn(new GithubApiClient.IssueClassification(null, null));
+        when(githubIssueRepository.save(any(GithubIssue.class))).thenAnswer(invocation -> {
+            GithubIssue issue = invocation.getArgument(0);
+            ReflectionTestUtils.setField(issue, "id", 40L);
+            return issue;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 50L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 60L);
+            return attachment;
+        });
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onIssueCreated(
+                10L, 40L, "octocat", "Sync issue", 20L, "repo", 7L);
+    }
+
+    @Test
+    @DisplayName("이슈 sync에서 GitHub 작성자가 없으면 actorName null로 대시보드 이벤트를 기록한다")
+    void syncIssuesFromGithub_작성자없음_actorName_null_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubIssueItem issueItem = githubIssueItemWithoutUser(9001L, 7, "Issue without user");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of(issueItem));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.empty());
+        when(githubApiClient.fetchIssueClassification("team", "repo", 7, "ghtoken"))
+                .thenReturn(new GithubApiClient.IssueClassification(null, null));
+        when(githubIssueRepository.save(any(GithubIssue.class))).thenAnswer(invocation -> {
+            GithubIssue issue = invocation.getArgument(0);
+            ReflectionTestUtils.setField(issue, "id", 40L);
+            return issue;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 50L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 60L);
+            return attachment;
+        });
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onIssueCreated(
+                10L, 40L, null, "Issue without user", 20L, "repo", 7L);
+    }
+
+    @Test
+    @DisplayName("이슈 sync로 기존 이슈를 보정해도 대시보드 이벤트를 기록한다")
+    void syncIssuesFromGithub_기존이슈_대시보드이벤트_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        GithubIssue existingIssue = githubIssue(repository, channel, 40L, "open");
+        Thread thread = botThread(channel, existingIssue, 50L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubIssueItem issueItem = githubIssueItem(9001L, 7, "Synced existing issue");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of(issueItem));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.of(existingIssue));
+        when(githubApiClient.fetchIssueClassification("team", "repo", 7, "ghtoken"))
+                .thenReturn(new GithubApiClient.IssueClassification(null, null));
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L)).thenReturn(Optional.of(thread));
+        when(threadAttachmentRepository.findAllByThread_IdOrderByIdAsc(50L)).thenReturn(List.of());
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(githubIssueRepository).save(existingIssue);
+        verify(threadRepository, never()).save(any(Thread.class));
+        verify(githubWebhookEventService).onIssueCreated(
+                10L, 40L, "octocat", "Synced existing issue", 20L, "repo", 7L);
+    }
+
+    @Test
+    @DisplayName("이슈 sync에서 기존 이슈의 봇 스레드가 없으면 스레드를 복구하고 대시보드 이벤트를 기록한다")
+    void syncIssuesFromGithub_기존이슈_스레드없음_복구하고_이벤트기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        GithubIssue existingIssue = githubIssue(repository, channel, 40L, "open");
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubIssueItem issueItem = githubIssueItem(9001L, 7, "Recovered issue thread");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchIssues("team", "repo", "ghtoken")).thenReturn(List.of(issueItem));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.of(existingIssue));
+        when(githubApiClient.fetchIssueClassification("team", "repo", 7, "ghtoken"))
+                .thenReturn(new GithubApiClient.IssueClassification(null, null));
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L)).thenReturn(Optional.empty());
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 50L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 60L);
+            return attachment;
+        });
+
+        githubWebhookService.syncIssuesFromGithub(20L, 3L);
+
+        verify(threadRepository).save(any(Thread.class));
+        verify(threadAttachmentRepository).save(any(ThreadAttachment.class));
+        verify(githubWebhookEventService).onIssueCreated(
+                10L, 40L, "octocat", "Recovered issue thread", 20L, "repo", 7L);
+    }
+
+    @Test
+    @DisplayName("PR sync로 신규 PR을 저장하면 대시보드 이벤트를 기록한다")
+    void syncPullRequestsFromGithub_신규PR_대시보드이벤트_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubPrItem prItem = githubPrItem(1001L, 1, "Sync PR");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of(prItem));
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 1, "ghtoken")).thenReturn(prItem);
+        when(githubApiClient.fetchPullRequestCommits("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.empty());
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(invocation -> {
+            GithubPullRequest pr = invocation.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 300L);
+            return attachment;
+        });
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onPrCreated(
+                10L, 100L, "octocat", "Sync PR", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR sync에서 GitHub 작성자가 없으면 actorName null로 대시보드 이벤트를 기록한다")
+    void syncPullRequestsFromGithub_작성자없음_actorName_null_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubPrItem prItem = githubPrItemWithoutUser(1001L, 1, "PR without user");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of(prItem));
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 1, "ghtoken")).thenReturn(prItem);
+        when(githubApiClient.fetchPullRequestCommits("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.empty());
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(invocation -> {
+            GithubPullRequest pr = invocation.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 300L);
+            return attachment;
+        });
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onPrCreated(
+                10L, 100L, null, "PR without user", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR sync로 기존 PR을 보정해도 대시보드 이벤트를 기록한다")
+    void syncPullRequestsFromGithub_기존PR_대시보드이벤트_기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        GithubPullRequest existingPr = githubPullRequest(repository, channel, 100L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubPrItem prItem = githubPrItem(1001L, 1, "Synced existing PR");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of(prItem));
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 1, "ghtoken")).thenReturn(prItem);
+        when(githubApiClient.fetchPullRequestCommits("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.of(existingPr));
+        when(pullRequestReviewRepository.countByGithubPullRequest_IdAndReviewState(100L, "approved"))
+                .thenReturn(0L);
+        when(githubApiClient.fetchPullRequestReviews("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                Thread.THREADABLE_TYPE_GITHUB_PR, 100L)).thenReturn(Optional.of(mock(Thread.class)));
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(githubPullRequestRepository).save(existingPr);
+        verify(threadRepository, never()).save(any(Thread.class));
+        verify(aiSummaryService).generateSummaryForWebhook(100L);
+        verify(githubWebhookEventService).onPrCreated(
+                10L, 100L, "octocat", "Synced existing PR", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR sync에서 GitHub 토큰이 없으면 fetch와 대시보드 이벤트 기록을 수행하지 않는다")
+    void syncPullRequestsFromGithub_토큰없음_이벤트기록안함() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn(" ");
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(threadRepository, never()).findChannelByGithubRepositoryId(any());
+        verifyNoInteractions(githubApiClient, githubWebhookEventService);
+    }
+
+    @Test
+    @DisplayName("PR sync는 한 항목이 실패해도 다음 PR을 계속 처리하고 이벤트를 기록한다")
+    void syncPullRequestsFromGithub_일부항목실패_다음PR_이벤트기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubPrItem failingPr = githubPrItem(1000L, 1, "Broken PR");
+        GithubApiClient.GithubPrItem successPr = githubPrItem(1001L, 2, "Recovered next PR");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of(failingPr, successPr));
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 1, "ghtoken")).thenReturn(failingPr);
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 2, "ghtoken")).thenReturn(successPr);
+        when(githubApiClient.fetchPullRequestCommits("team", "repo", 2, "ghtoken")).thenReturn(List.of());
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1000"))
+                .thenThrow(new IllegalStateException("첫 번째 PR 저장 준비 실패"));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.empty());
+        when(githubPullRequestRepository.save(any(GithubPullRequest.class))).thenAnswer(invocation -> {
+            GithubPullRequest pr = invocation.getArgument(0);
+            ReflectionTestUtils.setField(pr, "id", 100L);
+            return pr;
+        });
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 300L);
+            return attachment;
+        });
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(githubWebhookEventService).onPrCreated(
+                10L, 100L, "octocat", "Recovered next PR", 20L, "repo", 2L);
+    }
+
+    @Test
+    @DisplayName("PR sync에서 기존 PR의 봇 스레드가 없으면 스레드를 복구하고 대시보드 이벤트를 기록한다")
+    void syncPullRequestsFromGithub_기존PR_스레드없음_복구하고_이벤트기록() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        GithubPullRequest existingPr = githubPullRequest(repository, channel, 100L);
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User user = mock(User.class);
+        GithubApiClient.GithubPrItem prItem = githubPrItem(1001L, 1, "Recovered PR thread");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        when(user.getGithubAccessToken()).thenReturn("ghtoken");
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+        when(githubApiClient.fetchPullRequests("team", "repo", "ghtoken")).thenReturn(List.of(prItem));
+        when(githubApiClient.fetchSinglePullRequest("team", "repo", 1, "ghtoken")).thenReturn(prItem);
+        when(githubApiClient.fetchPullRequestCommits("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.of(existingPr));
+        when(pullRequestReviewRepository.countByGithubPullRequest_IdAndReviewState(100L, "approved"))
+                .thenReturn(0L);
+        when(githubApiClient.fetchPullRequestReviews("team", "repo", 1, "ghtoken")).thenReturn(List.of());
+        when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
+        when(threadRepository.findFirstThreadByThreadableTypeAndThreadableId(
+                Thread.THREADABLE_TYPE_GITHUB_PR, 100L)).thenReturn(Optional.empty());
+        when(threadRepository.save(any(Thread.class))).thenAnswer(invocation -> {
+            Thread thread = invocation.getArgument(0);
+            ReflectionTestUtils.setField(thread, "id", 200L);
+            ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 25, 10, 0));
+            return thread;
+        });
+        when(threadAttachmentRepository.save(any(ThreadAttachment.class))).thenAnswer(invocation -> {
+            ThreadAttachment attachment = invocation.getArgument(0);
+            ReflectionTestUtils.setField(attachment, "id", 300L);
+            return attachment;
+        });
+
+        githubWebhookService.syncPullRequestsFromGithub(20L, 3L);
+
+        verify(threadRepository).save(any(Thread.class));
+        verify(threadAttachmentRepository).save(any(ThreadAttachment.class));
+        verify(aiSummaryService).generateSummaryForWebhook(100L);
+        verify(githubWebhookEventService).onPrCreated(
+                10L, 100L, "octocat", "Recovered PR thread", 20L, "repo", 1L);
     }
 
     @Test
@@ -847,6 +1370,86 @@ class GithubWebhookServiceTest {
         return new GithubIssueWebhookPayload(action, issue, repository);
     }
 
+    private static GithubApiClient.GithubIssueItem githubIssueItem(long issueId, int issueNumber, String title) {
+        return new GithubApiClient.GithubIssueItem(
+                issueId,
+                issueNumber,
+                title,
+                "이슈 본문",
+                "open",
+                "https://github.com/team/repo/issues/" + issueNumber,
+                new GithubApiClient.GithubPrUser("octocat"),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-25T00:00:00Z"),
+                Instant.parse("2026-06-25T00:00:00Z"),
+                null,
+                null
+        );
+    }
+
+    private static GithubApiClient.GithubIssueItem githubIssueItemWithoutUser(long issueId, int issueNumber, String title) {
+        return new GithubApiClient.GithubIssueItem(
+                issueId,
+                issueNumber,
+                title,
+                "이슈 본문",
+                "open",
+                "https://github.com/team/repo/issues/" + issueNumber,
+                null,
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-25T00:00:00Z"),
+                Instant.parse("2026-06-25T00:00:00Z"),
+                null,
+                null
+        );
+    }
+
+    private static GithubApiClient.GithubPrItem githubPrItem(long prId, int prNumber, String title) {
+        return new GithubApiClient.GithubPrItem(
+                prId,
+                prNumber,
+                title,
+                "PR 본문",
+                "open",
+                "https://github.com/team/repo/pull/" + prNumber,
+                new GithubApiClient.GithubPrUser("octocat"),
+                List.of(),
+                new GithubApiClient.GithubPrBranch("feature-branch"),
+                new GithubApiClient.GithubPrBranch("main"),
+                3,
+                1,
+                2,
+                false,
+                null,
+                Instant.parse("2026-06-25T00:00:00Z"),
+                Instant.parse("2026-06-25T00:00:00Z")
+        );
+    }
+
+    private static GithubApiClient.GithubPrItem githubPrItemWithoutUser(long prId, int prNumber, String title) {
+        return new GithubApiClient.GithubPrItem(
+                prId,
+                prNumber,
+                title,
+                "PR 본문",
+                "open",
+                "https://github.com/team/repo/pull/" + prNumber,
+                null,
+                List.of(),
+                new GithubApiClient.GithubPrBranch("feature-branch"),
+                new GithubApiClient.GithubPrBranch("main"),
+                3,
+                1,
+                2,
+                false,
+                null,
+                Instant.parse("2026-06-25T00:00:00Z"),
+                Instant.parse("2026-06-25T00:00:00Z")
+        );
+    }
+
     private static Workspace workspace(Long id) {
         User owner = User.create("owner@example.com", "hashed", "owner");
         Workspace workspace = Workspace.create(owner, "팀", "team-" + id, null);
@@ -894,6 +1497,32 @@ class GithubWebhookServiceTest {
         );
         ReflectionTestUtils.setField(issue, "id", id);
         return issue;
+    }
+
+    private static GithubPullRequest githubPullRequest(GithubRepository repository, Channel channel, Long id) {
+        GithubPullRequest pullRequest = GithubPullRequest.create(
+                repository,
+                channel,
+                "1001",
+                1,
+                "기존 PR",
+                "본문",
+                "open",
+                "https://github.com/team/repo/pull/1",
+                "octocat",
+                "feature-branch",
+                "main",
+                null,
+                3,
+                1,
+                2,
+                null,
+                LocalDateTime.of(2026, 6, 22, 0, 0),
+                LocalDateTime.of(2026, 6, 22, 1, 0),
+                "[]"
+        );
+        ReflectionTestUtils.setField(pullRequest, "id", id);
+        return pullRequest;
     }
 
     private static Thread botThread(Channel channel, GithubIssue issue, Long id) {

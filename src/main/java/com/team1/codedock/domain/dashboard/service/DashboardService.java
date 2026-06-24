@@ -106,8 +106,7 @@ public class DashboardService {
     }
 
     public List<DashboardEventResponse> getEvents(Long userId) {
-        User user = findUser(userId);
-        String githubUsername = user.getGithubUsername();
+        findUser(userId);
         List<WorkspaceMember> memberships = workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(userId);
         List<Long> workspaceIds = memberships.stream()
                 .map(m -> m.getWorkspace().getId())
@@ -124,16 +123,7 @@ public class DashboardService {
 
         List<WorkspaceEvent> events = workspaceEventRepository
                 .findDashboardEvents(workspaceIds, userId, broadcastTypes, targetedTypes,
-                        PageRequest.of(0, DASHBOARD_EVENT_LIMIT)).stream()
-                .filter(e -> {
-                    if (e.getType() == WorkspaceEvent.EventType.PR_CREATED
-                            || e.getType() == WorkspaceEvent.EventType.ISSUE_CREATED) {
-                        if (githubUsername == null) return true;
-                        return !githubUsername.equals(e.getActorName());
-                    }
-                    return true;
-                })
-                .toList();
+                        PageRequest.of(0, DASHBOARD_EVENT_LIMIT));
 
         Set<Long> readEventIds = events.isEmpty() ? Set.of()
                 : workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(

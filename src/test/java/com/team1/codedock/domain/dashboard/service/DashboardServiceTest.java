@@ -176,8 +176,8 @@ class DashboardServiceTest {
     // ── getEvents ─────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("본인이 생성한 PR_CREATED/ISSUE_CREATED 이벤트는 필터링하고 나머지를 반환한다")
-    void getEvents_성공_브로드캐스트_이벤트_본인_제외() {
+    @DisplayName("본인이 생성한 PR_CREATED/ISSUE_CREATED 이벤트도 활동 로그로 반환한다")
+    void getEvents_성공_브로드캐스트_이벤트_본인_포함() {
         User user = user(1L, "octocat");
         Workspace ws = workspace(10L, "워크스페이스");
         WorkspaceMember m = membership(user, ws);
@@ -197,15 +197,48 @@ class DashboardServiceTest {
                 eq(List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)),
                 any(Pageable.class)
         )).thenReturn(List.of(myPrEvent, otherPrEvent, replyEvent));
-        when(workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(1L, List.of(2L, 3L)))
+        when(workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(1L, List.of(1L, 2L, 3L)))
                 .thenReturn(Set.of());
 
         List<DashboardEventResponse> result = dashboardService.getEvents(1L);
 
-        assertThat(result).hasSize(2);
+        assertThat(result).hasSize(3);
         assertThat(result.get(0).type()).isEqualTo("PR_CREATED");
-        assertThat(result.get(0).actorName()).isEqualTo("alice");
-        assertThat(result.get(1).type()).isEqualTo("REPLY");
+        assertThat(result.get(0).actorName()).isEqualTo("octocat");
+        assertThat(result.get(1).type()).isEqualTo("PR_CREATED");
+        assertThat(result.get(1).actorName()).isEqualTo("alice");
+        assertThat(result.get(2).type()).isEqualTo("REPLY");
+    }
+
+    @Test
+    @DisplayName("이벤트 조회 시 read status가 있는 이벤트만 읽음으로 표시한다")
+    void getEvents_읽음상태_반영() {
+        User user = user(1L, "octocat");
+        Workspace ws = workspace(10L, "워크스페이스");
+        WorkspaceMember membership = membership(user, ws);
+        WorkspaceEvent unreadEvent = event(ws, WorkspaceEvent.EventType.ISSUE_CREATED, "alice", null);
+        ReflectionTestUtils.setField(unreadEvent, "id", 10L);
+        WorkspaceEvent readEvent = event(ws, WorkspaceEvent.EventType.REPLY, "bob", 1L);
+        ReflectionTestUtils.setField(readEvent, "id", 11L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(membership));
+        when(workspaceEventRepository.findDashboardEvents(
+                eq(List.of(10L)), eq(1L),
+                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED)),
+                eq(List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)),
+                any(Pageable.class)
+        )).thenReturn(List.of(unreadEvent, readEvent));
+        when(workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(1L, List.of(10L, 11L)))
+                .thenReturn(Set.of(11L));
+
+        List<DashboardEventResponse> result = dashboardService.getEvents(1L);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).eventId()).isEqualTo(10L);
+        assertThat(result.get(0).isRead()).isFalse();
+        assertThat(result.get(1).eventId()).isEqualTo(11L);
+        assertThat(result.get(1).isRead()).isTrue();
     }
 
     @Test
