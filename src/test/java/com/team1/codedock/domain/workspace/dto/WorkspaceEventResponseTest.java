@@ -81,7 +81,7 @@ class WorkspaceEventResponseTest {
     }
 
     @Test
-    @DisplayName("DashboardEventResponse.from - PR 이벤트는 PR 이동 타입을 반환한다")
+    @DisplayName("DashboardEventResponse.from - PR 생성 이벤트는 PR 이동 타입을 반환한다")
     void dashboardEventResponse_prNavigationType() {
         WorkspaceEvent event = event(WorkspaceEvent.EventType.PR_CREATED, null);
         ReflectionTestUtils.setField(event, "prId", 10L);
@@ -92,7 +92,18 @@ class WorkspaceEventResponseTest {
     }
 
     @Test
-    @DisplayName("DashboardEventResponse.from - Issue 이벤트는 Issue 이동 타입을 반환한다")
+    @DisplayName("DashboardEventResponse.from - PR 리뷰 이벤트도 PR 이동 타입을 반환한다")
+    void dashboardEventResponse_prReviewNavigationType() {
+        WorkspaceEvent event = event(WorkspaceEvent.EventType.PR_REVIEW, 2L);
+        ReflectionTestUtils.setField(event, "prId", 10L);
+
+        DashboardEventResponse response = DashboardEventResponse.from(event, false);
+
+        assertThat(response.navigationType()).isEqualTo("PR");
+    }
+
+    @Test
+    @DisplayName("DashboardEventResponse.from - Issue 생성 이벤트는 Issue 이동 타입을 반환한다")
     void dashboardEventResponse_issueNavigationType() {
         WorkspaceEvent event = event(WorkspaceEvent.EventType.ISSUE_CREATED, null);
         ReflectionTestUtils.setField(event, "issueId", 20L);
@@ -114,6 +125,28 @@ class WorkspaceEventResponseTest {
     }
 
     @Test
+    @DisplayName("DashboardEventResponse.from - 멘션 이벤트는 멘션 이동 타입을 반환한다")
+    void dashboardEventResponse_mentionNavigationType() {
+        WorkspaceEvent event = event(WorkspaceEvent.EventType.MENTION, 2L);
+        ReflectionTestUtils.setField(event, "threadId", 30L);
+
+        DashboardEventResponse response = DashboardEventResponse.from(event, false);
+
+        assertThat(response.navigationType()).isEqualTo("MENTION");
+    }
+
+    @Test
+    @DisplayName("DashboardEventResponse.from - 구체 타깃 없이 채널만 있으면 채널 이동 타입으로 대체한다")
+    void dashboardEventResponse_channelFallbackNavigationType() {
+        WorkspaceEvent event = event(WorkspaceEvent.EventType.PR_CREATED, null);
+        ReflectionTestUtils.setField(event, "channelId", 40L);
+
+        DashboardEventResponse response = DashboardEventResponse.from(event, false);
+
+        assertThat(response.navigationType()).isEqualTo("CHANNEL");
+    }
+
+    @Test
     @DisplayName("DashboardEventResponse.from - 타깃 정보가 없으면 워크스페이스 이동 타입으로 대체한다")
     void dashboardEventResponse_workspaceFallbackNavigationType() {
         WorkspaceEvent event = event(WorkspaceEvent.EventType.PR_CREATED, null);
@@ -121,6 +154,28 @@ class WorkspaceEventResponseTest {
         DashboardEventResponse response = DashboardEventResponse.from(event, false);
 
         assertThat(response.navigationType()).isEqualTo("WORKSPACE");
+    }
+
+    @Test
+    @DisplayName("WorkspaceEventResponse.from - 멘션 이벤트는 멘션 이동 타입을 반환한다")
+    void workspaceEventResponse_mentionNavigationType() {
+        WorkspaceEvent event = event(WorkspaceEvent.EventType.MENTION, 2L);
+        ReflectionTestUtils.setField(event, "threadId", 30L);
+
+        WorkspaceEventResponse response = WorkspaceEventResponse.from(event, false);
+
+        assertThat(response.navigationType()).isEqualTo("MENTION");
+    }
+
+    @Test
+    @DisplayName("WorkspaceEventResponse.from - 구체 타깃 없이 채널만 있으면 채널 이동 타입으로 대체한다")
+    void workspaceEventResponse_channelFallbackNavigationType() {
+        WorkspaceEvent event = event(WorkspaceEvent.EventType.ISSUE_CREATED, null);
+        ReflectionTestUtils.setField(event, "channelId", 40L);
+
+        WorkspaceEventResponse response = WorkspaceEventResponse.from(event, false);
+
+        assertThat(response.navigationType()).isEqualTo("CHANNEL");
     }
 
     private static WorkspaceEvent event(WorkspaceEvent.EventType type, Long targetUserId) {
