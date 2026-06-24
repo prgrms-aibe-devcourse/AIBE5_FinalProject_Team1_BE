@@ -18,13 +18,13 @@ public class GithubWebhookEventService {
     private final UserRepository userRepository;
 
     public void onPrCreated(Long workspaceId, Long prId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
-        workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.PR_CREATED,
-                actorName, prId, null, channelId, title, repositoryId, repositoryName, null, prNumber, null, null);
+        workspaceEventService.recordPrCreatedIfAbsent(
+                workspaceId, prId, actorName, title, repositoryId, repositoryName, channelId, prNumber);
     }
 
     public void onIssueCreated(Long workspaceId, Long issueId, String actorName, String title, Long repositoryId, String repositoryName, Long channelId, Long issueNumber) {
-        workspaceEventService.recordEvent(workspaceId, WorkspaceEvent.EventType.ISSUE_CREATED,
-                actorName, null, issueId, channelId, title, repositoryId, repositoryName, null, null, issueNumber, null);
+        workspaceEventService.recordIssueCreatedIfAbsent(
+                workspaceId, issueId, actorName, title, repositoryId, repositoryName, channelId, issueNumber);
     }
 
     public void onPrReview(Long workspaceId, Long prId, String actorName, String comment, Long repositoryId, String repositoryName, Long channelId, Long prNumber) {

@@ -96,7 +96,7 @@ class WorkspaceEventServiceTest {
         when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L);
+        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", null, 11L);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
@@ -118,7 +118,7 @@ class WorkspaceEventServiceTest {
         when(workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, 5L))
                 .thenReturn(true);
 
-        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L);
+        workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", null, 11L);
 
         verify(workspaceRepository, never()).findById(any());
         verify(workspaceEventRepository, never()).save(any());
@@ -127,7 +127,7 @@ class WorkspaceEventServiceTest {
     @Test
     @DisplayName("PR id가 없으면 생성 이벤트를 저장하지 않는다")
     void recordPrCreatedIfAbsent_PR아이디없음_저장안함() {
-        workspaceEventService.recordPrCreatedIfAbsent(10L, null, "octocat", "PR title", 7L, "repo", 11L);
+        workspaceEventService.recordPrCreatedIfAbsent(10L, null, "octocat", "PR title", 7L, "repo", null, 11L);
 
         verify(workspaceEventRepository, never()).existsByTypeAndPrId(any(), any());
         verify(workspaceRepository, never()).findById(any());
@@ -142,7 +142,7 @@ class WorkspaceEventServiceTest {
         when(workspaceRepository.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", 11L))
+                workspaceEventService.recordPrCreatedIfAbsent(10L, 5L, "octocat", "PR title", 7L, "repo", null, 11L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
@@ -160,7 +160,7 @@ class WorkspaceEventServiceTest {
         when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L);
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", null, 12L);
 
         ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
         verify(workspaceEventRepository).save(captor.capture());
@@ -182,7 +182,7 @@ class WorkspaceEventServiceTest {
         when(workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, 6L))
                 .thenReturn(true);
 
-        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L);
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", null, 12L);
 
         verify(workspaceRepository, never()).findById(any());
         verify(workspaceEventRepository, never()).save(any());
@@ -191,7 +191,7 @@ class WorkspaceEventServiceTest {
     @Test
     @DisplayName("Issue id가 없으면 생성 이벤트를 저장하지 않는다")
     void recordIssueCreatedIfAbsent_이슈아이디없음_저장안함() {
-        workspaceEventService.recordIssueCreatedIfAbsent(10L, null, "octocat", "Issue title", 7L, "repo", 12L);
+        workspaceEventService.recordIssueCreatedIfAbsent(10L, null, "octocat", "Issue title", 7L, "repo", null, 12L);
 
         verify(workspaceEventRepository, never()).existsByTypeAndIssueId(any(), any());
         verify(workspaceRepository, never()).findById(any());
@@ -206,7 +206,7 @@ class WorkspaceEventServiceTest {
         when(workspaceRepository.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", 12L))
+                workspaceEventService.recordIssueCreatedIfAbsent(10L, 6L, "octocat", "Issue title", 7L, "repo", null, 12L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.WORKSPACE_NOT_FOUND);
