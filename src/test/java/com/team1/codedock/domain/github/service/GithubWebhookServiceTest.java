@@ -10,6 +10,7 @@ import com.team1.codedock.domain.chat.entity.ThreadAttachment;
 import com.team1.codedock.domain.chat.repository.ThreadAttachmentRepository;
 import com.team1.codedock.domain.chat.repository.ThreadRepository;
 import com.team1.codedock.domain.github.dto.GithubIssueWebhookPayload;
+import com.team1.codedock.domain.github.dto.GithubPullRequestReviewWebhookPayload;
 import com.team1.codedock.domain.github.dto.GithubPullRequestWebhookPayload;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
@@ -18,10 +19,12 @@ import com.team1.codedock.domain.issue.entity.IssueLabel;
 import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
 import com.team1.codedock.domain.issue.repository.IssueLabelRepository;
 import com.team1.codedock.domain.ai.service.AiSummaryService;
+import com.team1.codedock.domain.issue.repository.IssueAssigneeRepository;
 import com.team1.codedock.domain.pr.entity.GithubPullRequest;
 import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestFileRepository;
 import com.team1.codedock.domain.pr.repository.PullRequestReviewRepository;
+import com.team1.codedock.domain.pr.repository.PullRequestReviewRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -84,7 +87,11 @@ class GithubWebhookServiceTest {
     @Mock
     private PullRequestReviewRepository pullRequestReviewRepository;
     @Mock
+    private PullRequestReviewRequestRepository pullRequestReviewRequestRepository;
+    @Mock
     private PullRequestFileRepository pullRequestFileRepository;
+    @Mock
+    private IssueAssigneeRepository issueAssigneeRepository;
     @Mock
     private AiSummaryService aiSummaryService;
     @Mock
@@ -107,7 +114,9 @@ class GithubWebhookServiceTest {
                 userRepository,
                 workspaceMemberRepository,
                 pullRequestReviewRepository,
+                pullRequestReviewRequestRepository,
                 pullRequestFileRepository,
+                issueAssigneeRepository,
                 aiSummaryService,
                 githubWebhookEventService
         );
@@ -506,6 +515,123 @@ class GithubWebhookServiceTest {
         githubWebhookService.approvePullRequest(20L, 1, 3L);
 
         verify(githubWebhookEventService).onPrReview(10L, 100L, "테스터", "승인", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR 승인 시 githubUsername이 있으면 githubUsername을 actorName으로 사용한다")
+    void approvePullRequest_githubUsername있으면_actorName으로_사용() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+
+        WorkspaceMember member = mock(WorkspaceMember.class);
+        User memberUser = mock(User.class);
+        when(memberUser.getGithubUsername()).thenReturn("githubuser");
+        when(member.getId()).thenReturn(30L);
+        when(member.getUser()).thenReturn(memberUser);
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndPrNumber(20L, 1)).thenReturn(Optional.of(pr));
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 3L))
+                .thenReturn(Optional.of(member));
+        when(pullRequestReviewRepository.findByGithubPullRequest_IdAndWorkspaceMember_Id(100L, 30L))
+                .thenReturn(Optional.empty());
+        when(pullRequestReviewRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(pullRequestReviewRepository.countByGithubPullRequest_IdAndReviewState(100L, "approved"))
+                .thenReturn(1L);
+        when(githubPullRequestRepository.save(pr)).thenReturn(pr);
+        Channel approveChannel = mock(Channel.class);
+        when(approveChannel.getId()).thenReturn(30L);
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(approveChannel));
+        when(threadAttachmentRepository.findAllPrByChannelId(30L)).thenReturn(List.of());
+        when(threadRepository.findByThreadableTypeAndThreadableId(any(), eq(100L))).thenReturn(Optional.empty());
+
+        githubWebhookService.approvePullRequest(20L, 1, 3L);
+
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "githubuser", "승인", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR 리뷰 submitted 이벤트는 onPrReview 이벤트를 발행한다")
+    void processPullRequestReviewEvent_submitted_onPrReview_이벤트_발행() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+
+        GithubPullRequestReviewWebhookPayload payload = new GithubPullRequestReviewWebhookPayload(
+                "submitted",
+                new GithubPullRequestReviewWebhookPayload.ReviewDto(1L,
+                        new GithubPullRequestReviewWebhookPayload.UserDto("reviewer"), "LGTM", "approved"),
+                new GithubPullRequestReviewWebhookPayload.PullRequestDto(1001L, 1, "Feature",
+                        new GithubPullRequestReviewWebhookPayload.UserDto("author"))
+        );
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndPrNumber(20L, 1)).thenReturn(Optional.of(pr));
+
+        githubWebhookService.processPullRequestReviewEvent(20L, payload);
+
+        verify(githubWebhookEventService).onPrReview(10L, 100L, "reviewer", "LGTM", 20L, "repo", 1L);
+    }
+
+    @Test
+    @DisplayName("PR 리뷰 이벤트 action이 submitted가 아니면 onPrReview를 호출하지 않는다")
+    void processPullRequestReviewEvent_submitted아니면_스킵() {
+        GithubPullRequestReviewWebhookPayload payload = new GithubPullRequestReviewWebhookPayload(
+                "dismissed",
+                new GithubPullRequestReviewWebhookPayload.ReviewDto(1L,
+                        new GithubPullRequestReviewWebhookPayload.UserDto("reviewer"), "body", "dismissed"),
+                new GithubPullRequestReviewWebhookPayload.PullRequestDto(1001L, 1, "Feature",
+                        new GithubPullRequestReviewWebhookPayload.UserDto("author"))
+        );
+
+        githubWebhookService.processPullRequestReviewEvent(20L, payload);
+
+        verifyNoInteractions(githubWebhookEventService);
+        verifyNoInteractions(githubRepositoryRepository);
+    }
+
+    @Test
+    @DisplayName("issue assigned 웹훅은 기존 assignee를 삭제하고 새 assignee를 동기화한다")
+    void processIssueEvent_assigned_issueAssignee_재동기화() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repository = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repository, 30L);
+        GithubIssue issue = githubIssue(repository, channel, 40L, "open");
+        GithubIssueWebhookPayload payload = issuePayload("assigned", 9001L, 7, "로그인 버그", "open");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repository));
+        when(githubIssueRepository.findByRepository_IdAndGithubIssueId(20L, "9001"))
+                .thenReturn(Optional.of(issue));
+        when(threadRepository.findByThreadableTypeAndThreadableId(Thread.THREADABLE_TYPE_GITHUB_ISSUE, 40L))
+                .thenReturn(Optional.empty());
+
+        githubWebhookService.processIssueEvent(20L, payload);
+
+        verify(issueAssigneeRepository).deleteAllByGithubIssue_Id(40L);
+    }
+
+    @Test
+    @DisplayName("PR review_requested 웹훅은 기존 리뷰 요청을 삭제하고 재동기화한다")
+    void processPullRequestEvent_reviewRequested_리뷰요청_재동기화() {
+        Workspace workspace = workspace(10L);
+        GithubRepository repo = githubRepository(workspace, 20L);
+        Channel channel = repositoryChannel(workspace, repo, 30L);
+        GithubPullRequest pr = mock(GithubPullRequest.class);
+        when(pr.getId()).thenReturn(100L);
+        GithubPullRequestWebhookPayload payload = prPayload("review_requested", 1001L, 1, "Feature: Add auth");
+
+        when(githubRepositoryRepository.findById(20L)).thenReturn(Optional.of(repo));
+        when(githubPullRequestRepository.findByRepository_IdAndGithubPrId(20L, "1001"))
+                .thenReturn(Optional.of(pr));
+        when(threadRepository.findChannelByGithubRepositoryId(20L)).thenReturn(Optional.of(channel));
+
+        githubWebhookService.processPullRequestEvent(20L, payload);
+
+        verify(pullRequestReviewRequestRepository).deleteAllByGithubPullRequest_Id(100L);
     }
 
     private static ChatEventResponse<?> assertChatEvent(Object value, ChatEventType expectedType) {

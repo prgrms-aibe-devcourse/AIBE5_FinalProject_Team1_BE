@@ -6,6 +6,7 @@ import com.team1.codedock.domain.workspace.dto.WorkspaceEventResponse;
 import com.team1.codedock.domain.workspace.entity.Workspace;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceEventReadStatusRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceEventRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.domain.workspace.repository.WorkspaceRepository;
@@ -18,11 +19,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,6 +41,7 @@ class WorkspaceEventServiceTest {
     @Mock private WorkspaceRepository workspaceRepository;
     @Mock private WorkspaceMemberRepository workspaceMemberRepository;
     @Mock private UserRepository userRepository;
+    @Mock private WorkspaceEventReadStatusRepository workspaceEventReadStatusRepository;
 
     @InjectMocks
     private WorkspaceEventService workspaceEventService;
@@ -96,9 +100,11 @@ class WorkspaceEventServiceTest {
         ReflectionTestUtils.setField(event, "createdAt", LocalDateTime.of(2026, 6, 18, 12, 0));
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of(member));
-        when(workspaceEventRepository.findAllByWorkspace_IdInOrderByCreatedAtDesc(List.of(10L)))
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(member));
+        when(workspaceEventRepository.findDashboardEvents(any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(List.of(event));
+        when(workspaceEventReadStatusRepository.findReadEventIdsByUserIdAndEventIds(1L, List.of(100L)))
+                .thenReturn(Set.of());
 
         List<WorkspaceEventResponse> result = workspaceEventService.getEventsForUser(1L);
 
@@ -109,6 +115,7 @@ class WorkspaceEventServiceTest {
         assertThat(result.get(0).actorName()).isEqualTo("actor");
         assertThat(result.get(0).channelId()).isEqualTo(1L);
         assertThat(result.get(0).content()).isEqualTo("hello");
+        assertThat(result.get(0).isRead()).isFalse();
     }
 
     @Test
@@ -116,12 +123,12 @@ class WorkspaceEventServiceTest {
     void getEventsForUser_멤버십없음_빈리스트() {
         User user = user(1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(workspaceMemberRepository.findAllByUser(user)).thenReturn(List.of());
+        when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of());
 
         List<WorkspaceEventResponse> result = workspaceEventService.getEventsForUser(1L);
 
         assertThat(result).isEmpty();
-        verify(workspaceEventRepository, never()).findAllByWorkspace_IdInOrderByCreatedAtDesc(any());
+        verify(workspaceEventRepository, never()).findDashboardEvents(any(), any(), any(), any(), any(Pageable.class));
     }
 
     @Test
