@@ -2,14 +2,17 @@ package com.team1.codedock.global.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.StreamSupport;
 
@@ -18,6 +21,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MonitoringConfigTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private static Map<String, Object> dockerCompose;
+    private static Map<String, Object> services;
+
+    @BeforeAll
+    static void loadComposeYaml() throws IOException {
+        dockerCompose = loadYaml("docker-compose.yml");
+        services = map(dockerCompose.get("services"));
+    }
 
     @Test
     @DisplayName("application.properties는 Prometheus actuator endpoint와 registry 플래그를 노출함")
@@ -84,6 +95,37 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 모니터링 서비스 6개를 정확히 등록함")
+    void dockerComposeYamlRegistersExpectedMonitoringServices() {
+        assertThat(services.keySet())
+                .contains(
+                        "prometheus",
+                        "grafana",
+                        "loki",
+                        "promtail",
+                        "redis-exporter",
+                        "kafka-exporter"
+                );
+
+        assertThat(service("prometheus").get("image")).isEqualTo("prom/prometheus:v2.55.1");
+        assertThat(service("grafana").get("image")).isEqualTo("grafana/grafana:11.2.2");
+        assertThat(service("loki").get("image")).isEqualTo("grafana/loki:3.2.1");
+        assertThat(service("promtail").get("image")).isEqualTo("grafana/promtail:3.2.1");
+        assertThat(service("redis-exporter").get("image")).isEqualTo("oliver006/redis_exporter:v1.62.0");
+        assertThat(service("kafka-exporter").get("image")).isEqualTo("danielqsj/kafka-exporter:v1.8.0");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 모니터링 볼륨을 정확히 등록함")
+    void dockerComposeYamlRegistersExpectedMonitoringVolumes() {
+        Map<String, Object> volumes = map(dockerCompose.get("volumes"));
+
+        assertThat(volumes.keySet())
+                .contains("prometheus-data", "grafana-data", "loki-data")
+                .contains("redis-data", "kafka-data");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml에 참조된 모니터링 설정 파일은 repo에 실제로 존재함")
     void dockerComposeReferencedMonitoringFilesExistAndAreNonEmpty() throws IOException {
         List<Path> configFiles = List.of(
@@ -121,11 +163,37 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 모니터링 서비스 이미지에 latest 태그를 사용하지 않음")
+    void dockerComposeYamlDoesNotUseLatestImageTagForMonitoringServices() {
+        List<String> monitoringServices = List.of(
+                "prometheus",
+                "grafana",
+                "loki",
+                "promtail",
+                "redis-exporter",
+                "kafka-exporter"
+        );
+
+        assertThat(monitoringServices)
+                .allSatisfy(serviceName -> assertThat(String.valueOf(service(serviceName).get("image")))
+                        .contains(":")
+                        .doesNotEndWith(":latest"));
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 모든 장기 실행 서비스에 재시작 정책을 둠")
     void dockerComposeKeepsRestartPolicyForLongRunningServices() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
 
         assertThat(countOccurrences(compose, "restart: unless-stopped")).isGreaterThanOrEqualTo(9);
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 모든 모니터링 서비스에 재시작 정책을 둠")
+    void dockerComposeYamlKeepsRestartPolicyForMonitoringServices() {
+        assertThat(List.of("prometheus", "grafana", "loki", "promtail", "redis-exporter", "kafka-exporter"))
+                .allSatisfy(serviceName -> assertThat(service(serviceName).get("restart"))
+                        .isEqualTo("unless-stopped"));
     }
 
     @Test
@@ -139,6 +207,23 @@ class MonitoringConfigTest {
                 .contains("\"${GRAFANA_HOST_PORT:-3000}:3000\"")
                 .doesNotContain("\"${PROMETHEUS_HOST_PORT:-9090}:9090\"")
                 .doesNotContain("\"${LOKI_HOST_PORT:-3100}:3100\"");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 Prometheus/Loki만 loopback에 묶고 exporter는 publish하지 않음")
+    void dockerComposeYamlKeepsInternalMonitoringPortsPrivate() {
+        assertThat(stringList(service("prometheus").get("ports")))
+                .containsExactly("127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090");
+        assertThat(stringList(service("loki").get("ports")))
+                .containsExactly("127.0.0.1:${LOKI_HOST_PORT:-3100}:3100");
+        assertThat(stringList(service("grafana").get("ports")))
+                .containsExactly("${GRAFANA_HOST_PORT:-3000}:3000");
+
+        assertThat(service("redis-exporter")).doesNotContainKey("ports");
+        assertThat(service("kafka-exporter")).doesNotContainKey("ports");
+        assertThat(service("promtail")).doesNotContainKey("ports");
+        assertThat(stringList(service("redis-exporter").get("expose"))).containsExactly("9121");
+        assertThat(stringList(service("kafka-exporter").get("expose"))).containsExactly("9308");
     }
 
     @Test
@@ -223,6 +308,19 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 Grafana signup 차단과 관리자 계정 환경변수를 유지함")
+    void dockerComposeYamlConfiguresGrafanaSecurityEnvironment() {
+        Map<String, Object> environment = map(service("grafana").get("environment"));
+
+        assertThat(environment)
+                .containsEntry("GF_SECURITY_ADMIN_USER", "${GRAFANA_ADMIN_USER:-admin}")
+                .containsEntry("GF_SECURITY_ADMIN_PASSWORD", "${GRAFANA_ADMIN_PASSWORD:-admin}")
+                .containsEntry("GF_USERS_ALLOW_SIGN_UP", "false")
+                .containsEntry("GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH",
+                        "/var/lib/grafana/dashboards/codedock-overview.json");
+    }
+
+    @Test
     @DisplayName("docker-compose.yml은 Prometheus와 Loki 저장소를 named volume에 분리함")
     void dockerComposeKeepsMonitoringDataInNamedVolumes() throws IOException {
         String compose = Files.readString(Path.of("docker-compose.yml"));
@@ -234,6 +332,27 @@ class MonitoringConfigTest {
                 .doesNotContain("./prometheus-data:/prometheus")
                 .doesNotContain("./loki-data:/loki")
                 .doesNotContain("./grafana-data:/var/lib/grafana");
+    }
+
+    @Test
+    @DisplayName("docker-compose.yml은 YAML 구조상 설정 파일은 read-only, 데이터는 named volume으로 분리함")
+    void dockerComposeYamlSeparatesReadOnlyConfigFromWritableDataVolumes() {
+        assertThat(stringList(service("prometheus").get("volumes")))
+                .contains(
+                        "./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+                        "prometheus-data:/prometheus"
+                );
+        assertThat(stringList(service("loki").get("volumes")))
+                .contains(
+                        "./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro",
+                        "loki-data:/loki"
+                );
+        assertThat(stringList(service("grafana").get("volumes")))
+                .contains(
+                        "grafana-data:/var/lib/grafana",
+                        "./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro",
+                        "./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro"
+                );
     }
 
     @Test
@@ -283,6 +402,22 @@ class MonitoringConfigTest {
     }
 
     @Test
+    @DisplayName("Prometheus 설정은 YAML 구조상 scrape job과 target을 정확히 매핑함")
+    void prometheusYamlMapsScrapeJobsToExpectedTargets() throws IOException {
+        Map<String, Object> prometheus = loadYaml("monitoring/prometheus/prometheus.yml");
+        List<Map<String, Object>> scrapeConfigs = mapList(prometheus.get("scrape_configs"));
+
+        assertThat(scrapeConfigs)
+                .extracting(config -> config.get("job_name"))
+                .containsExactly("prometheus", "codedock-backend", "redis", "kafka");
+        assertThat(firstTarget(scrapeConfigs.get(0))).isEqualTo("localhost:9090");
+        assertThat(scrapeConfigs.get(1).get("metrics_path")).isEqualTo("/actuator/prometheus");
+        assertThat(firstTarget(scrapeConfigs.get(1))).isEqualTo("app:8080");
+        assertThat(firstTarget(scrapeConfigs.get(2))).isEqualTo("redis-exporter:9121");
+        assertThat(firstTarget(scrapeConfigs.get(3))).isEqualTo("kafka-exporter:9308");
+    }
+
+    @Test
     @DisplayName("Grafana datasource provisioning은 Prometheus와 Loki를 자동 등록함")
     void grafanaDatasourceProvisioningRegistersPrometheusAndLoki() throws IOException {
         String datasources = Files.readString(Path.of(
@@ -329,6 +464,23 @@ class MonitoringConfigTest {
                 .contains("apiVersion: 1")
                 .contains("name: CodeDock")
                 .contains("folder: CodeDock");
+    }
+
+    @Test
+    @DisplayName("Grafana datasource provisioning은 YAML 구조상 datasource 2개만 등록함")
+    void grafanaDatasourceYamlRegistersOnlyPrometheusAndLoki() throws IOException {
+        Map<String, Object> datasourceConfig =
+                loadYaml("monitoring/grafana/provisioning/datasources/datasources.yml");
+        List<Map<String, Object>> datasources = mapList(datasourceConfig.get("datasources"));
+
+        assertThat(datasourceConfig.get("apiVersion")).isEqualTo(1);
+        assertThat(datasources).hasSize(2);
+        assertThat(datasources)
+                .extracting(dataSource -> dataSource.get("uid"))
+                .containsExactly("Prometheus", "Loki");
+        assertThat(datasources)
+                .extracting(dataSource -> dataSource.get("url"))
+                .containsExactly("http://prometheus:9090", "http://loki:3100");
     }
 
     @Test
@@ -560,5 +712,38 @@ class MonitoringConfigTest {
             index += pattern.length();
         }
         return count;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> loadYaml(String path) throws IOException {
+        try (InputStream inputStream = Files.newInputStream(Path.of(path))) {
+            return new Yaml().loadAs(inputStream, Map.class);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> map(Object value) {
+        return (Map<String, Object>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> mapList(Object value) {
+        return (List<Map<String, Object>>) value;
+    }
+
+    private static Map<String, Object> service(String serviceName) {
+        return map(services.get(serviceName));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> stringList(Object value) {
+        return ((List<Object>) value).stream()
+                .map(String::valueOf)
+                .toList();
+    }
+
+    private String firstTarget(Map<String, Object> scrapeConfig) {
+        List<Map<String, Object>> staticConfigs = mapList(scrapeConfig.get("static_configs"));
+        return stringList(staticConfigs.get(0).get("targets")).get(0);
     }
 }
