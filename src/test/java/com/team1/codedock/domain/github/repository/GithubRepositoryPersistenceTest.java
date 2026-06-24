@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Optional;
 
@@ -39,6 +40,9 @@ class GithubRepositoryPersistenceTest {
 
     @Autowired
     private ChannelRepository channelRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     @DisplayName("workspaceId와 githubRepoId로 GitHub repository를 조회한다")
@@ -93,6 +97,31 @@ class GithubRepositoryPersistenceTest {
         assertThatThrownBy(() -> githubRepositoryRepository.saveAndFlush(
                 repository(workspace, "123456", "other-team", "other-codedock")
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("@DynamicUpdate: Hibernate 세션 밖에서 변경된 컬럼을 UPDATE 시 덮어쓰지 않는다")
+    void githubRepository_dynamicUpdate_외부_변경_컬럼을_덮어쓰지_않는다() {
+        Workspace workspace = seedWorkspace("dyn-update@test.com", "dyn-update");
+        GithubRepository repo = githubRepositoryRepository.saveAndFlush(
+                repository(workspace, "DYN001", "team", "old-name"));
+        Long id = repo.getId();
+        em.clear();
+
+        // Hibernate가 webhook_id=null로 로드한 상태에서, JDBC로 외부 변경 (다른 세션 시뮬레이션)
+        GithubRepository session = githubRepositoryRepository.findById(id).orElseThrow();
+        jdbcTemplate.update("UPDATE github_repositories SET webhook_id = 'external-hook' WHERE id = ?", id);
+
+        // Hibernate 세션에서는 name만 수정 (webhook_id는 dirty 아님)
+        session.updateMetadata("team", "new-name", "team/new-name",
+                "https://github.com/team/new-name", null, false, "main");
+        githubRepositoryRepository.saveAndFlush(session);
+        em.clear();
+
+        // @DynamicUpdate 없으면 UPDATE SET ..., webhook_id=null 로 외부 변경이 덮어써진다
+        GithubRepository result = githubRepositoryRepository.findById(id).orElseThrow();
+        assertThat(result.getName()).isEqualTo("new-name");
+        assertThat(result.getWebhookId()).isEqualTo("external-hook");
     }
 
     private Workspace seedWorkspace(String email, String slug) {
