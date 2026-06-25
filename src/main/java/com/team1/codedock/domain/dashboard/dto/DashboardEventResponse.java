@@ -20,7 +20,9 @@ public record DashboardEventResponse(
         Long issueNumber,
         String content,
         boolean isRead,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime occurredAt,
+        String navigationType
 ) {
     public static DashboardEventResponse from(WorkspaceEvent event, boolean isRead) {
         return new DashboardEventResponse(
@@ -39,7 +41,9 @@ public record DashboardEventResponse(
                 event.getIssueNumber(),
                 event.getContent(),
                 isRead,
-                event.getCreatedAt()
+                event.getCreatedAt(),
+                event.getDisplayOccurredAt(),
+                event.getNavigationType()
         );
     }
 }

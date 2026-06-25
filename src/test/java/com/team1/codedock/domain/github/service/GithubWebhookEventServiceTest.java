@@ -13,9 +13,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,8 +24,10 @@ class GithubWebhookEventServiceTest {
 
     @Mock
     private WorkspaceEventService workspaceEventService;
+
     @Mock
     private GithubPullRequestRepository githubPullRequestRepository;
+
     @Mock
     private UserRepository userRepository;
 
@@ -33,63 +35,62 @@ class GithubWebhookEventServiceTest {
     private GithubWebhookEventService githubWebhookEventService;
 
     @Test
-    @DisplayName("PR 생성 이벤트를 기록한다")
+    @DisplayName("PR 생성 이벤트를 채널과 원본 발생 시각까지 함께 기록한다")
     void onPrCreated() {
-        githubWebhookEventService.onPrCreated(10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 23, 9, 30);
+
+        githubWebhookEventService.onPrCreated(
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 30L, 234L, occurredAt);
 
         verify(workspaceEventService).recordPrCreatedIfAbsent(
-                10L, 5L, "actor", "PR title", 7L, "my-repo", 99L, 234L);
+                10L, 5L, "actor", "PR title", 7L, "my-repo", 30L, 234L, occurredAt);
     }
 
     @Test
-    @DisplayName("이슈 생성 이벤트를 기록한다")
+    @DisplayName("Issue 생성 이벤트를 채널과 원본 발생 시각까지 함께 기록한다")
     void onIssueCreated() {
-        githubWebhookEventService.onIssueCreated(10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 22, 8, 0);
+
+        githubWebhookEventService.onIssueCreated(
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 30L, 42L, occurredAt);
 
         verify(workspaceEventService).recordIssueCreatedIfAbsent(
-                10L, 3L, "actor", "Issue title", 7L, "my-repo", 99L, 42L);
+                10L, 3L, "actor", "Issue title", 7L, "my-repo", 30L, 42L, occurredAt);
     }
 
     @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR 작성자 조회 성공 시 targetUserId를 설정한다")
-    void onPrReview_작성자_조회_성공() {
-        GithubPullRequest pr = mock(GithubPullRequest.class);
-        when(pr.getAuthor()).thenReturn("octocat");
-        User user = mock(User.class);
-        when(user.getId()).thenReturn(99L);
-
+    @DisplayName("PR 리뷰 이벤트는 PR 작성자를 targetUserId로 설정한다")
+    void onPrReviewUsesPullRequestAuthorAsTargetUser() {
+        GithubPullRequest pr = org.mockito.Mockito.mock(GithubPullRequest.class);
+        User author = org.mockito.Mockito.mock(User.class);
+        when(pr.getAuthor()).thenReturn("review-target");
+        when(author.getId()).thenReturn(88L);
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.of(pr));
-        when(userRepository.findByGithubUsername("octocat")).thenReturn(Optional.of(user));
+        when(userRepository.findByGithubUsername("review-target")).thenReturn(Optional.of(author));
 
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
+        githubWebhookEventService.onPrReview(
+                10L, 5L, "reviewer", "approved", 7L, "my-repo", 30L, 234L);
 
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, 99L);
+                10L, WorkspaceEvent.EventType.PR_REVIEW,
+                "reviewer", 5L, null, 30L, "approved",
+                7L, "my-repo", null, 234L, null, 88L);
     }
 
     @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR 작성자 조회 실패 시 targetUserId는 null이다")
-    void onPrReview_작성자_조회_실패_PR없음() {
-        when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.empty());
-
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
-
-        verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
-    }
-
-    @Test
-    @DisplayName("PR 리뷰 이벤트를 기록한다 - PR은 찾았으나 GitHub 유저 조회 실패 시 targetUserId는 null이다")
-    void onPrReview_작성자_조회_실패_유저없음() {
-        GithubPullRequest pr = mock(GithubPullRequest.class);
-        when(pr.getAuthor()).thenReturn("octocat");
-
+    @DisplayName("PR 리뷰 대상 사용자가 없으면 targetUserId 없이 기록한다")
+    void onPrReviewWithoutTargetUser() {
+        GithubPullRequest pr = org.mockito.Mockito.mock(GithubPullRequest.class);
+        when(pr.getAuthor()).thenReturn("unknown-author");
         when(githubPullRequestRepository.findById(5L)).thenReturn(Optional.of(pr));
-        when(userRepository.findByGithubUsername("octocat")).thenReturn(Optional.empty());
+        when(userRepository.findByGithubUsername("unknown-author")).thenReturn(Optional.empty());
 
-        githubWebhookEventService.onPrReview(10L, 5L, "actor", "LGTM", 7L, "my-repo", null, 234L);
+        githubWebhookEventService.onPrReview(
+                10L, 5L, "reviewer", "comment", 7L, "my-repo", 30L, 234L);
 
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.PR_REVIEW, "actor", 5L, null, null, "LGTM", 7L, "my-repo", null, 234L, null, null);
+                10L, WorkspaceEvent.EventType.PR_REVIEW,
+                "reviewer", 5L, null, 30L, "comment",
+                7L, "my-repo", null, 234L, null, null);
     }
 }

@@ -113,9 +113,13 @@ class MentionServiceTest {
                     assertThat(notification.message()).isEqualTo("새 멘션이 도착했습니다.");
                 });
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, null, 100L, null, null, 101L);
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L,
+                "hello @alice @bob @alice @none", null, null, 100L, null, null, 101L,
+                LocalDateTime.of(2026, 6, 10, 10, 0));
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "hello @alice @bob @alice @none", null, null, 100L, null, null, 102L);
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L,
+                "hello @alice @bob @alice @none", null, null, 100L, null, null, 102L,
+                LocalDateTime.of(2026, 6, 10, 10, 0));
     }
 
     @Test
@@ -252,7 +256,9 @@ class MentionServiceTest {
         assertThat(event.notification().mentionedMemberId()).isEqualTo(21L);
         assertThat(event.notification().message()).isEqualTo("새 멘션 답글이 도착했습니다.");
         verify(workspaceEventService).recordEvent(
-                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L, "reply to @alice", null, null, 100L, null, null, 101L);
+                10L, WorkspaceEvent.EventType.MENTION, "Sender", null, null, 1L,
+                "reply to @alice", null, null, 100L, null, null, 101L,
+                LocalDateTime.of(2026, 6, 10, 10, 5));
     }
 
     @Test
@@ -498,12 +504,14 @@ class MentionServiceTest {
     private static ThreadReply reply(Long id, Thread thread, WorkspaceMember member, String content) {
         ThreadReply reply = ThreadReply.create(thread, member, content);
         ReflectionTestUtils.setField(reply, "id", id);
+        ReflectionTestUtils.setField(reply, "createdAt", LocalDateTime.of(2026, 6, 10, 10, 5));
         return reply;
     }
 
     private static Thread thread(Long id, Channel channel, WorkspaceMember sender, String content) {
         Thread thread = Thread.createChannelMessage(channel, sender, content);
         ReflectionTestUtils.setField(thread, "id", id);
+        ReflectionTestUtils.setField(thread, "createdAt", LocalDateTime.of(2026, 6, 10, 10, 0));
         return thread;
     }
 

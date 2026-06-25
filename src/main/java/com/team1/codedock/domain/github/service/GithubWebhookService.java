@@ -51,6 +51,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,7 @@ public class GithubWebhookService {
     // 목록 화면 진입 시 FE가 sync를 반복 호출해도, 최근에 동기화한 레포는 GitHub fetch를 건너뛴다.
     // (동시/반복 sync로 같은 이슈/PR을 중복 저장하다 UQ 제약 위반이 폭주하던 문제 방지 + GitHub API 부하 감소)
     private static final long SYNC_COOLDOWN_MS = 15_000;
+    private static final ZoneId DASHBOARD_EVENT_ZONE = ZoneId.of("Asia/Seoul");
     private final ConcurrentHashMap<Long, Long> issueSyncAtByRepo = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, Long> prSyncAtByRepo = new ConcurrentHashMap<>();
 
@@ -196,7 +198,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number(),
+                    toDashboardEventTime(dto.createdAt()));
         } else {
             issue = existing.get();
             issue.syncFromWebhook(
@@ -271,7 +274,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), savedPr.getId(),
                     dto.user() != null ? dto.user().login() : null,
-                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number());
+                    dto.title(), repo.getId(), repo.getName(), channel.getId(), (long) dto.number(),
+                    toDashboardEventTime(dto.createdAt()));
 
             savePullRequestFiles(repo, savedPr, dto.number());
             aiSummaryService.generateSummaryForWebhook(savedPr.getId());
@@ -657,7 +661,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onIssueCreated(
                     repo.getWorkspace().getId(), issue.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                    toDashboardEventTime(item.createdAt()));
             return;
         }
 
@@ -676,7 +681,8 @@ public class GithubWebhookService {
         githubWebhookEventService.onIssueCreated(
                 repo.getWorkspace().getId(), savedIssue.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                toDashboardEventTime(item.createdAt()));
     }
 
     private void createIssueThreadAndAttachment(Channel channel, GithubIssue issue,
@@ -878,7 +884,12 @@ public class GithubWebhookService {
     }
 
     private LocalDateTime toLocalDateTime(java.time.Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.of("Asia/Seoul"));
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    }
+
+    private LocalDateTime toDashboardEventTime(java.time.Instant instant) {
+        // 대시보드 주요 이벤트는 채팅/멘션과 같은 애플리케이션 기준 시간대로 저장함.
+        return instant == null ? null : LocalDateTime.ofInstant(instant, DASHBOARD_EVENT_ZONE);
     }
 
     private String computeHmacSha256(String secret, byte[] payload) {
@@ -1425,7 +1436,8 @@ public class GithubWebhookService {
             githubWebhookEventService.onPrCreated(
                     repo.getWorkspace().getId(), existingPr.getId(),
                     item.user() != null ? item.user().login() : null,
-                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                    item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                    toDashboardEventTime(item.createdAt()));
             return;
         }
 
@@ -1453,7 +1465,8 @@ public class GithubWebhookService {
         githubWebhookEventService.onPrCreated(
                 repo.getWorkspace().getId(), savedPr.getId(),
                 item.user() != null ? item.user().login() : null,
-                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number());
+                item.title(), repo.getId(), repo.getName(), channel.getId(), (long) item.number(),
+                toDashboardEventTime(item.createdAt()));
         // sync로 처음 만난 PR도 AI 요약 생성(내부에서 파일 보강).
         aiSummaryService.generateSummaryForWebhook(savedPr.getId());
     }

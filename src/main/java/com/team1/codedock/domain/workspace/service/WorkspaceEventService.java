@@ -34,34 +34,59 @@ public class WorkspaceEventService {
                             Long prId, Long issueId, Long channelId, String content,
                             Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
                             Long targetUserId) {
+        recordEvent(workspaceId, type, actorName, prId, issueId, channelId, content,
+                repositoryId, repositoryName, threadId, prNumber, issueNumber, targetUserId, null);
+    }
+
+    public void recordEvent(Long workspaceId, WorkspaceEvent.EventType type, String actorName,
+                            Long prId, Long issueId, Long channelId, String content,
+                            Long repositoryId, String repositoryName, Long threadId, Long prNumber, Long issueNumber,
+                            Long targetUserId, LocalDateTime occurredAt) {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
         workspaceEventRepository.save(
-                WorkspaceEvent.create(workspace, type, actorName, prId, issueId, channelId, content, repositoryId, repositoryName, threadId, prNumber, issueNumber, targetUserId)
+                WorkspaceEvent.create(workspace, type, actorName, prId, issueId, channelId, content,
+                        repositoryId, repositoryName, threadId, prNumber, issueNumber, targetUserId, occurredAt)
         );
         workspace.updateLastActivityAt(LocalDateTime.now());
     }
 
-    // 동시 요청에서는 최종 방어를 DB 제약으로 해야 하므로, 여기서는 일반적인 sync/webhook 재호출 중복만 완화함.
     public void recordPrCreatedIfAbsent(Long workspaceId, Long prId, String actorName, String title,
                                          Long repositoryId, String repositoryName, Long channelId, Long prNumber) {
+        recordPrCreatedIfAbsent(workspaceId, prId, actorName, title,
+                repositoryId, repositoryName, channelId, prNumber, null);
+    }
+
+    public void recordPrCreatedIfAbsent(Long workspaceId, Long prId, String actorName, String title,
+                                         Long repositoryId, String repositoryName, Long channelId, Long prNumber,
+                                         LocalDateTime occurredAt) {
         if (prId == null || workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, prId)) {
             return;
         }
 
+        // sync/webhook 동시 호출 중복은 best-effort로 줄이고, 최종 방어는 DB 정책에서 처리해야 함.
         recordEvent(workspaceId, WorkspaceEvent.EventType.PR_CREATED,
-                actorName, prId, null, channelId, title, repositoryId, repositoryName, null, prNumber, null, null);
+                actorName, prId, null, channelId, title,
+                repositoryId, repositoryName, null, prNumber, null, null, occurredAt);
     }
 
-    // 동시 요청에서는 최종 방어를 DB 제약으로 해야 하므로, 여기서는 일반적인 sync/webhook 재호출 중복만 완화함.
     public void recordIssueCreatedIfAbsent(Long workspaceId, Long issueId, String actorName, String title,
                                             Long repositoryId, String repositoryName, Long channelId, Long issueNumber) {
+        recordIssueCreatedIfAbsent(workspaceId, issueId, actorName, title,
+                repositoryId, repositoryName, channelId, issueNumber, null);
+    }
+
+    public void recordIssueCreatedIfAbsent(Long workspaceId, Long issueId, String actorName, String title,
+                                            Long repositoryId, String repositoryName, Long channelId, Long issueNumber,
+                                            LocalDateTime occurredAt) {
         if (issueId == null || workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, issueId)) {
             return;
         }
 
+        // sync/webhook 동시 호출 중복은 best-effort로 줄이고, 최종 방어는 DB 정책에서 처리해야 함.
         recordEvent(workspaceId, WorkspaceEvent.EventType.ISSUE_CREATED,
-                actorName, null, issueId, channelId, title, repositoryId, repositoryName, null, null, issueNumber, null);
+                actorName, null, issueId, channelId, title,
+                repositoryId, repositoryName, null, null, issueNumber, null, occurredAt);
     }
 
     @Transactional(readOnly = true)

@@ -25,7 +25,7 @@ public interface WorkspaceEventRepository extends JpaRepository<WorkspaceEvent, 
             ) OR (
                 e.type IN :targetedTypes AND e.targetUserId = :userId AND e.workspace.id IN :workspaceIds
             )
-            ORDER BY e.createdAt DESC
+            ORDER BY COALESCE(e.occurredAt, e.createdAt) DESC, e.id DESC
             """)
     List<WorkspaceEvent> findDashboardEvents(
             @Param("workspaceIds") List<Long> workspaceIds,

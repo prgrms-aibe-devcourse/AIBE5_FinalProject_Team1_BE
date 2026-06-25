@@ -57,11 +57,13 @@ class WorkspaceEventControllerTest {
     }
 
     @Test
-    @DisplayName("내 이벤트 목록을 반환한다")
-    void getMyEvents_성공() throws Exception {
+    @DisplayName("내 이벤트 목록에 실제 발생 시각과 이동 타입을 포함해 반환한다")
+    void getMyEvents_success() throws Exception {
         WorkspaceEventResponse event = new WorkspaceEventResponse(
                 100L, 10L, "MENTION", "actor", null, null, 1L, "hello",
-                LocalDateTime.of(2026, 6, 18, 12, 0), null, null, null, null, null, false);
+                LocalDateTime.of(2026, 6, 18, 12, 0),
+                LocalDateTime.of(2026, 6, 18, 11, 58),
+                "MENTION", null, null, 1L, null, null, false);
         when(workspaceEventService.getEventsForUser(USER_ID)).thenReturn(List.of(event));
 
         mockMvc.perform(get("/api/v1/events"))
@@ -72,12 +74,18 @@ class WorkspaceEventControllerTest {
                 .andExpect(jsonPath("$.data[0].type").value("MENTION"))
                 .andExpect(jsonPath("$.data[0].actorName").value("actor"))
                 .andExpect(jsonPath("$.data[0].channelId").value(1))
+                .andExpect(jsonPath("$.data[0].occurredAt[0]").value(2026))
+                .andExpect(jsonPath("$.data[0].occurredAt[1]").value(6))
+                .andExpect(jsonPath("$.data[0].occurredAt[2]").value(18))
+                .andExpect(jsonPath("$.data[0].occurredAt[3]").value(11))
+                .andExpect(jsonPath("$.data[0].occurredAt[4]").value(58))
+                .andExpect(jsonPath("$.data[0].navigationType").value("MENTION"))
                 .andExpect(jsonPath("$.data[0].content").value("hello"));
     }
 
     @Test
     @DisplayName("사용자가 없으면 404를 반환한다")
-    void getMyEvents_유저없음() throws Exception {
+    void getMyEvents_userNotFound() throws Exception {
         when(workspaceEventService.getEventsForUser(USER_ID))
                 .thenThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 

@@ -270,6 +270,71 @@ class WorkspaceEventServiceTest {
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("recordEvent - 실제 발생 시각을 이벤트에 저장한다")
+    void recordEvent_savesOccurredAt() {
+        Workspace workspace = workspace(10L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 24, 9, 30);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceEventService.recordEvent(
+                10L, WorkspaceEvent.EventType.REPLY, "actor", null, null, 1L, "reply",
+                null, null, 100L, null, null, 2L, occurredAt);
+
+        ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
+        verify(workspaceEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getOccurredAt()).isEqualTo(occurredAt);
+        assertThat(captor.getValue().getDisplayOccurredAt()).isEqualTo(occurredAt);
+    }
+
+    @Test
+    @DisplayName("recordPrCreatedIfAbsent - 실제 발생 시각을 PR 생성 이벤트에 저장한다")
+    void recordPrCreatedIfAbsent_savesOccurredAt() {
+        Workspace workspace = workspace(10L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 23, 10, 0);
+        when(workspaceEventRepository.existsByTypeAndPrId(WorkspaceEvent.EventType.PR_CREATED, 5L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceEventService.recordPrCreatedIfAbsent(
+                10L, 5L, "octocat", "PR title", 7L, "repo", 30L, 11L, occurredAt);
+
+        ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
+        verify(workspaceEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(WorkspaceEvent.EventType.PR_CREATED);
+        assertThat(captor.getValue().getChannelId()).isEqualTo(30L);
+        assertThat(captor.getValue().getRepositoryId()).isEqualTo(7L);
+        assertThat(captor.getValue().getPrNumber()).isEqualTo(11L);
+        assertThat(captor.getValue().getOccurredAt()).isEqualTo(occurredAt);
+    }
+
+    @Test
+    @DisplayName("recordIssueCreatedIfAbsent - 실제 발생 시각을 Issue 생성 이벤트에 저장한다")
+    void recordIssueCreatedIfAbsent_savesOccurredAt() {
+        Workspace workspace = workspace(10L);
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 6, 22, 10, 0);
+        when(workspaceEventRepository.existsByTypeAndIssueId(WorkspaceEvent.EventType.ISSUE_CREATED, 6L))
+                .thenReturn(false);
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(workspaceEventRepository.save(any(WorkspaceEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        workspaceEventService.recordIssueCreatedIfAbsent(
+                10L, 6L, "octocat", "Issue title", 7L, "repo", 30L, 12L, occurredAt);
+
+        ArgumentCaptor<WorkspaceEvent> captor = ArgumentCaptor.forClass(WorkspaceEvent.class);
+        verify(workspaceEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(WorkspaceEvent.EventType.ISSUE_CREATED);
+        assertThat(captor.getValue().getChannelId()).isEqualTo(30L);
+        assertThat(captor.getValue().getRepositoryId()).isEqualTo(7L);
+        assertThat(captor.getValue().getIssueNumber()).isEqualTo(12L);
+        assertThat(captor.getValue().getOccurredAt()).isEqualTo(occurredAt);
+    }
+
     private static User user(Long id) {
         User user = User.create("user@test.com", "hashed", "tester");
         ReflectionTestUtils.setField(user, "id", id);
