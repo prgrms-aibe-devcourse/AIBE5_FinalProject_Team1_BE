@@ -21,7 +21,7 @@ public interface WorkspaceEventRepository extends JpaRepository<WorkspaceEvent, 
             SELECT e FROM WorkspaceEvent e
             JOIN FETCH e.workspace w
             WHERE (
-                e.type IN :broadcastTypes AND e.workspace.id IN :workspaceIds
+                e.type IN :broadcastTypes AND e.targetUserId IS NULL AND e.workspace.id IN :workspaceIds
             ) OR (
                 e.type IN :targetedTypes AND e.targetUserId = :userId AND e.workspace.id IN :workspaceIds
             )

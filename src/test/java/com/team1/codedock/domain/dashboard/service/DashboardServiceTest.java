@@ -193,7 +193,7 @@ class DashboardServiceTest {
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(m));
         when(workspaceEventRepository.findDashboardEvents(
                 eq(List.of(10L)), eq(1L),
-                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED)),
+                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED, WorkspaceEvent.EventType.PR_REVIEW)),
                 eq(List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)),
                 any(Pageable.class)
         )).thenReturn(List.of(myPrEvent, otherPrEvent, replyEvent));
@@ -225,7 +225,7 @@ class DashboardServiceTest {
         when(workspaceMemberRepository.findAllByUser_IdAndIsActiveTrue(1L)).thenReturn(List.of(membership));
         when(workspaceEventRepository.findDashboardEvents(
                 eq(List.of(10L)), eq(1L),
-                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED)),
+                eq(List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED, WorkspaceEvent.EventType.PR_REVIEW)),
                 eq(List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION)),
                 any(Pageable.class)
         )).thenReturn(List.of(unreadEvent, readEvent));

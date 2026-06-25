@@ -32,6 +32,9 @@ public class GithubConnectService {
     public String buildAuthorizeUrl(Long currentUserId) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (!user.isActive()) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
         if (user.getPasswordHash() == null) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
@@ -51,40 +54,45 @@ public class GithubConnectService {
         try {
             userId = connectTokenProvider.validateAndGetUserId(state);
         } catch (Exception e) {
-            return callbackUrl("error");
+            return callbackUrl("error", "invalid_state");
         }
         try {
             if (code == null) {
-                return callbackUrl("error");
+                return callbackUrl("error", "missing_code");
             }
             User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                    .orElse(null);
+            if (user == null || !user.isActive()) {
+                return callbackUrl("error", "invalid_user");
+            }
             if (user.getPasswordHash() == null) {
-                return callbackUrl("error");
+                return callbackUrl("error", "email_account_required");
             }
             String accessToken = githubConnectClient.exchangeCodeForAccessToken(code);
             if (accessToken == null) {
-                return callbackUrl("error");
+                return callbackUrl("error", "token_exchange_failed");
             }
             GithubConnectClient.GithubIdentity identity = githubConnectClient.fetchGithubIdentity(accessToken);
             if (identity == null || identity.githubId() == null) {
-                return callbackUrl("error");
+                return callbackUrl("error", "identity_fetch_failed");
             }
             User owner = userRepository.findByGithubId(identity.githubId()).orElse(null);
             if (owner != null && !owner.getId().equals(user.getId())) {
-                return callbackUrl("conflict");
+                return callbackUrl("conflict", "github_already_connected");
             }
             user.linkGithub(identity.githubId(), identity.login(), identity.email(), null, accessToken);
-            return callbackUrl("success");
+            return callbackUrl("success", null);
         } catch (Exception e) {
-            return callbackUrl("error");
+            return callbackUrl("error", "unknown");
         }
     }
 
-    private String callbackUrl(String status) {
-        return UriComponentsBuilder.fromUriString(connectCallbackUri)
-                .queryParam("status", status)
-                .build()
-                .toUriString();
+    private String callbackUrl(String status, String reason) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(connectCallbackUri)
+                .queryParam("status", status);
+        if (reason != null && !reason.isBlank()) {
+            builder.queryParam("reason", reason);
+        }
+        return builder.build().toUriString();
     }
 }

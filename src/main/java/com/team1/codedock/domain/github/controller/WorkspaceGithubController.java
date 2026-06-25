@@ -6,6 +6,7 @@ import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse;
 import com.team1.codedock.domain.github.service.GithubRepositoryService;
 import com.team1.codedock.global.response.ApiResponse;
 import com.team1.codedock.global.security.SecurityUtils;
@@ -37,6 +38,15 @@ public class WorkspaceGithubController {
     public ApiResponse<List<GithubConnectResponse>> getWorkspaceRepositories(@PathVariable Long workspaceId) {
         return ApiResponse.ok(githubRepositoryService.getWorkspaceRepositories(
                 workspaceId, SecurityUtils.getCurrentUserId()));
+    }
+
+    @GetMapping("/repositories/{repositoryId}/overview")
+    public ApiResponse<GithubRepositoryOverviewResponse> getRepositoryOverview(
+            @PathVariable Long workspaceId,
+            @PathVariable Long repositoryId
+    ) {
+        return ApiResponse.ok(githubRepositoryService.getRepositoryOverview(
+                workspaceId, repositoryId, SecurityUtils.getCurrentUserId()));
     }
 
     @PostMapping

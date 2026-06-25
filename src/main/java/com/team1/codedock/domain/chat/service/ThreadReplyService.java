@@ -7,6 +7,10 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
+import com.team1.codedock.domain.github.entity.GithubRepository;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
+import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
 import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
@@ -30,6 +34,7 @@ public class ThreadReplyService {
     private final EntityManager entityManager;
     private final MentionService mentionService;
     private final WorkspaceEventService workspaceEventService;
+    private final GithubPullRequestRepository githubPullRequestRepository;
 
     @Transactional(readOnly = true)
     public List<ThreadReplyResponse> getReplies(Long threadId, Long userId) {
@@ -52,6 +57,7 @@ public class ThreadReplyService {
         ThreadReply savedReply = threadReplyRepository.save(reply);
         mentionService.createMentionsForThreadReply(savedReply, member, request.content());
         recordReplyEventForThreadOwner(savedReply, member, request.content());
+        recordPullRequestReviewEvent(savedReply, member, request.content());
         return ThreadReplyResponse.from(savedReply);
     }
 
@@ -128,7 +134,7 @@ public class ThreadReplyService {
         workspaceEventService.recordEvent(
                 channel.getWorkspace().getId(),
                 WorkspaceEvent.EventType.REPLY,
-                replier.getUser().getDisplayName(),
+                resolveUserDisplayName(replier.getUser()),
                 null,
                 null,
                 channel.getId(),
@@ -141,6 +147,63 @@ public class ThreadReplyService {
                 threadOwner.getUser().getId(),
                 reply.getCreatedAt()
         );
+    }
+
+    private void recordPullRequestReviewEvent(ThreadReply reply, WorkspaceMember reviewer, String content) {
+        Thread thread = reply.getThread();
+        if (!Thread.THREADABLE_TYPE_GITHUB_PR.equals(thread.getThreadableType()) || thread.getThreadableId() == null) {
+            return;
+        }
+
+        var channel = thread.getChannel();
+        User reviewerUser = reviewer.getUser();
+        if (channel == null || channel.getWorkspace() == null || reviewerUser == null) {
+            return;
+        }
+
+        githubPullRequestRepository.findById(thread.getThreadableId())
+                .filter(pr -> belongsToThreadWorkspace(pr, channel.getWorkspace().getId()))
+                .ifPresent(pr -> workspaceEventService.recordEvent(
+                        channel.getWorkspace().getId(),
+                        WorkspaceEvent.EventType.PR_REVIEW,
+                        resolveUserDisplayName(reviewerUser),
+                        pr.getId(),
+                        null,
+                        channel.getId(),
+                        content,
+                        repositoryId(pr),
+                        repositoryName(pr),
+                        thread.getId(),
+                        pr.getPrNumber() != null ? pr.getPrNumber().longValue() : null,
+                        null,
+                        null,
+                        reply.getCreatedAt()
+                ));
+    }
+
+    private boolean belongsToThreadWorkspace(GithubPullRequest pr, Long workspaceId) {
+        GithubRepository repository = pr.getRepository();
+        return repository != null
+                && repository.getWorkspace() != null
+                && Objects.equals(repository.getWorkspace().getId(), workspaceId);
+    }
+
+    private Long repositoryId(GithubPullRequest pr) {
+        return pr.getRepository() != null ? pr.getRepository().getId() : null;
+    }
+
+    private String repositoryName(GithubPullRequest pr) {
+        return pr.getRepository() != null ? pr.getRepository().getName() : null;
+    }
+
+    private String resolveUserDisplayName(User user) {
+        if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
+            return user.getDisplayName();
+        }
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            return user.getNickname();
+        }
+        return user.getUsername();
     }
 
     private ThreadReply findEditableReply(Thread thread, Long replyId, WorkspaceMember member) {

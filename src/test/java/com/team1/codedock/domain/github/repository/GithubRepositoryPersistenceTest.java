@@ -3,6 +3,10 @@ package com.team1.codedock.domain.github.repository;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.github.entity.GithubRepository;
+import com.team1.codedock.domain.issue.entity.GithubIssue;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -15,8 +19,11 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +49,12 @@ class GithubRepositoryPersistenceTest {
     private ChannelRepository channelRepository;
 
     @Autowired
+    private GithubPullRequestRepository githubPullRequestRepository;
+
+    @Autowired
+    private GithubIssueRepository githubIssueRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
@@ -58,6 +71,96 @@ class GithubRepositoryPersistenceTest {
         assertThat(found.orElseThrow().getId()).isEqualTo(repository.getId());
         assertThat(githubRepositoryRepository.findByWorkspaceIdAndGithubRepoId(workspace.getId(), "missing"))
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("repository id와 workspace id가 모두 맞을 때만 GitHub repository를 조회한다")
+    void findByIdAndWorkspaceId() {
+        Workspace workspace = seedWorkspace("repo-workspace@test.com", "repo-workspace");
+        Workspace otherWorkspace = seedWorkspace("repo-workspace-other@test.com", "repo-workspace-other");
+        GithubRepository repository = githubRepositoryRepository.saveAndFlush(
+                repository(workspace, "123456", "team1", "codedock")
+        );
+        em.clear();
+
+        assertThat(githubRepositoryRepository.findByIdAndWorkspaceId(repository.getId(), workspace.getId()))
+                .isPresent();
+        assertThat(githubRepositoryRepository.findByIdAndWorkspaceId(repository.getId(), otherWorkspace.getId()))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황 PR 쿼리는 open/approved만 세고 최신 수정 시각순으로 반환한다")
+    void pullRequestOverviewQueries() {
+        Workspace workspace = seedWorkspace("pr-overview@test.com", "pr-overview");
+        GithubRepository repository = githubRepositoryRepository.saveAndFlush(
+                repository(workspace, "123456", "team1", "codedock")
+        );
+        Channel channel = channelRepository.saveAndFlush(Channel.createRepository(workspace, repository, "codedock-repo"));
+        GithubPullRequest oldOpen = githubPullRequestRepository.saveAndFlush(pullRequest(
+                repository, channel, "pr-1", 1, "오래된 열린 PR", "open",
+                LocalDateTime.of(2026, 6, 24, 10, 0)
+        ));
+        GithubPullRequest newestApproved = githubPullRequestRepository.saveAndFlush(pullRequest(
+                repository, channel, "pr-2", 2, "최신 승인 PR", "approved",
+                LocalDateTime.of(2026, 6, 25, 10, 0)
+        ));
+        GithubPullRequest closed = githubPullRequestRepository.saveAndFlush(pullRequest(
+                repository, channel, "pr-3", 3, "닫힌 PR", "closed",
+                LocalDateTime.of(2026, 6, 26, 10, 0)
+        ));
+        em.clear();
+
+        long openCount = githubPullRequestRepository.countOpenByRepositoryId(repository.getId());
+        List<GithubPullRequest> openPullRequests = githubPullRequestRepository.findOpenByRepositoryId(
+                repository.getId(),
+                PageRequest.of(0, 10)
+        );
+        List<GithubPullRequest> recentPullRequests = githubPullRequestRepository.findRecentByRepositoryId(
+                repository.getId(),
+                PageRequest.of(0, 10)
+        );
+
+        assertThat(openCount).isEqualTo(2L);
+        assertThat(openPullRequests).extracting(GithubPullRequest::getId)
+                .containsExactly(newestApproved.getId(), oldOpen.getId());
+        assertThat(recentPullRequests).extracting(GithubPullRequest::getId)
+                .containsExactly(closed.getId(), newestApproved.getId(), oldOpen.getId());
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황 Issue 쿼리는 open/high를 구분하고 최신 수정 시각순으로 반환한다")
+    void issueOverviewQueries() {
+        Workspace workspace = seedWorkspace("issue-overview@test.com", "issue-overview");
+        GithubRepository repository = githubRepositoryRepository.saveAndFlush(
+                repository(workspace, "123456", "team1", "codedock")
+        );
+        Channel channel = channelRepository.saveAndFlush(Channel.createRepository(workspace, repository, "codedock-repo"));
+        GithubIssue openLow = githubIssueRepository.saveAndFlush(issue(
+                repository, channel, "issue-1", 1, "낮은 위험 이슈", "open", "low",
+                LocalDateTime.of(2026, 6, 24, 10, 0)
+        ));
+        GithubIssue openHigh = githubIssueRepository.saveAndFlush(issue(
+                repository, channel, "issue-2", 2, "높은 위험 이슈", "open", "high",
+                LocalDateTime.of(2026, 6, 25, 10, 0)
+        ));
+        GithubIssue closedHigh = githubIssueRepository.saveAndFlush(issue(
+                repository, channel, "issue-3", 3, "닫힌 높은 위험 이슈", "closed", "high",
+                LocalDateTime.of(2026, 6, 26, 10, 0)
+        ));
+        em.clear();
+
+        long openCount = githubIssueRepository.countOpenByRepositoryId(repository.getId());
+        long openHighCount = githubIssueRepository.countOpenHighPriorityByRepositoryId(repository.getId());
+        List<GithubIssue> recentIssues = githubIssueRepository.findRecentByRepositoryId(
+                repository.getId(),
+                PageRequest.of(0, 10)
+        );
+
+        assertThat(openCount).isEqualTo(2L);
+        assertThat(openHighCount).isEqualTo(1L);
+        assertThat(recentIssues).extracting(GithubIssue::getId)
+                .containsExactly(closedHigh.getId(), openHigh.getId(), openLow.getId());
     }
 
     @Test
@@ -143,5 +246,66 @@ class GithubRepositoryPersistenceTest {
                 true,
                 "main"
         );
+    }
+
+    private GithubPullRequest pullRequest(
+            GithubRepository repository,
+            Channel channel,
+            String githubPrId,
+            Integer prNumber,
+            String title,
+            String state,
+            LocalDateTime githubUpdatedAt
+    ) {
+        return GithubPullRequest.create(
+                repository,
+                channel,
+                githubPrId,
+                prNumber,
+                title,
+                "description",
+                state,
+                "https://github.com/team1/codedock/pull/" + prNumber,
+                "jean2077",
+                "feature/" + prNumber,
+                "main",
+                "[]",
+                10,
+                2,
+                3,
+                null,
+                githubUpdatedAt.minusHours(1),
+                githubUpdatedAt,
+                "[]"
+        );
+    }
+
+    private GithubIssue issue(
+            GithubRepository repository,
+            Channel channel,
+            String githubIssueId,
+            Integer issueNumber,
+            String title,
+            String state,
+            String priority,
+            LocalDateTime githubUpdatedAt
+    ) {
+        GithubIssue issue = GithubIssue.create(
+                repository,
+                channel,
+                githubIssueId,
+                issueNumber,
+                title,
+                "description",
+                state,
+                "https://github.com/team1/codedock/issues/" + issueNumber,
+                "slyhyun",
+                "[]",
+                "closed".equals(state) ? githubUpdatedAt : null,
+                githubUpdatedAt.minusHours(1),
+                githubUpdatedAt
+        );
+        issue.applyClassification(priority, "bug");
+        return issue;
     }
 }

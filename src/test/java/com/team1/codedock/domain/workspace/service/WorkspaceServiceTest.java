@@ -701,6 +701,88 @@ class WorkspaceServiceTest {
         assertThat(otherResp.getPresence()).isEqualTo("offline"); // 세션 없으면 고른 상태 무관하게 offline
     }
 
+    @Test
+    @DisplayName("초대 생성: viewer 권한 사용자는 팀원을 초대할 수 없다")
+    void createInvite_viewerForbidden() {
+        Workspace workspace = workspace(10L);
+        User viewerUser = user(100L, "viewer@test.com");
+        WorkspaceMember viewerMember = workspaceMember(1L, workspace, viewerUser, "viewer");
+        InviteCreateRequest request = inviteRequest("invitee@test.com", "viewer");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(viewerUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, viewerUser))
+                .thenReturn(Optional.of(viewerMember));
+
+        assertThatThrownBy(() -> workspaceService.createInvite(10L, request, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verifyNoInteractions(invitationRepository);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("초대 생성: 이미 활성 멤버인 이메일은 초대할 수 없다")
+    void createInvite_activeMemberRejected() {
+        Workspace workspace = workspace(10L);
+        User adminUser = user(100L, "admin@test.com");
+        User invitedUser = user(200L, "invitee@test.com");
+        WorkspaceMember adminMember = workspaceMember(1L, workspace, adminUser, "admin");
+        InviteCreateRequest request = inviteRequest("INVITEE@test.com", "viewer");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(adminUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, adminUser))
+                .thenReturn(Optional.of(adminMember));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("invitee@test.com")).thenReturn(List.of(invitedUser));
+        when(workspaceMemberRepository.countByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 200L)).thenReturn(1L);
+
+        assertThatThrownBy(() -> workspaceService.createInvite(10L, request, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(invitationRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("초대 생성: 같은 워크스페이스에 pending 초대가 있으면 중복 생성하지 않는다")
+    void createInvite_pendingDuplicateRejected() {
+        Workspace workspace = workspace(10L);
+        User adminUser = user(100L, "admin@test.com");
+        WorkspaceMember adminMember = workspaceMember(1L, workspace, adminUser, "admin");
+        InviteCreateRequest request = inviteRequest("Invitee@Test.com", "editor");
+
+        when(workspaceRepository.findById(10L)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(100L)).thenReturn(Optional.of(adminUser));
+        when(workspaceMemberRepository.findByWorkspaceAndUser(workspace, adminUser))
+                .thenReturn(Optional.of(adminMember));
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("invitee@test.com")).thenReturn(List.of());
+        when(userRepository.findByGithubEmailIgnoreCaseOrderByIdAsc("invitee@test.com")).thenReturn(List.of());
+        when(invitationRepository.existsByWorkspace_IdAndInvitedEmailIgnoreCaseAndStatus(10L, "invitee@test.com", "pending"))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> workspaceService.createInvite(10L, request, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verify(invitationRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    private static InviteCreateRequest inviteRequest(String email, String role) {
+        InviteCreateRequest request = new InviteCreateRequest();
+        request.setEmail(email);
+        request.setRole(role);
+        request.setPosition("Backend Developer");
+        request.setExpiresInHours(168);
+        return request;
+    }
+
     private static User user(Long id, String email) {
         User user = User.create(email, "hashed-password", email);
         ReflectionTestUtils.setField(user, "id", id);

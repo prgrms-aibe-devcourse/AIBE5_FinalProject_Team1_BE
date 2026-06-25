@@ -8,6 +8,7 @@ import com.team1.codedock.domain.chat.dto.ChatEventType;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse;
 import com.team1.codedock.domain.github.service.GithubRepositoryService;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
@@ -42,6 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -447,6 +449,99 @@ class WorkspaceGithubControllerTest {
                 .andExpect(jsonPath("$.code").value("C001"));
 
         verifyNoInteractions(githubRepositoryService, messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황 조회 성공 시 실제 현황 응답을 반환한다")
+    void getRepositoryOverview() throws Exception {
+        GithubRepositoryOverviewResponse response = new GithubRepositoryOverviewResponse(
+                30L,
+                10L,
+                40L,
+                "team1",
+                "codedock",
+                "team1/codedock",
+                "https://github.com/team1/codedock",
+                "main",
+                null,
+                2L,
+                3L,
+                4L,
+                1L,
+                5L,
+                null,
+                null,
+                null,
+                List.of(new GithubRepositoryOverviewResponse.RepositoryActivityResponse(
+                        "ISSUE",
+                        60L,
+                        7,
+                        "권한 오류",
+                        "slyhyun",
+                        "open",
+                        null
+                )),
+                List.of(new GithubRepositoryOverviewResponse.RepositoryPullRequestSummaryResponse(
+                        50L,
+                        12,
+                        "로그인 수정",
+                        "jean2077",
+                        "open",
+                        3,
+                        10,
+                        2,
+                        null
+                ))
+        );
+        when(githubRepositoryService.getRepositoryOverview(10L, 30L, USER_ID)).thenReturn(response);
+
+        mockMvc.perform(get("/api/v1/workspaces/{workspaceId}/github/repositories/{repositoryId}/overview", 10L, 30L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.repositoryId").value(30L))
+                .andExpect(jsonPath("$.data.workspaceId").value(10L))
+                .andExpect(jsonPath("$.data.channelId").value(40L))
+                .andExpect(jsonPath("$.data.fullName").value("team1/codedock"))
+                .andExpect(jsonPath("$.data.todayCommitCount").value(2L))
+                .andExpect(jsonPath("$.data.openPrCount").value(3L))
+                .andExpect(jsonPath("$.data.openIssueCount").value(4L))
+                .andExpect(jsonPath("$.data.highRiskCount").value(1L))
+                .andExpect(jsonPath("$.data.activeMemberCount").value(5L))
+                .andExpect(jsonPath("$.data.codeQualityScore").doesNotExist())
+                .andExpect(jsonPath("$.data.recentActivities[0].type").value("ISSUE"))
+                .andExpect(jsonPath("$.data.recentActivities[0].number").value(7))
+                .andExpect(jsonPath("$.data.openPullRequests[0].prNumber").value(12));
+
+        verify(githubRepositoryService).getRepositoryOverview(10L, 30L, USER_ID);
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황 조회 권한이 없으면 403을 반환한다")
+    void getRepositoryOverviewForbidden() throws Exception {
+        when(githubRepositoryService.getRepositoryOverview(10L, 30L, USER_ID))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/github/repositories/{repositoryId}/overview", 10L, 30L))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황 조회 대상이 없으면 404를 반환한다")
+    void getRepositoryOverviewNotFound() throws Exception {
+        when(githubRepositoryService.getRepositoryOverview(10L, 30L, USER_ID))
+                .thenThrow(new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/workspaces/{workspaceId}/github/repositories/{repositoryId}/overview", 10L, 30L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("G001"));
+
+        verifyNoInteractions(messagingTemplate);
     }
 
     private GithubRepositoryLinkRequest request() {

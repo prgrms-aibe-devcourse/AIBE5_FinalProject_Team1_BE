@@ -51,7 +51,7 @@ class WorkspaceEventRepositoryPersistenceTest {
         List<WorkspaceEvent> result = workspaceEventRepository.findDashboardEvents(
                 List.of(workspace.getId()),
                 99L,
-                List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED),
+                List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED, WorkspaceEvent.EventType.PR_REVIEW),
                 List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION),
                 PageRequest.of(0, 10)
         );
@@ -75,25 +75,36 @@ class WorkspaceEventRepositoryPersistenceTest {
         LocalDateTime now = LocalDateTime.of(2026, 6, 25, 12, 0);
         WorkspaceEvent broadcastEvent = saveEvent(workspace, WorkspaceEvent.EventType.PR_CREATED,
                 1L, null, null, null, now);
+        WorkspaceEvent broadcastPrReviewEvent = saveEvent(workspace, WorkspaceEvent.EventType.PR_REVIEW,
+                3L, null, null, null, now.minusSeconds(30));
         WorkspaceEvent myReplyEvent = saveEvent(workspace, WorkspaceEvent.EventType.REPLY,
                 null, null, 10L, 77L, now.minusMinutes(1));
+        WorkspaceEvent myPrReviewEvent = saveEvent(workspace, WorkspaceEvent.EventType.PR_REVIEW,
+                4L, null, null, 77L, now.minusMinutes(2));
         saveEvent(workspace, WorkspaceEvent.EventType.MENTION,
-                null, null, 11L, 88L, now.minusMinutes(2));
+                null, null, 11L, 88L, now.minusMinutes(3));
+        saveEvent(workspace, WorkspaceEvent.EventType.PR_REVIEW,
+                5L, null, null, 88L, now.minusMinutes(4));
         saveEvent(otherWorkspace, WorkspaceEvent.EventType.ISSUE_CREATED,
-                null, 2L, null, null, now.minusMinutes(3));
+                null, 2L, null, null, now.minusMinutes(5));
         em.flush();
         em.clear();
 
         List<WorkspaceEvent> result = workspaceEventRepository.findDashboardEvents(
                 List.of(workspace.getId()),
                 77L,
-                List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED),
+                List.of(WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED, WorkspaceEvent.EventType.PR_REVIEW),
                 List.of(WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION),
                 PageRequest.of(0, 10)
         );
 
         assertThat(result).extracting(WorkspaceEvent::getId)
-                .containsExactlyInAnyOrder(broadcastEvent.getId(), myReplyEvent.getId());
+                .containsExactlyInAnyOrder(
+                        broadcastEvent.getId(),
+                        broadcastPrReviewEvent.getId(),
+                        myReplyEvent.getId(),
+                        myPrReviewEvent.getId()
+                );
         assertThat(result).extracting(WorkspaceEvent::getWorkspace)
                 .allSatisfy(foundWorkspace -> assertThat(foundWorkspace.getId()).isEqualTo(workspace.getId()));
     }

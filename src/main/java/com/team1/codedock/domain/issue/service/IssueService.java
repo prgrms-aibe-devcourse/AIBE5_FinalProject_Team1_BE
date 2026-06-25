@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class IssueService {
 
+    private static final String LOCAL_STATUS_DONE = "done";
+
     private final GithubIssueRepository githubIssueRepository;
     private final IssueLabelRepository issueLabelRepository;
     private final IssueAssigneeRepository issueAssigneeRepository;
@@ -68,10 +70,20 @@ public class IssueService {
         validateWorkspaceMember(workspaceId, userId);
         GithubIssue issue = githubIssueRepository.findByIdAndRepository_Workspace_Id(issueId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_ISSUE_NOT_FOUND));
+        validateLocalStatusChange(issue, request.localStatus());
         issue.updateLocalStatus(request.localStatus());
         List<IssueLabel> labels = issueLabelRepository.findAllByGithubIssue_Id(issueId);
         List<IssueAssignee> assignees = issueAssigneeRepository.findAllByGithubIssue_Id(issueId);
         return IssueResponse.from(issue, labels, assignees);
+    }
+
+    private void validateLocalStatusChange(GithubIssue issue, String localStatus) {
+        if (issue.isClosed() && !LOCAL_STATUS_DONE.equals(localStatus)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT,
+                    "GitHub에서 닫힌 이슈는 완료 상태로만 유지할 수 있습니다."
+            );
+        }
     }
 
     private void validateWorkspaceMember(Long workspaceId, Long userId) {

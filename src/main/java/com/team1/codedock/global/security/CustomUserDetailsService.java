@@ -16,6 +16,9 @@ public class CustomUserDetailsService {
     public CustomUserDetails loadUserById(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다: " + userId));
+        if (!user.isActive()) {
+            throw new IllegalArgumentException("비활성화된 사용자입니다. userId=" + userId);
+        }
         return new CustomUserDetails(user);
     }
 }

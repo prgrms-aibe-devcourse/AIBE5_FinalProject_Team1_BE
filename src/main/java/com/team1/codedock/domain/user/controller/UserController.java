@@ -39,6 +39,12 @@ public class UserController {
         return ApiResponse.ok(userService.disconnectGithub(SecurityUtils.getCurrentUserId()));
     }
 
+    @DeleteMapping("/me")
+    public ApiResponse<Void> withdraw() {
+        userService.withdraw(SecurityUtils.getCurrentUserId());
+        return ApiResponse.ok();
+    }
+
     @GetMapping("/{userId}")
     public ApiResponse<UserResponse> getUserById(@PathVariable Long userId) {
         return ApiResponse.ok(userService.getUserById(userId));

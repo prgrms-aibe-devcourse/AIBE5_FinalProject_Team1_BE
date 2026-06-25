@@ -47,4 +47,36 @@ class UserTest {
         assertThat(user.getBio()).isNull();
         assertThat(user.getAvatarUrl()).isNull();
     }
+
+    @Test
+    @DisplayName("deactivateAccount(): 계정 식별값을 익명화하고 GitHub 연결과 프로필 정보를 정리한다")
+    void deactivateAccount_success() {
+        User user = User.createFromGithub(
+                "github-1",
+                "octocat",
+                "octocat@example.com",
+                "https://example.com/avatar.png",
+                "github-token"
+        );
+        user.completeEmailSignup("member@example.com", "hashed-password", "멤버");
+        user.updateProfile("멤버", "nick", "Backend", "bio", "https://example.com/profile.png");
+
+        user.deactivateAccount("deleted-user-1@codedock.local", "deleted-user-1");
+
+        assertThat(user.isActive()).isFalse();
+        assertThat(user.getDeactivatedAt()).isNotNull();
+        assertThat(user.getEmail()).isEqualTo("deleted-user-1@codedock.local");
+        assertThat(user.getUsername()).isEqualTo("deleted-user-1");
+        assertThat(user.getPasswordHash()).isNull();
+        assertThat(user.getDisplayName()).isEqualTo("탈퇴한 사용자");
+        assertThat(user.getNickname()).isNull();
+        assertThat(user.getDeveloperType()).isNull();
+        assertThat(user.getBio()).isNull();
+        assertThat(user.getAvatarUrl()).isNull();
+        assertThat(user.isGithubConnected()).isFalse();
+        assertThat(user.getGithubId()).isNull();
+        assertThat(user.getGithubUsername()).isNull();
+        assertThat(user.getGithubEmail()).isNull();
+        assertThat(user.getGithubAccessToken()).isNull();
+    }
 }

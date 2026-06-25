@@ -20,6 +20,34 @@ public interface GithubIssueRepository extends JpaRepository<GithubIssue, Long> 
     long countByChannelId(@Param("channelId") Long channelId);
 
     @Query("""
+            SELECT COUNT(gi)
+            FROM GithubIssue gi
+            WHERE gi.repository.id = :repositoryId
+              AND gi.state = 'open'
+            """)
+    long countOpenByRepositoryId(@Param("repositoryId") Long repositoryId);
+
+    @Query("""
+            SELECT COUNT(gi)
+            FROM GithubIssue gi
+            WHERE gi.repository.id = :repositoryId
+              AND gi.state = 'open'
+              AND LOWER(gi.priority) = 'high'
+            """)
+    long countOpenHighPriorityByRepositoryId(@Param("repositoryId") Long repositoryId);
+
+    @Query("""
+            SELECT gi
+            FROM GithubIssue gi
+            WHERE gi.repository.id = :repositoryId
+            ORDER BY COALESCE(gi.githubUpdatedAt, gi.githubCreatedAt, gi.updatedAt, gi.createdAt) DESC
+            """)
+    List<GithubIssue> findRecentByRepositoryId(
+            @Param("repositoryId") Long repositoryId,
+            Pageable pageable
+    );
+
+    @Query("""
         SELECT gi FROM GithubIssue gi
         WHERE gi.repository.workspace.id = :workspaceId
           AND (:repositoryId IS NULL OR gi.repository.id = :repositoryId)

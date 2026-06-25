@@ -31,7 +31,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             JwtValidationResult validationResult = jwtProvider.validateAccessTokenWithResult(token);
             if (validationResult == JwtValidationResult.VALID) {
                 Long userId = jwtProvider.getUserId(token);
-                CustomUserDetails userDetails = userDetailsService.loadUserById(userId);
+                CustomUserDetails userDetails;
+                try {
+                    userDetails = userDetailsService.loadUserById(userId);
+                } catch (RuntimeException e) {
+                    SecurityErrorResponseWriter.write(response, ErrorCode.INVALID_TOKEN);
+                    return;
+                }
 
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());

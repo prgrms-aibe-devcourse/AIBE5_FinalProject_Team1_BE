@@ -16,6 +16,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class GithubIssue extends BaseEntity {
 
+    private static final String STATE_CLOSED = "closed";
+    private static final String LOCAL_STATUS_TODO = "todo";
+    private static final String LOCAL_STATUS_DONE = "done";
+
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_github_issues")
     @SequenceGenerator(name = "seq_github_issues", sequenceName = "seq_github_issues", allocationSize = 1)
@@ -101,7 +105,7 @@ public class GithubIssue extends BaseEntity {
         issue.title = title;
         issue.description = description;
         issue.state = state;
-        issue.localStatus = "todo";
+        issue.localStatus = resolveInitialLocalStatus(state);
         issue.url = url;
         issue.author = author;
         issue.labels = labels;
@@ -120,6 +124,7 @@ public class GithubIssue extends BaseEntity {
             LocalDateTime closedAt,
             LocalDateTime githubUpdatedAt
     ) {
+        boolean wasClosed = isClosed();
         this.title = title;
         this.description = description;
         this.state = state;
@@ -127,13 +132,49 @@ public class GithubIssue extends BaseEntity {
         this.labels = labels;
         this.closedAt = closedAt;
         this.githubUpdatedAt = githubUpdatedAt;
-        if ("closed".equals(state) && !"done".equals(this.localStatus)) {
-            this.localStatus = "done";
+        normalizeLocalStatusAfterGithubStateSync(wasClosed);
+    }
+
+    public boolean isClosed() {
+        return STATE_CLOSED.equalsIgnoreCase(state);
+    }
+
+    public String getEffectiveLocalStatus() {
+        if (isClosed()) {
+            return LOCAL_STATUS_DONE;
+        }
+
+        if (localStatus == null || localStatus.isBlank()) {
+            return LOCAL_STATUS_TODO;
+        }
+
+        return localStatus;
+    }
+
+    private void normalizeLocalStatusAfterGithubStateSync(boolean wasClosed) {
+        if (isClosed()) {
+            this.localStatus = LOCAL_STATUS_DONE;
+            return;
+        }
+
+        // GitHub에서 다시 열린 이슈는 작업보드에 다시 나타나야 하므로,
+        // 닫힘으로 인해 done이 되었던 항목만 todo로 되돌림.
+        if (wasClosed && LOCAL_STATUS_DONE.equals(this.localStatus)) {
+            this.localStatus = LOCAL_STATUS_TODO;
+            return;
+        }
+
+        if (this.localStatus == null || this.localStatus.isBlank()) {
+            this.localStatus = LOCAL_STATUS_TODO;
         }
     }
 
     public void updateLocalStatus(String localStatus) {
         this.localStatus = localStatus;
+    }
+
+    private static String resolveInitialLocalStatus(String state) {
+        return STATE_CLOSED.equalsIgnoreCase(state) ? LOCAL_STATUS_DONE : LOCAL_STATUS_TODO;
     }
 
     // GitHub에서 가져온 분류 정보 반영. null이면 기존 값을 덮어쓰지 않는다(조회 실패 시 보존).

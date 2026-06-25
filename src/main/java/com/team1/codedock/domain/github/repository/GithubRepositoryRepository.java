@@ -16,6 +16,17 @@ public interface GithubRepositoryRepository extends JpaRepository<GithubReposito
     @Query("""
             SELECT g
             FROM GithubRepository g
+            WHERE g.id = :repositoryId
+              AND g.workspace.id = :workspaceId
+            """)
+    Optional<GithubRepository> findByIdAndWorkspaceId(
+            @Param("repositoryId") Long repositoryId,
+            @Param("workspaceId") Long workspaceId
+    );
+
+    @Query("""
+            SELECT g
+            FROM GithubRepository g
             WHERE g.workspace.id = :workspaceId
               AND g.githubRepoId = :githubRepoId
             """)
