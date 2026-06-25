@@ -1,7 +1,12 @@
 package com.team1.codedock.domain.workspace.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team1.codedock.domain.workspace.dto.InviteCreateRequest;
+import com.team1.codedock.domain.workspace.dto.InviteResponse;
 import com.team1.codedock.domain.workspace.dto.WorkspaceResponse;
 import com.team1.codedock.domain.workspace.service.WorkspaceService;
+import com.team1.codedock.global.exception.BusinessException;
+import com.team1.codedock.global.exception.ErrorCode;
 import com.team1.codedock.global.exception.GlobalExceptionHandler;
 import com.team1.codedock.global.security.CustomUserDetails;
 import org.junit.jupiter.api.AfterEach;
@@ -11,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -30,6 +36,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,6 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class WorkspaceControllerTest {
 
     private static final Long USER_ID = 100L;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private WorkspaceService workspaceService;
@@ -101,5 +110,80 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.code").value("C001"));
 
         verifyNoInteractions(workspaceService);
+    }
+
+    @Test
+    @DisplayName("팀원 초대 API는 인증 사용자 기준으로 초대 요청을 생성한다")
+    void createInvite() throws Exception {
+        InviteCreateRequest request = inviteRequest("invitee@test.com", "viewer");
+        InviteResponse response = InviteResponse.builder()
+                .inviteUrl("https://codedock.test/invite/token")
+                .expiresAt(null)
+                .build();
+        when(workspaceService.createInvite(eq(10L), any(InviteCreateRequest.class), eq(USER_ID)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceId}/invites", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.inviteUrl").value("https://codedock.test/invite/token"));
+
+        verify(workspaceService).createInvite(eq(10L), any(InviteCreateRequest.class), eq(USER_ID));
+    }
+
+    @Test
+    @DisplayName("팀원 초대 API는 잘못된 이메일이면 서비스 호출 전에 400을 반환한다")
+    void createInviteWithInvalidEmail() throws Exception {
+        InviteCreateRequest request = inviteRequest("not-email", "viewer");
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceId}/invites", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+
+        verifyNoInteractions(workspaceService);
+    }
+
+    @Test
+    @DisplayName("팀원 초대 API는 권한이 없으면 403을 반환한다")
+    void createInviteForbidden() throws Exception {
+        InviteCreateRequest request = inviteRequest("invitee@test.com", "viewer");
+        when(workspaceService.createInvite(eq(10L), any(InviteCreateRequest.class), eq(USER_ID)))
+                .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceId}/invites", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C003"));
+    }
+
+    @Test
+    @DisplayName("팀원 초대 API는 이미 초대되었거나 이미 멤버인 경우 400을 반환한다")
+    void createInviteInvalidInput() throws Exception {
+        InviteCreateRequest request = inviteRequest("invitee@test.com", "editor");
+        when(workspaceService.createInvite(eq(10L), any(InviteCreateRequest.class), eq(USER_ID)))
+                .thenThrow(new BusinessException(ErrorCode.INVALID_INPUT));
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceId}/invites", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("C001"));
+    }
+
+    private InviteCreateRequest inviteRequest(String email, String role) {
+        InviteCreateRequest request = new InviteCreateRequest();
+        request.setEmail(email);
+        request.setRole(role);
+        request.setPosition("Backend Developer");
+        request.setExpiresInHours(168);
+        return request;
     }
 }
