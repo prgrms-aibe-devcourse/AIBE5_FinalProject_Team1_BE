@@ -100,7 +100,7 @@ public class WorkspaceEventService {
             return List.of();
         }
         List<WorkspaceEvent.EventType> broadcastTypes = List.of(
-                WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED);
+                WorkspaceEvent.EventType.PR_CREATED, WorkspaceEvent.EventType.ISSUE_CREATED, WorkspaceEvent.EventType.PR_REVIEW);
         List<WorkspaceEvent.EventType> targetedTypes = List.of(
                 WorkspaceEvent.EventType.PR_REVIEW, WorkspaceEvent.EventType.REPLY, WorkspaceEvent.EventType.MENTION);
         List<WorkspaceEvent> events = workspaceEventRepository

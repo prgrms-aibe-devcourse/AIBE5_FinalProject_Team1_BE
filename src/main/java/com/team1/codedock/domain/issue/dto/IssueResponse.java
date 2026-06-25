@@ -53,7 +53,7 @@ public record IssueResponse(
                 issue.getTitle(),
                 issue.getDescription(),
                 issue.getState(),
-                issue.getLocalStatus(),
+                issue.getEffectiveLocalStatus(),
                 issue.getUrl(),
                 issue.getAuthor(),
                 issue.getPriority(),

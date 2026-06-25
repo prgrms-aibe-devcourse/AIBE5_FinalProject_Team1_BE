@@ -8,6 +8,9 @@ import com.team1.codedock.domain.chat.entity.Thread;
 import com.team1.codedock.domain.chat.entity.ThreadReply;
 import com.team1.codedock.domain.chat.repository.ThreadReplyRepository;
 import com.team1.codedock.domain.chat.util.ChatContentEmojiCodec;
+import com.team1.codedock.domain.github.entity.GithubRepository;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.workspace.entity.WorkspaceEvent;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -54,6 +57,9 @@ class ThreadReplyServiceTest {
 
     @Mock
     private WorkspaceEventService workspaceEventService;
+
+    @Mock
+    private GithubPullRequestRepository githubPullRequestRepository;
 
     @InjectMocks
     private ThreadReplyService threadReplyService;
@@ -270,6 +276,231 @@ class ThreadReplyServiceTest {
         threadReplyService.createReply(threadId, userId, request);
 
         verifyReplyEventNotRecorded();
+    }
+
+    @Test
+    @DisplayName("PR 스레드에 답글을 남기면 target 없는 PR_REVIEW 이벤트를 대시보드에 기록한다")
+    void createReplyRecordsPullRequestReviewEventForPrThread() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        GithubRepository repository = repository(70L, workspace, "Test_Repository");
+        Channel channel = channel(10L, workspace);
+        GithubPullRequest pullRequest = pullRequest(90L, repository, channel, 37, "test", "pr-author");
+        WorkspaceMember reviewer = workspaceMember(20L, user(102L, "reviewer", "Reviewer"));
+        Thread thread = pullRequestThread(threadId, channel, pullRequest.getId());
+        ThreadReplyCreateRequest request = new ThreadReplyCreateRequest("hello.py L1 확인 부탁드립니다");
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(reviewer));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 30));
+                    return saved;
+                });
+        when(githubPullRequestRepository.findById(90L)).thenReturn(Optional.of(pullRequest));
+
+        threadReplyService.createReply(threadId, userId, request);
+
+        verify(workspaceEventService).recordEvent(
+                workspaceId,
+                WorkspaceEvent.EventType.PR_REVIEW,
+                "Reviewer",
+                90L,
+                null,
+                10L,
+                "hello.py L1 확인 부탁드립니다",
+                70L,
+                "Test_Repository",
+                threadId,
+                37L,
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 25, 16, 30)
+        );
+    }
+
+    @Test
+    @DisplayName("PR 작성자 GitHub 계정 연결 여부와 관계없이 PR_REVIEW 이벤트를 기록한다")
+    void createReplyRecordsPullRequestReviewEventWithoutLookingUpTargetUser() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        GithubRepository repository = repository(70L, workspace, "Test_Repository");
+        Channel channel = channel(10L, workspace);
+        GithubPullRequest pullRequest = pullRequest(90L, repository, channel, 37, "test", "unknown-author");
+        WorkspaceMember reviewer = workspaceMember(20L, user(102L, "reviewer", "Reviewer"));
+        Thread thread = pullRequestThread(threadId, channel, pullRequest.getId());
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(reviewer));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 31));
+                    return saved;
+                });
+        when(githubPullRequestRepository.findById(90L)).thenReturn(Optional.of(pullRequest));
+
+        threadReplyService.createReply(threadId, userId, new ThreadReplyCreateRequest("대상 계정이 없어도 이벤트 기록"));
+
+        verify(workspaceEventService).recordEvent(
+                workspaceId,
+                WorkspaceEvent.EventType.PR_REVIEW,
+                "Reviewer",
+                90L,
+                null,
+                10L,
+                "대상 계정이 없어도 이벤트 기록",
+                70L,
+                "Test_Repository",
+                threadId,
+                37L,
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 25, 16, 31)
+        );
+    }
+
+    @Test
+    @DisplayName("PR_REVIEW 이벤트 작성자 이름은 displayName이 없으면 username으로 대체한다")
+    void createReplyRecordsPullRequestReviewEventWithUsernameFallbackActor() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        GithubRepository repository = repository(70L, workspace, "Test_Repository");
+        Channel channel = channel(10L, workspace);
+        GithubPullRequest pullRequest = pullRequest(90L, repository, channel, 37, "test", "pr-author");
+        WorkspaceMember reviewer = workspaceMember(20L, user(102L, "reviewer-username", null));
+        Thread thread = pullRequestThread(threadId, channel, pullRequest.getId());
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(reviewer));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 34));
+                    return saved;
+                });
+        when(githubPullRequestRepository.findById(90L)).thenReturn(Optional.of(pullRequest));
+
+        threadReplyService.createReply(threadId, userId, new ThreadReplyCreateRequest("작성자 fallback 확인"));
+
+        verify(workspaceEventService).recordEvent(
+                workspaceId,
+                WorkspaceEvent.EventType.PR_REVIEW,
+                "reviewer-username",
+                90L,
+                null,
+                10L,
+                "작성자 fallback 확인",
+                70L,
+                "Test_Repository",
+                threadId,
+                37L,
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 25, 16, 34)
+        );
+    }
+
+    @Test
+    @DisplayName("일반 스레드 답글은 PR_REVIEW 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordPullRequestReviewEventForNormalThread() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember replier = workspaceMember(20L, user(102L, "tester", "Tester"));
+        Thread thread = thread(threadId, channel);
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(replier));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 32));
+                    return saved;
+                });
+
+        threadReplyService.createReply(threadId, userId, new ThreadReplyCreateRequest("일반 답글"));
+
+        verify(githubPullRequestRepository, never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        verifyPrReviewEventNotRecorded();
+    }
+
+    @Test
+    @DisplayName("PR 스레드의 워크스페이스와 PR의 워크스페이스가 다르면 PR_REVIEW 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordPullRequestReviewEventForDifferentWorkspacePullRequest() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long otherWorkspaceId = 99L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Workspace otherWorkspace = workspace(otherWorkspaceId);
+        Channel channel = channel(10L, workspace);
+        Channel otherChannel = channel(11L, otherWorkspace);
+        GithubRepository repository = repository(70L, otherWorkspace, "Other_Repository");
+        GithubPullRequest pullRequest = pullRequest(90L, repository, otherChannel, 37, "test", "pr-author");
+        WorkspaceMember reviewer = workspaceMember(20L, user(102L, "reviewer", "Reviewer"));
+        Thread thread = pullRequestThread(threadId, channel, pullRequest.getId());
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(reviewer));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 35));
+                    return saved;
+                });
+        when(githubPullRequestRepository.findById(90L)).thenReturn(Optional.of(pullRequest));
+
+        threadReplyService.createReply(threadId, userId, new ThreadReplyCreateRequest("다른 워크스페이스 PR 답글"));
+
+        verifyPrReviewEventNotRecorded();
+    }
+
+    @Test
+    @DisplayName("PR 스레드가 가리키는 PR이 없으면 PR_REVIEW 이벤트를 기록하지 않는다")
+    void createReplyDoesNotRecordPullRequestReviewEventWhenPullRequestMissing() {
+        Long threadId = 1L;
+        Long workspaceId = 2L;
+        Long userId = 3L;
+        Workspace workspace = workspace(workspaceId);
+        Channel channel = channel(10L, workspace);
+        WorkspaceMember reviewer = workspaceMember(20L, user(102L, "reviewer", "Reviewer"));
+        Thread thread = pullRequestThread(threadId, channel, 999L);
+
+        when(entityManager.find(Thread.class, threadId)).thenReturn(thread);
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId))
+                .thenReturn(Optional.of(reviewer));
+        when(threadReplyRepository.save(org.mockito.ArgumentMatchers.any(ThreadReply.class)))
+                .thenAnswer(invocation -> {
+                    ThreadReply saved = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "id", 200L);
+                    ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 6, 25, 16, 33));
+                    return saved;
+                });
+        when(githubPullRequestRepository.findById(999L)).thenReturn(Optional.empty());
+
+        threadReplyService.createReply(threadId, userId, new ThreadReplyCreateRequest("없는 PR 답글"));
+
+        verifyPrReviewEventNotRecorded();
     }
 
     @Test
@@ -649,6 +880,17 @@ class ThreadReplyServiceTest {
         return thread;
     }
 
+    private static Thread pullRequestThread(Long id, Channel channel, Long pullRequestId) {
+        Thread thread = Thread.createBotNotification(
+                channel,
+                "PR 알림",
+                Thread.THREADABLE_TYPE_GITHUB_PR,
+                pullRequestId
+        );
+        ReflectionTestUtils.setField(thread, "id", id);
+        return thread;
+    }
+
     private static Channel channel(Long id, Workspace workspace) {
         Channel channel = newInstance(Channel.class);
         ReflectionTestUtils.setField(channel, "id", id);
@@ -669,6 +911,55 @@ class ThreadReplyServiceTest {
         return member;
     }
 
+    private static GithubRepository repository(Long id, Workspace workspace, String name) {
+        GithubRepository repository = GithubRepository.create(
+                workspace,
+                "repo-" + id,
+                "team1",
+                name,
+                "team1/" + name,
+                "https://github.com/team1/" + name,
+                "테스트 레포지토리",
+                false,
+                "main"
+        );
+        ReflectionTestUtils.setField(repository, "id", id);
+        return repository;
+    }
+
+    private static GithubPullRequest pullRequest(
+            Long id,
+            GithubRepository repository,
+            Channel channel,
+            Integer prNumber,
+            String title,
+            String author
+    ) {
+        GithubPullRequest pullRequest = GithubPullRequest.create(
+                repository,
+                channel,
+                "github-pr-" + id,
+                prNumber,
+                title,
+                "PR 설명",
+                "open",
+                "https://github.com/team1/repo/pull/" + prNumber,
+                author,
+                "feature/test",
+                "main",
+                "[]",
+                1,
+                0,
+                1,
+                null,
+                LocalDateTime.of(2026, 6, 25, 9, 0),
+                LocalDateTime.of(2026, 6, 25, 10, 0),
+                "[]"
+        );
+        ReflectionTestUtils.setField(pullRequest, "id", id);
+        return pullRequest;
+    }
+
     private static User user(String username, String displayName) {
         User user = newInstance(User.class);
         ReflectionTestUtils.setField(user, "username", username);
@@ -686,6 +977,25 @@ class ThreadReplyServiceTest {
         verify(workspaceEventService, never()).recordEvent(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq(WorkspaceEvent.EventType.REPLY),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    private void verifyPrReviewEventNotRecorded() {
+        verify(workspaceEventService, never()).recordEvent(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(WorkspaceEvent.EventType.PR_REVIEW),
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
