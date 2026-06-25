@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.user.service;
 
+import com.team1.codedock.domain.auth.repository.RefreshTokenRepository;
 import com.team1.codedock.domain.user.dto.UpdateProfileRequest;
 import com.team1.codedock.domain.user.dto.UpdateSkillsRequest;
 import com.team1.codedock.domain.user.dto.UserResponse;
@@ -7,6 +8,9 @@ import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.entity.UserSkill;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.user.repository.UserSkillRepository;
+import com.team1.codedock.domain.workspace.entity.Workspace;
+import com.team1.codedock.domain.workspace.entity.WorkspaceMember;
+import com.team1.codedock.domain.workspace.repository.WorkspaceMemberRepository;
 import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,6 +37,8 @@ class UserServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private UserSkillRepository userSkillRepository;
+    @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private WorkspaceMemberRepository workspaceMemberRepository;
 
     @InjectMocks
     private UserService userService;
@@ -148,9 +155,86 @@ class UserServiceTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
+    @Test
+    @DisplayName("회원탈퇴: refresh token을 폐기하고 스킬/GitHub/워크스페이스 멤버십을 정리한다")
+    void withdraw_success() {
+        User user = githubLinkedUser(1L);
+        WorkspaceMember ownerMember = workspaceMember(user, "owner");
+        WorkspaceMember viewerMember = workspaceMember(user, "viewer");
+        WorkspaceMember alreadyInactiveMember = workspaceMember(user, "viewer");
+        alreadyInactiveMember.deactivate("기존 탈퇴");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findAllByUser(user))
+                .thenReturn(List.of(ownerMember, viewerMember, alreadyInactiveMember));
+
+        userService.withdraw(1L);
+
+        verify(refreshTokenRepository).revokeAllByUser(user);
+        verify(userSkillRepository).deleteAllByUser(user);
+        verify(workspaceMemberRepository).findAllByUser(user);
+        assertThat(user.isActive()).isFalse();
+        assertThat(user.getEmail()).isEqualTo("deleted-user-1@codedock.local");
+        assertThat(user.getUsername()).isEqualTo("deleted-user-1");
+        assertThat(user.getPasswordHash()).isNull();
+        assertThat(user.isGithubConnected()).isFalse();
+        assertThat(user.getGithubId()).isNull();
+        assertThat(ownerMember.isActive()).isFalse();
+        assertThat(ownerMember.getLeftReason()).isEqualTo("회원탈퇴");
+        assertThat(viewerMember.isActive()).isFalse();
+        assertThat(viewerMember.getLeftReason()).isEqualTo("회원탈퇴");
+        assertThat(alreadyInactiveMember.getLeftReason()).isEqualTo("기존 탈퇴");
+    }
+
+    @Test
+    @DisplayName("회원탈퇴: 존재하지 않는 사용자는 정리 작업을 수행하지 않고 USER_NOT_FOUND를 던진다")
+    void withdraw_userNotFound() {
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.withdraw(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+        verifyNoInteractions(refreshTokenRepository, workspaceMemberRepository);
+    }
+
+    @Test
+    @DisplayName("회원탈퇴: 이미 비활성화된 사용자는 중복 탈퇴 처리하지 않는다")
+    void withdraw_alreadyInactive() {
+        User user = user(1L, "test@test.com", "testuser");
+        user.deactivateAccount("deleted-user-1@codedock.local", "deleted-user-1");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> userService.withdraw(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+        verifyNoInteractions(refreshTokenRepository, workspaceMemberRepository);
+    }
+
     private static User user(Long id, String email, String username) {
         User user = User.create(email, "hashed-password", username);
         ReflectionTestUtils.setField(user, "id", id);
         return user;
+    }
+
+    private static User githubLinkedUser(Long id) {
+        User user = User.createFromGithub(
+                "github-" + id,
+                "octocat" + id,
+                "github" + id + "@example.com",
+                "https://example.com/avatar.png",
+                "github-token"
+        );
+        user.completeEmailSignup("member" + id + "@example.com", "hashed-password", "멤버" + id);
+        ReflectionTestUtils.setField(user, "id", id);
+        return user;
+    }
+
+    private static WorkspaceMember workspaceMember(User user, String authority) {
+        Workspace workspace = Workspace.create(user, "워크스페이스", "workspace-" + authority, null);
+        return WorkspaceMember.create(workspace, user, authority);
     }
 }

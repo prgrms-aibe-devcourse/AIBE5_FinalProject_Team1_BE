@@ -188,6 +188,19 @@ class AuthServiceTest {
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
     }
 
+    @Test
+    @DisplayName("비활성화된 계정으로 로그인하면 USER_NOT_FOUND 예외가 발생한다")
+    void login_inactiveUser() {
+        LoginRequest req = loginRequest("deleted@test.com", "password1");
+        User user = inactiveUser(1L);
+        when(userRepository.findByEmailIgnoreCaseOrderByIdAsc("deleted@test.com")).thenReturn(List.of(user));
+
+        assertThatThrownBy(() -> authService.login(req))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
     // ── refresh ───────────────────────────────────────────────────────────────
 
     @Test
@@ -267,6 +280,22 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("비활성화된 계정의 refresh token으로 재발급하면 USER_NOT_FOUND 예외가 발생한다")
+    void refresh_inactiveUser() {
+        User user = inactiveUser(1L);
+        RefreshToken saved = refreshToken(user, "inactive-refresh-token");
+        when(jwtProvider.validateRefreshTokenWithResult("inactive-refresh-token"))
+                .thenReturn(JwtValidationResult.VALID);
+        when(refreshTokenRepository.findByToken("inactive-refresh-token")).thenReturn(Optional.of(saved));
+
+        assertThatThrownBy(() -> authService.refresh("inactive-refresh-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        assertThat(saved.isRevoked()).isFalse();
+    }
+
+    @Test
     @DisplayName("DB 저장 refresh token이 만료되었으면 REFRESH_TOKEN_EXPIRED 예외가 발생한다")
     void refresh_savedTokenExpired() {
         User user = user(1L, "test@test.com", "testuser");
@@ -319,6 +348,18 @@ class AuthServiceTest {
         verify(refreshTokenRepository).revokeAllByUser(user);
     }
 
+    @Test
+    @DisplayName("비활성화된 계정에는 OAuth2 토큰을 발급하지 않는다")
+    void issueTokens_inactiveUser() {
+        User user = inactiveUser(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.issueTokens(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
     // ── me ────────────────────────────────────────────────────────────────────
 
     @Test
@@ -340,6 +381,18 @@ class AuthServiceTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.me(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("비활성화된 계정은 내 정보 조회에서 USER_NOT_FOUND 예외가 발생한다")
+    void me_inactiveUser() {
+        User user = inactiveUser(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.me(1L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
@@ -372,6 +425,12 @@ class AuthServiceTest {
     private static User user(Long id, String email, String displayName) {
         User user = User.create(email, "hashed-password", displayName);
         ReflectionTestUtils.setField(user, "id", id);
+        return user;
+    }
+
+    private static User inactiveUser(Long id) {
+        User user = user(id, "deleted@test.com", "탈퇴 사용자");
+        user.deactivateAccount("deleted-user-" + id + "@codedock.local", "deleted-user-" + id);
         return user;
     }
 

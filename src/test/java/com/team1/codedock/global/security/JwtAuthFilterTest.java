@@ -120,6 +120,26 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    @DisplayName("토큰은 유효하지만 사용자가 비활성 상태면 INVALID_TOKEN 401을 반환하고 체인을 중단한다")
+    void doFilterWithInactiveUserReturnsInvalidToken() throws Exception {
+        MockHttpServletRequest request = request("GET", "/api/v1/workspaces");
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtProvider.validateAccessTokenWithResult("valid-token"))
+                .thenReturn(JwtValidationResult.VALID);
+        when(jwtProvider.getUserId("valid-token")).thenReturn(1L);
+        when(userDetailsService.loadUserById(1L))
+                .thenThrow(new IllegalArgumentException("비활성화된 사용자입니다."));
+
+        jwtAuthFilter.doFilter(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("\"code\":\"INVALID_TOKEN\"");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(filterChain, never()).doFilter(any(ServletRequest.class), any(ServletResponse.class));
+    }
+
+    @Test
     @DisplayName("공개 auth API에서는 만료 access token 헤더가 함께 와도 refresh 요청을 막지 않는다")
     void doFilterWithExpiredAccessTokenOnPublicAuthApiContinuesFilterChain() throws Exception {
         MockHttpServletRequest request = request("POST", "/api/v1/auth/refresh");

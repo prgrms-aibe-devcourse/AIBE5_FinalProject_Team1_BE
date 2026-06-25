@@ -53,6 +53,7 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCaseOrderByIdAsc(request.getEmail()).stream()
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        validateActiveUser(user);
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
@@ -76,6 +77,7 @@ public class AuthService {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
         }
         User user = saved.getUser();
+        validateActiveUser(user);
         saved.revoke();
         String newAccess  = jwtProvider.generateAccessToken(user.getId());
         String newRefresh = jwtProvider.generateRefreshToken(user.getId());
@@ -99,6 +101,7 @@ public class AuthService {
     public TokenResponse issueTokens(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        validateActiveUser(user);
         refreshTokenRepository.revokeAllByUser(user);
         String accessToken  = jwtProvider.generateAccessToken(userId);
         String refreshToken = jwtProvider.generateRefreshToken(userId);
@@ -112,7 +115,14 @@ public class AuthService {
     public UserResponse me(Long currentUserId) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        validateActiveUser(user);
         return UserResponse.from(user);
+    }
+
+    private void validateActiveUser(User user) {
+        if (!user.isActive()) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
     }
 
     private LoginResponse buildLoginResponse(User user) {

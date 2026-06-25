@@ -174,6 +174,22 @@ public class User extends BaseEntity {
         this.githubTokenExpiresAt = null;
     }
 
+    public void deactivateAccount(String anonymizedEmail, String anonymizedUsername) {
+        this.email = normalizeEmail(anonymizedEmail);
+        this.username = anonymizedUsername;
+        this.passwordHash = null;
+        this.emailVerified = false;
+        this.emailVerifiedAt = null;
+        this.displayName = "탈퇴한 사용자";
+        this.nickname = null;
+        this.developerType = null;
+        this.bio = null;
+        this.avatarUrl = null;
+        disconnectGithub();
+        this.isActive = false;
+        this.deactivatedAt = LocalDateTime.now();
+    }
+
     public void updateProfile(String displayName, String nickname, String developerType, String bio, String avatarUrl) {
         this.displayName = displayName;
         this.nickname = nickname;
