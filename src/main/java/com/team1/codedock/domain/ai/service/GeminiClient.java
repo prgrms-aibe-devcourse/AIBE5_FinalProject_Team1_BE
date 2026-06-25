@@ -40,7 +40,11 @@ public class GeminiClient {
     private String callGroq(String prompt) {
         Map<String, Object> request = Map.of(
                 "model", model,
-                "messages", List.of(Map.of("role", "user", "content", prompt)),
+                "messages", List.of(
+                        Map.of("role", "system", "content",
+                                "You must respond ONLY in Korean (한국어). Never use Japanese, Chinese, or any other language. Use English only when the prompt explicitly requires specific fields to be in English."),
+                        Map.of("role", "user", "content", prompt)
+                ),
                 "response_format", Map.of("type", "json_object")
         );
 
