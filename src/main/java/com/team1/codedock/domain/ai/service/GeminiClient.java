@@ -13,8 +13,8 @@ import java.util.Map;
 @Service
 public class GeminiClient {
 
-    private static final String GROQ_API_URL =
-            "https://api.groq.com/openai/v1/chat/completions";
+    private static final String GEMINI_API_URL =
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
     private final RestClient restClient;
     private final String apiKey;
@@ -23,8 +23,8 @@ public class GeminiClient {
 
     public GeminiClient(
             RestClient.Builder builder,
-            @Value("${groq.api-key:}") String apiKey,
-            @Value("${groq.model:llama-3.3-70b-versatile}") String model,
+            @Value("${gemini.api-key:}") String apiKey,
+            @Value("${gemini.model:gemini-2.5-flash}") String model,
             ObjectMapper objectMapper
     ) {
         this.restClient = builder.build();
@@ -37,30 +37,30 @@ public class GeminiClient {
         return model;
     }
 
-    private String callGroq(String prompt) {
+    private String callGemini(String prompt) {
         Map<String, Object> request = Map.of(
                 "model", model,
                 "messages", List.of(
                         Map.of("role", "system", "content",
-                                "You must respond ONLY in Korean (한국어). Never use Japanese, Chinese, or any other language. Use English only when the prompt explicitly requires specific fields to be in English."),
+                                "You are a Korean language assistant. Output ONLY in Korean (한국어). Use English only when the prompt explicitly requires specific fields to be in English."),
                         Map.of("role", "user", "content", prompt)
                 ),
                 "response_format", Map.of("type", "json_object")
         );
 
-        GroqResponse response = restClient.post()
-                .uri(GROQ_API_URL)
+        GeminiResponse response = restClient.post()
+                .uri(GEMINI_API_URL)
                 .header("Authorization", "Bearer " + apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
                 .retrieve()
-                .body(GroqResponse.class);
+                .body(GeminiResponse.class);
 
         return response.choices().get(0).message().content();
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record GroqResponse(List<Choice> choices) {}
+    record GeminiResponse(List<Choice> choices) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Choice(Message message) {}
@@ -70,7 +70,7 @@ public class GeminiClient {
 
     public ErdGenerationResult generateErd(List<String> entitySources) {
         try {
-            return objectMapper.readValue(callGroq(buildErdPrompt(entitySources)), ErdGenerationResult.class);
+            return objectMapper.readValue(callGemini(buildErdPrompt(entitySources)), ErdGenerationResult.class);
         } catch (Exception e) {
             throw new RuntimeException("AI 응답 파싱 실패: " + e.getMessage(), e);
         }
@@ -129,7 +129,7 @@ public class GeminiClient {
                 case "faq"     -> buildFaqPrompt(sources, topic);
                 default        -> buildManualPrompt(sources, topic);
             };
-            return objectMapper.readValue(callGroq(prompt), DocumentGenerationResult.class);
+            return objectMapper.readValue(callGemini(prompt), DocumentGenerationResult.class);
         } catch (Exception e) {
             throw new RuntimeException("AI 응답 파싱 실패: " + e.getMessage(), e);
         }
@@ -196,7 +196,7 @@ public class GeminiClient {
 
     public ApiSpecChecklistResult generateApiSpecChecklist(String swaggerJson, List<String> entitySources) {
         try {
-            return objectMapper.readValue(callGroq(buildApiSpecPrompt(swaggerJson, entitySources)), ApiSpecChecklistResult.class);
+            return objectMapper.readValue(callGemini(buildApiSpecPrompt(swaggerJson, entitySources)), ApiSpecChecklistResult.class);
         } catch (Exception e) {
             throw new RuntimeException("AI 응답 파싱 실패: " + e.getMessage(), e);
         }
@@ -235,7 +235,7 @@ public class GeminiClient {
 
     public PrAnalysisResult generatePrAnalysis(String combinedDiff) {
         try {
-            return objectMapper.readValue(callGroq(buildPrAnalysisPrompt(combinedDiff)), PrAnalysisResult.class);
+            return objectMapper.readValue(callGemini(buildPrAnalysisPrompt(combinedDiff)), PrAnalysisResult.class);
         } catch (Exception e) {
             throw new RuntimeException("AI 응답 파싱 실패: " + e.getMessage(), e);
         }
