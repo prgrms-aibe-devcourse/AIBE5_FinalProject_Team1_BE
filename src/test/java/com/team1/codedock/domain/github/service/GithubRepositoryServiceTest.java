@@ -902,7 +902,7 @@ class GithubRepositoryServiceTest {
         assertThat(response.workspaceId()).isEqualTo(10L);
         assertThat(response.channelId()).isEqualTo(40L);
         assertThat(response.fullName()).isEqualTo("team1/codedock");
-        assertThat(response.todayCommitCount()).isEqualTo(2L);
+        assertThat(response.todayCommitCount()).isEqualTo(3L);
         assertThat(response.openPrCount()).isEqualTo(2L);
         assertThat(response.openIssueCount()).isEqualTo(3L);
         assertThat(response.highRiskCount()).isEqualTo(1L);
@@ -981,6 +981,59 @@ class GithubRepositoryServiceTest {
                 .isEqualTo(ErrorCode.GITHUB_REPO_NOT_FOUND);
 
         verifyNoInteractions(githubPullRequestRepository, githubIssueRepository);
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황은 PR/Issue 최근 활동을 섞어서 최신 5개만 반환한다")
+    void getRepositoryOverviewRecentActivitiesLimit() {
+        Workspace workspace = workspace(10L);
+        WorkspaceMember member = mockWorkspaceMember(workspace, "viewer");
+        GithubRepository repository = repository(workspace);
+        Channel channel = repositoryChannel(workspace, repository, 40L);
+        GithubPullRequest pr1 = pullRequest(repository, channel, 501L, 1, "PR 1", "open", "alice",
+                LocalDateTime.of(2026, 6, 25, 10, 0), "[]");
+        GithubPullRequest pr2 = pullRequest(repository, channel, 502L, 2, "PR 2", "open", "alice",
+                LocalDateTime.of(2026, 6, 25, 12, 0), "[]");
+        GithubPullRequest pr3 = pullRequest(repository, channel, 503L, 3, "PR 3", "open", "alice",
+                LocalDateTime.of(2026, 6, 25, 14, 0), "[]");
+        GithubIssue issue1 = issue(repository, channel, 601L, 11, "Issue 1", "open", "bob", "low",
+                LocalDateTime.of(2026, 6, 25, 11, 0));
+        GithubIssue issue2 = issue(repository, channel, 602L, 12, "Issue 2", "open", "bob", "high",
+                LocalDateTime.of(2026, 6, 25, 13, 0));
+        GithubIssue issue3 = issue(repository, channel, 603L, 13, "Issue 3", "open", "bob", "high",
+                LocalDateTime.of(2026, 6, 25, 15, 0));
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByIdAndWorkspaceId(30L, 10L)).thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.findAllByRepository_IdOrderByGithubCreatedAtDesc(30L))
+                .thenReturn(List.of(pr1, pr2, pr3));
+        when(githubPullRequestRepository.countOpenByRepositoryId(30L)).thenReturn(3L);
+        when(githubIssueRepository.countOpenByRepositoryId(30L)).thenReturn(3L);
+        when(githubIssueRepository.countOpenHighPriorityByRepositoryId(30L)).thenReturn(2L);
+        when(workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace)).thenReturn(2);
+        when(githubPullRequestRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(pr3, pr2, pr1));
+        when(githubIssueRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(issue3, issue2, issue1));
+        when(githubPullRequestRepository.findOpenByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(pr3, pr2, pr1));
+
+        GithubRepositoryOverviewResponse response = githubRepositoryService.getRepositoryOverview(10L, 30L, 100L);
+
+        assertThat(response.recentActivities()).hasSize(5);
+        assertThat(response.recentActivities())
+                .extracting("type", "id", "occurredAt")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ISSUE", 603L, LocalDateTime.of(2026, 6, 25, 15, 0)),
+                        org.assertj.core.groups.Tuple.tuple("PULL_REQUEST", 503L, LocalDateTime.of(2026, 6, 25, 14, 0)),
+                        org.assertj.core.groups.Tuple.tuple("ISSUE", 602L, LocalDateTime.of(2026, 6, 25, 13, 0)),
+                        org.assertj.core.groups.Tuple.tuple("PULL_REQUEST", 502L, LocalDateTime.of(2026, 6, 25, 12, 0)),
+                        org.assertj.core.groups.Tuple.tuple("ISSUE", 601L, LocalDateTime.of(2026, 6, 25, 11, 0))
+                );
+        assertThat(response.openPullRequests()).extracting("prId")
+                .containsExactly(503L, 502L, 501L);
     }
 
     private GithubConnectRequest connectRequest() {
@@ -1146,16 +1199,18 @@ class GithubRepositoryServiceTest {
         LocalDate today = LocalDate.now(zoneId);
         String todayMorning = today.atTime(9, 0).atZone(zoneId).toInstant().toString();
         String todayAfternoon = today.atTime(15, 30).toString();
+        String todayWithOffset = today.atTime(21, 15) + "+09:00";
         String yesterday = today.minusDays(1).atTime(9, 0).atZone(zoneId).toInstant().toString();
         return """
                 [
                   {"sha":"1","date":"%s"},
                   {"sha":"2","date":"%s"},
                   {"sha":"3","date":"%s"},
-                  {"sha":"4","date":"not-a-date"},
-                  {"sha":"5"}
+                  {"sha":"4","date":"%s"},
+                  {"sha":"5","date":"not-a-date"},
+                  {"sha":"6"}
                 ]
-                """.formatted(todayMorning, todayAfternoon, yesterday);
+                """.formatted(todayMorning, todayAfternoon, yesterday, todayWithOffset);
     }
 
     private Workspace workspace(Long id) {
