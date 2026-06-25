@@ -1,16 +1,24 @@
 package com.team1.codedock.domain.github.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
 import com.team1.codedock.domain.github.dto.GithubConnectRequest;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse.RepositoryActivityResponse;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse.RepositoryPullRequestSummaryResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
 import com.team1.codedock.domain.github.dto.GithubRepositoryResponse;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
-import java.util.List;
+import com.team1.codedock.domain.issue.entity.GithubIssue;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -21,8 +29,20 @@ import com.team1.codedock.global.exception.BusinessException;
 import com.team1.codedock.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -32,6 +52,9 @@ public class GithubRepositoryService {
 
     private static final String AUTHORITY_OWNER = "owner";
     private static final String AUTHORITY_ADMIN = "admin";
+    private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Seoul");
+    private static final int OVERVIEW_ACTIVITY_LIMIT = 5;
+    private static final int OVERVIEW_OPEN_PR_LIMIT = 5;
 
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -40,6 +63,9 @@ public class GithubRepositoryService {
     private final ChannelRepository channelRepository;
     private final GithubApiService githubApiService;
     private final GithubWebhookRegistrationService githubWebhookRegistrationService;
+    private final GithubPullRequestRepository githubPullRequestRepository;
+    private final GithubIssueRepository githubIssueRepository;
+    private final ObjectMapper objectMapper;
 
     public GithubConnectResponse connectRepository(Long workspaceId, Long userId, GithubConnectRequest request) {
         User user = userRepository.findById(userId)
@@ -177,6 +203,179 @@ public class GithubRepositoryService {
         return ChannelListResponse.from(channel);
     }
 
+    @Transactional(readOnly = true)
+    public GithubRepositoryOverviewResponse getRepositoryOverview(Long workspaceId, Long repositoryId, Long userId) {
+        WorkspaceMember member = workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+        GithubRepository repository = githubRepositoryRepository.findByIdAndWorkspaceId(repositoryId, workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GITHUB_REPO_NOT_FOUND));
+        Channel channel = channelRepository.findRepositoryChannel(workspaceId, repositoryId).orElse(null);
+
+        List<GithubPullRequest> pullRequests = githubPullRequestRepository.findAllByRepository_IdOrderByGithubCreatedAtDesc(repositoryId);
+        long todayCommitCount = countTodayCommits(pullRequests);
+        long openPrCount = githubPullRequestRepository.countOpenByRepositoryId(repositoryId);
+        long openIssueCount = githubIssueRepository.countOpenByRepositoryId(repositoryId);
+        long highRiskCount = githubIssueRepository.countOpenHighPriorityByRepositoryId(repositoryId);
+        long activeMemberCount = workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(member.getWorkspace());
+
+        List<RepositoryActivityResponse> recentActivities = buildRecentActivities(repositoryId);
+        List<RepositoryPullRequestSummaryResponse> openPullRequests = githubPullRequestRepository
+                .findOpenByRepositoryId(repositoryId, PageRequest.of(0, OVERVIEW_OPEN_PR_LIMIT))
+                .stream()
+                .map(this::toPullRequestSummary)
+                .toList();
+
+        return new GithubRepositoryOverviewResponse(
+                repository.getId(),
+                workspaceId,
+                channel != null ? channel.getId() : null,
+                repository.getOwner(),
+                repository.getName(),
+                repository.getFullName(),
+                repository.getUrl(),
+                repository.getDefaultBranch(),
+                repository.getLastSyncedAt(),
+                todayCommitCount,
+                openPrCount,
+                openIssueCount,
+                highRiskCount,
+                activeMemberCount,
+                null,
+                null,
+                null,
+                recentActivities,
+                openPullRequests
+        );
+    }
+
+    private List<RepositoryActivityResponse> buildRecentActivities(Long repositoryId) {
+        List<RepositoryActivityCandidate> candidates = new ArrayList<>();
+        githubPullRequestRepository.findRecentByRepositoryId(repositoryId, PageRequest.of(0, OVERVIEW_ACTIVITY_LIMIT))
+                .forEach(pr -> candidates.add(new RepositoryActivityCandidate(
+                        "PULL_REQUEST",
+                        pr.getId(),
+                        pr.getPrNumber(),
+                        pr.getTitle(),
+                        pr.getAuthor(),
+                        pr.getState(),
+                        firstNonNull(pr.getGithubUpdatedAt(), pr.getGithubCreatedAt(), pr.getUpdatedAt(), pr.getCreatedAt())
+                )));
+        githubIssueRepository.findRecentByRepositoryId(repositoryId, PageRequest.of(0, OVERVIEW_ACTIVITY_LIMIT))
+                .forEach(issue -> candidates.add(new RepositoryActivityCandidate(
+                        "ISSUE",
+                        issue.getId(),
+                        issue.getIssueNumber(),
+                        issue.getTitle(),
+                        issue.getAuthor(),
+                        issue.getState(),
+                        firstNonNull(issue.getGithubUpdatedAt(), issue.getGithubCreatedAt(), issue.getUpdatedAt(), issue.getCreatedAt())
+                )));
+
+        return candidates.stream()
+                .sorted(Comparator.comparing(
+                        RepositoryActivityCandidate::occurredAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .limit(OVERVIEW_ACTIVITY_LIMIT)
+                .map(candidate -> new RepositoryActivityResponse(
+                        candidate.type(),
+                        candidate.id(),
+                        candidate.number(),
+                        candidate.title(),
+                        candidate.actor(),
+                        candidate.state(),
+                        candidate.occurredAt()
+                ))
+                .toList();
+    }
+
+    private RepositoryPullRequestSummaryResponse toPullRequestSummary(GithubPullRequest pullRequest) {
+        return new RepositoryPullRequestSummaryResponse(
+                pullRequest.getId(),
+                pullRequest.getPrNumber(),
+                pullRequest.getTitle(),
+                pullRequest.getAuthor(),
+                pullRequest.getState(),
+                pullRequest.getChangedFilesCount(),
+                pullRequest.getAdditions(),
+                pullRequest.getDeletions(),
+                firstNonNull(
+                        pullRequest.getGithubUpdatedAt(),
+                        pullRequest.getGithubCreatedAt(),
+                        pullRequest.getUpdatedAt(),
+                        pullRequest.getCreatedAt()
+                )
+        );
+    }
+
+    private long countTodayCommits(List<GithubPullRequest> pullRequests) {
+        LocalDate today = LocalDate.now(DASHBOARD_ZONE);
+        return pullRequests.stream()
+                .map(GithubPullRequest::getCommitsJson)
+                .filter(Objects::nonNull)
+                .mapToLong(commitsJson -> countCommitsOnDate(commitsJson, today))
+                .sum();
+    }
+
+    private long countCommitsOnDate(String commitsJson, LocalDate targetDate) {
+        if (commitsJson == null || commitsJson.isBlank()) {
+            return 0L;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(commitsJson);
+            if (!root.isArray()) {
+                return 0L;
+            }
+
+            long count = 0L;
+            for (JsonNode commitNode : root) {
+                LocalDate commitDate = parseCommitDate(commitNode.path("date").asText(null));
+                if (targetDate.equals(commitDate)) {
+                    count++;
+                }
+            }
+            return count;
+        } catch (Exception e) {
+            log.debug("GitHub commit JSON 파싱 실패. commitsJson={}", commitsJson, e);
+            return 0L;
+        }
+    }
+
+    private LocalDate parseCommitDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        try {
+            return Instant.parse(value).atZone(DASHBOARD_ZONE).toLocalDate();
+        } catch (DateTimeParseException ignored) {
+            // GitHub webhook 외 경로에서 offset 또는 local datetime 문자열이 들어와도 현황 집계가 깨지지 않게 함.
+        }
+
+        try {
+            return OffsetDateTime.parse(value).atZoneSameInstant(DASHBOARD_ZONE).toLocalDate();
+        } catch (DateTimeParseException ignored) {
+            // OffsetDateTime 파싱 실패 시 마지막으로 LocalDateTime 형식을 시도함.
+        }
+
+        try {
+            return LocalDateTime.parse(value).toLocalDate();
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
+    @SafeVarargs
+    private final <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private Channel findOrCreateRepositoryChannel(GithubRepository githubRepository) {
         Long workspaceId = githubRepository.getWorkspace().getId();
 
@@ -298,5 +497,16 @@ public class GithubRepositoryService {
             return value;
         }
         return value.substring(0, maxLength);
+    }
+
+    private record RepositoryActivityCandidate(
+            String type,
+            Long id,
+            Integer number,
+            String title,
+            String actor,
+            String state,
+            LocalDateTime occurredAt
+    ) {
     }
 }

@@ -1,5 +1,6 @@
 package com.team1.codedock.domain.github.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team1.codedock.domain.channel.dto.ChannelListResponse;
 import com.team1.codedock.domain.channel.entity.Channel;
 import com.team1.codedock.domain.channel.repository.ChannelRepository;
@@ -8,9 +9,14 @@ import com.team1.codedock.domain.github.dto.GithubWebhookRegisterResponse;
 import com.team1.codedock.domain.github.dto.GithubConnectResponse;
 import com.team1.codedock.domain.github.dto.GithubRepoResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryLinkRequest;
+import com.team1.codedock.domain.github.dto.GithubRepositoryOverviewResponse;
 import com.team1.codedock.domain.github.dto.GithubRepositoryResponse;
 import com.team1.codedock.domain.github.entity.GithubRepository;
 import com.team1.codedock.domain.github.repository.GithubRepositoryRepository;
+import com.team1.codedock.domain.issue.entity.GithubIssue;
+import com.team1.codedock.domain.issue.repository.GithubIssueRepository;
+import com.team1.codedock.domain.pr.entity.GithubPullRequest;
+import com.team1.codedock.domain.pr.repository.GithubPullRequestRepository;
 import com.team1.codedock.domain.user.entity.User;
 import com.team1.codedock.domain.user.repository.UserRepository;
 import com.team1.codedock.domain.workspace.entity.Workspace;
@@ -29,9 +35,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -68,6 +79,15 @@ class GithubRepositoryServiceTest {
 
     @Mock
     private GithubWebhookRegistrationService githubWebhookRegistrationService;
+
+    @Mock
+    private GithubPullRequestRepository githubPullRequestRepository;
+
+    @Mock
+    private GithubIssueRepository githubIssueRepository;
+
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @InjectMocks
     private GithubRepositoryService githubRepositoryService;
@@ -846,6 +866,123 @@ class GithubRepositoryServiceTest {
         assertThat(response.githubRepositoryId()).isEqualTo(30L);
     }
 
+    @Test
+    @DisplayName("레포지토리 현황은 실제 PR/Issue/팀원 데이터를 집계해서 반환한다")
+    void getRepositoryOverview() {
+        Workspace workspace = workspace(10L);
+        WorkspaceMember member = mockWorkspaceMember(workspace, "viewer");
+        GithubRepository repository = repository(workspace);
+        Channel channel = repositoryChannel(workspace, repository, 40L);
+        LocalDateTime newestIssueTime = LocalDateTime.of(2026, 6, 25, 14, 0);
+        LocalDateTime oldPrTime = LocalDateTime.of(2026, 6, 24, 11, 0);
+        GithubPullRequest openPr = pullRequest(repository, channel, 501L, 12, "로그인 수정", "open", "jean2077", oldPrTime, todayAndPastCommitsJson());
+        GithubPullRequest approvedPr = pullRequest(repository, channel, 502L, 13, "대시보드 보강", "approved", "yakjun01", LocalDateTime.of(2026, 6, 23, 11, 0), "not-json");
+        GithubIssue highIssue = issue(repository, channel, 601L, 7, "권한 오류", "open", "slyhyun", "high", newestIssueTime);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByIdAndWorkspaceId(30L, 10L)).thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.of(channel));
+        when(githubPullRequestRepository.findAllByRepository_IdOrderByGithubCreatedAtDesc(30L))
+                .thenReturn(List.of(openPr, approvedPr));
+        when(githubPullRequestRepository.countOpenByRepositoryId(30L)).thenReturn(2L);
+        when(githubIssueRepository.countOpenByRepositoryId(30L)).thenReturn(3L);
+        when(githubIssueRepository.countOpenHighPriorityByRepositoryId(30L)).thenReturn(1L);
+        when(workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace)).thenReturn(4);
+        when(githubPullRequestRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(openPr, approvedPr));
+        when(githubIssueRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(highIssue));
+        when(githubPullRequestRepository.findOpenByRepositoryId(30L, PageRequest.of(0, 5)))
+                .thenReturn(List.of(openPr, approvedPr));
+
+        GithubRepositoryOverviewResponse response = githubRepositoryService.getRepositoryOverview(10L, 30L, 100L);
+
+        assertThat(response.repositoryId()).isEqualTo(30L);
+        assertThat(response.workspaceId()).isEqualTo(10L);
+        assertThat(response.channelId()).isEqualTo(40L);
+        assertThat(response.fullName()).isEqualTo("team1/codedock");
+        assertThat(response.todayCommitCount()).isEqualTo(2L);
+        assertThat(response.openPrCount()).isEqualTo(2L);
+        assertThat(response.openIssueCount()).isEqualTo(3L);
+        assertThat(response.highRiskCount()).isEqualTo(1L);
+        assertThat(response.activeMemberCount()).isEqualTo(4L);
+        assertThat(response.codeQualityScore()).isNull();
+        assertThat(response.securityScore()).isNull();
+        assertThat(response.performanceScore()).isNull();
+        assertThat(response.recentActivities())
+                .extracting("type", "id", "number", "title")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ISSUE", 601L, 7, "권한 오류"),
+                        org.assertj.core.groups.Tuple.tuple("PULL_REQUEST", 501L, 12, "로그인 수정"),
+                        org.assertj.core.groups.Tuple.tuple("PULL_REQUEST", 502L, 13, "대시보드 보강")
+                );
+        assertThat(response.openPullRequests())
+                .extracting("prId", "prNumber", "title", "state")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(501L, 12, "로그인 수정", "open"),
+                        org.assertj.core.groups.Tuple.tuple(502L, 13, "대시보드 보강", "approved")
+                );
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황은 repository 채널이 없어도 channelId만 null로 반환한다")
+    void getRepositoryOverviewWithoutRepositoryChannel() {
+        Workspace workspace = workspace(10L);
+        WorkspaceMember member = mockWorkspaceMember(workspace, "viewer");
+        GithubRepository repository = repository(workspace);
+
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByIdAndWorkspaceId(30L, 10L)).thenReturn(Optional.of(repository));
+        when(channelRepository.findRepositoryChannel(10L, 30L)).thenReturn(Optional.empty());
+        when(githubPullRequestRepository.findAllByRepository_IdOrderByGithubCreatedAtDesc(30L)).thenReturn(List.of());
+        when(githubPullRequestRepository.countOpenByRepositoryId(30L)).thenReturn(0L);
+        when(githubIssueRepository.countOpenByRepositoryId(30L)).thenReturn(0L);
+        when(githubIssueRepository.countOpenHighPriorityByRepositoryId(30L)).thenReturn(0L);
+        when(workspaceMemberRepository.countByWorkspaceAndIsActiveTrue(workspace)).thenReturn(1);
+        when(githubPullRequestRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5))).thenReturn(List.of());
+        when(githubIssueRepository.findRecentByRepositoryId(30L, PageRequest.of(0, 5))).thenReturn(List.of());
+        when(githubPullRequestRepository.findOpenByRepositoryId(30L, PageRequest.of(0, 5))).thenReturn(List.of());
+
+        GithubRepositoryOverviewResponse response = githubRepositoryService.getRepositoryOverview(10L, 30L, 100L);
+
+        assertThat(response.channelId()).isNull();
+        assertThat(response.todayCommitCount()).isZero();
+        assertThat(response.recentActivities()).isEmpty();
+        assertThat(response.openPullRequests()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황은 워크스페이스 활성 멤버가 아니면 거부한다")
+    void getRepositoryOverviewForbidden() {
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.getRepositoryOverview(10L, 30L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(githubRepositoryRepository, never()).findByIdAndWorkspaceId(any(), any());
+    }
+
+    @Test
+    @DisplayName("레포지토리 현황은 다른 워크스페이스의 레포지토리를 찾을 수 없다")
+    void getRepositoryOverviewRepositoryNotFound() {
+        WorkspaceMember member = workspaceMember("viewer");
+        when(workspaceMemberRepository.findByWorkspace_IdAndUser_IdAndIsActiveTrue(10L, 100L))
+                .thenReturn(Optional.of(member));
+        when(githubRepositoryRepository.findByIdAndWorkspaceId(30L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> githubRepositoryService.getRepositoryOverview(10L, 30L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.GITHUB_REPO_NOT_FOUND);
+
+        verifyNoInteractions(githubPullRequestRepository, githubIssueRepository);
+    }
+
     private GithubConnectRequest connectRequest() {
         GithubConnectRequest request = new GithubConnectRequest();
         request.setOwner("octocat");
@@ -929,6 +1066,96 @@ class GithubRepositoryServiceTest {
         );
         ReflectionTestUtils.setField(repository, "id", 30L);
         return repository;
+    }
+
+    private Channel repositoryChannel(Workspace workspace, GithubRepository repository, Long id) {
+        Channel channel = Channel.createRepository(workspace, repository, "codedock", 0);
+        ReflectionTestUtils.setField(channel, "id", id);
+        return channel;
+    }
+
+    private GithubPullRequest pullRequest(
+            GithubRepository repository,
+            Channel channel,
+            Long id,
+            Integer prNumber,
+            String title,
+            String state,
+            String author,
+            LocalDateTime githubUpdatedAt,
+            String commitsJson
+    ) {
+        GithubPullRequest pullRequest = GithubPullRequest.create(
+                repository,
+                channel,
+                "pr-" + prNumber,
+                prNumber,
+                title,
+                "description",
+                state,
+                "https://github.com/team1/codedock/pull/" + prNumber,
+                author,
+                "feature/" + prNumber,
+                "main",
+                "[]",
+                10,
+                2,
+                3,
+                null,
+                githubUpdatedAt.minusHours(2),
+                githubUpdatedAt,
+                commitsJson
+        );
+        ReflectionTestUtils.setField(pullRequest, "id", id);
+        return pullRequest;
+    }
+
+    private GithubIssue issue(
+            GithubRepository repository,
+            Channel channel,
+            Long id,
+            Integer issueNumber,
+            String title,
+            String state,
+            String author,
+            String priority,
+            LocalDateTime githubUpdatedAt
+    ) {
+        GithubIssue issue = GithubIssue.create(
+                repository,
+                channel,
+                "issue-" + issueNumber,
+                issueNumber,
+                title,
+                "description",
+                state,
+                "https://github.com/team1/codedock/issues/" + issueNumber,
+                author,
+                "[]",
+                null,
+                githubUpdatedAt.minusHours(3),
+                githubUpdatedAt
+        );
+        issue.applyClassification(priority, "bug");
+        ReflectionTestUtils.setField(issue, "id", id);
+        return issue;
+    }
+
+    private String todayAndPastCommitsJson() {
+        ZoneId zoneId = ZoneId.of("Asia/Seoul");
+        LocalDate today = LocalDate.now(zoneId);
+        String todayMorning = today.atTime(9, 0).atZone(zoneId).toInstant().toString();
+        String todayAfternoon = today.atTime(15, 30).toString();
+        String yesterday = today.minusDays(1).atTime(9, 0).atZone(zoneId).toInstant().toString();
+        return """
+                [
+                  {"sha":"1","date":"%s"},
+                  {"sha":"2","date":"%s"},
+                  {"sha":"3","date":"%s"},
+                  {"sha":"4","date":"not-a-date"},
+                  {"sha":"5"}
+                ]
+                """.formatted(todayMorning, todayAfternoon, yesterday);
     }
 
     private Workspace workspace(Long id) {
