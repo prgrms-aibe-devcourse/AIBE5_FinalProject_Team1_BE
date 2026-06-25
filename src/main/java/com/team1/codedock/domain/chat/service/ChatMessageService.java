@@ -191,10 +191,12 @@ public class ChatMessageService {
         if (replyTo != null && replyTo.getCreatedBy() != null
                 && !sender.getId().equals(replyTo.getCreatedBy().getId())) {
             Long targetUserId = replyTo.getCreatedBy().getUser().getId();
+            // 이벤트의 threadId는 "이동/강조 대상"이므로 답장 원글이 아니라 답장 메시지(savedThread)를 가리킨다.
+            // (대상 사용자는 답장당한 원글 작성자 유지) → 클릭 시 답장 메시지로 바로 이동·강조된다.
             workspaceEventService.recordEvent(
                     channel.getWorkspace().getId(), WorkspaceEvent.EventType.REPLY,
                     sender.getUser().getDisplayName(), null, null, channel.getId(), content,
-                    null, null, replyTo.getId(), null, null, targetUserId, savedThread.getCreatedAt());
+                    null, null, savedThread.getId(), null, null, targetUserId, savedThread.getCreatedAt());
         }
 
         // 채팅 메시지 이벤트 발행(Kafka). 실패해도 채팅 전송에는 영향 없음.

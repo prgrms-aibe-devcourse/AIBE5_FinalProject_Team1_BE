@@ -1367,7 +1367,7 @@ class ChatMessageServiceTest {
     }
 
     @Test
-    @DisplayName("replyTo가 있으면 원본 메시지 작성자에게 REPLY 이벤트를 기록한다")
+    @DisplayName("replyTo가 있으면 원본 메시지 작성자에게 REPLY 이벤트를 기록하고, threadId는 답장 메시지를 가리킨다")
     void createChannelMessageRecordsReplyEvent() {
         Long channelId = 1L;
         Long workspaceId = 2L;
@@ -1398,9 +1398,10 @@ class ChatMessageServiceTest {
 
         chatMessageService.createChannelMessage(channelId, userId, request);
 
+        // threadId(10번째 인자)는 원글(50L)이 아니라 저장된 답장 메시지(100L)를 가리킨다.
         verify(workspaceEventService).recordEvent(
                 workspaceId, WorkspaceEvent.EventType.REPLY, "Sender", null, null, channelId,
-                "reply content", null, null, 50L, null, null, 99L,
+                "reply content", null, null, 100L, null, null, 99L,
                 LocalDateTime.of(2026, 6, 23, 10, 0));
     }
 
