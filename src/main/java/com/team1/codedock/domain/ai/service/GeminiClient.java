@@ -42,7 +42,10 @@ public class GeminiClient {
                 "model", model,
                 "messages", List.of(
                         Map.of("role", "system", "content",
-                                "You must respond ONLY in Korean (한국어). Never use Japanese, Chinese, or any other language. Use English only when the prompt explicitly requires specific fields to be in English."),
+                                "You are a Korean language assistant. CRITICAL: Output ONLY in Korean (한국어). " +
+                                "It is STRICTLY FORBIDDEN to use any Japanese (hiragana/katakana/kanji) or Chinese characters. " +
+                                "Every single word must be in Korean. " +
+                                "Use English only when the prompt explicitly requires specific fields to be in English."),
                         Map.of("role", "user", "content", prompt)
                 ),
                 "response_format", Map.of("type", "json_object")
@@ -139,7 +142,7 @@ public class GeminiClient {
         String sourcesText = String.join("\n\n---\n\n", sources);
         String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
         return """
-                반드시 한국어로만 작성해주세요.
+                반드시 한국어로만 작성해주세요. 절대 일본어 및 한자 등 한국어가 아닌 언어를 사용하지마.
                 다음 소스코드를 분석하여 외부 사용자(운영팀, CS팀, 비개발자 등)가 이해할 수 있는 사용 설명서를 작성해주세요.
                 %s기술적인 내용보다는 서비스 기능과 사용 방법을 쉽게 설명해주세요.
 
@@ -159,7 +162,7 @@ public class GeminiClient {
         String sourcesText = String.join("\n\n---\n\n", sources);
         String topicLine = (topic != null && !topic.isBlank()) ? "주제: " + topic + "\n\n" : "";
         return """
-                반드시 한국어로만 작성해주세요.
+                반드시 한국어로만 작성해주세요. 절대 일본어 및 한자 등 한국어가 아닌 언어를 사용하지마.
                 다음 소스코드를 분석하여 사용자들이 자주 묻는 질문(FAQ)을 작성해주세요.
                 %s실제 사용자 관점에서 궁금해할 만한 질문과 명확한 답변을 작성해주세요.
 
@@ -178,7 +181,7 @@ public class GeminiClient {
     private String buildReleasePrompt(List<String> commits) {
         String commitsText = String.join("\n", commits);
         return """
-                반드시 한국어로만 작성해주세요.
+                반드시 한국어로만 작성해주세요. 절대 일본어 및 한자 등 한국어가 아닌 언어를 사용하지마.
                 다음 커밋 메시지들을 분석하여 사용자가 이해하기 쉬운 릴리즈 노트를 작성해주세요.
                 개발 용어보다는 서비스 관점에서 변경된 기능을 설명해주세요.
 
@@ -243,7 +246,7 @@ public class GeminiClient {
 
     private String buildPrAnalysisPrompt(String combinedDiff) {
         return """
-                반드시 한국어로만 작성해주세요.
+                반드시 한국어로만 작성해주세요. 절대 일본어 및 한자 등 한국어가 아닌 언어를 사용하지마.
                 다음 PR의 파일 diff를 분석하여 전체 요약, 코드 품질·보안 취약점·개선 필요 사항 전반에 대한 피드백을 생성해주세요.
                 언어나 프레임워크에 관계없이 변경된 모든 파일을 분석하세요.
 
